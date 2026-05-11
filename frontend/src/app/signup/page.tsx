@@ -48,7 +48,6 @@ export default function SignUpPage() {
   const [error, setError] = useState("");
   const [mfaSecret, setMfaSecret] = useState("");
   const [isEnrolled, setIsEnrolled] = useState(false);
-  const [mfaSecret, setMfaSecret] = useState("");
 
   // ── Behavioral Typing Prompt ──────────────────────────────────────────
   const [typingPrompt] = useState(() => getRandomPrompt());
@@ -303,13 +302,21 @@ export default function SignUpPage() {
               </div>
             </div>
             <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
-              <div className="h-full bg-cyan-400 rounded-full w-1/5" />
+              <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${(1 / parseInt(typeof window !== 'undefined' ? localStorage.getItem('bba_enrollment_required') || '5' : '5')) * 100}%` }} />
             </div>
           </div>
           {mfaSecret && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left">
               <h4 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">Save MFA Secret</h4>
-              <p className="text-xs text-amber-400/80 font-mono select-all bg-black/40 p-2 rounded">{mfaSecret}</p>
+              <div className="flex items-center gap-2">
+                <p className="flex-1 text-xs text-amber-400/80 font-mono bg-black/40 p-2 rounded">{mfaSecret}</p>
+                <button 
+                  onClick={() => navigator.clipboard.writeText(mfaSecret)} 
+                  className="bg-black/40 hover:bg-black/60 text-amber-400/80 p-2 rounded transition-colors text-xs font-medium"
+                >
+                  Copy
+                </button>
+              </div>
             </div>
           )}
           <Link href="/login" className="block w-full">
@@ -324,7 +331,6 @@ export default function SignUpPage() {
     <AuthShell title="Create your account" subtitle="Sign up for secure banking. We protect your account using behavioral patterns.">
       <form onSubmit={handleSubmit} className="space-y-5">
         {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
-        {successMsg ? <AuthInlineMessage tone="success">{successMsg}</AuthInlineMessage> : null}
 
         <div className="space-y-4">
           {/* ── Username ── */}
@@ -474,22 +480,30 @@ export default function SignUpPage() {
 
             {/* Live accuracy meter */}
             {typedText.length > 0 && (
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-1 bg-black/40 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-300 rounded-full ${
-                      liveStats.typingAccuracy >= 90 ? "bg-emerald-400" :
-                      liveStats.typingAccuracy >= 70 ? "bg-yellow-400" : "bg-red-400"
-                    }`}
-                    style={{ width: `${liveStats.typingAccuracy}%` }}
-                  />
+              <div className="flex flex-col gap-1.5 mt-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-1 bg-black/40 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 rounded-full ${
+                        liveStats.typingAccuracy >= 90 ? "bg-emerald-400" :
+                        liveStats.typingAccuracy >= 70 ? "bg-yellow-400" : "bg-red-400"
+                      }`}
+                      style={{ width: `${liveStats.typingAccuracy}%` }}
+                    />
+                  </div>
+                  <span className={`text-[10px] tabular-nums font-mono ${
+                    liveStats.typingAccuracy >= 90 ? "text-emerald-400" :
+                    liveStats.typingAccuracy >= 70 ? "text-yellow-400" : "text-red-400"
+                  }`}>
+                    {liveStats.typingAccuracy}% match
+                  </span>
+                  <span className="text-[9px] text-muted-2">(Min 70%)</span>
                 </div>
-                <span className={`text-[10px] tabular-nums font-mono ${
-                  liveStats.typingAccuracy >= 90 ? "text-emerald-400" :
-                  liveStats.typingAccuracy >= 70 ? "text-yellow-400" : "text-red-400"
-                }`}>
-                  {liveStats.typingAccuracy}% match
-                </span>
+                {liveStats.keystrokes < 20 && (
+                  <div className="text-[10px] text-amber-400 font-medium">
+                    {20 - liveStats.keystrokes} more keystrokes needed for enrollment
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -514,7 +528,13 @@ export default function SignUpPage() {
           <span className="text-[10px] uppercase tracking-widest font-bold text-accent-primary">Your Behavioral Profile Baseline</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {liveStats.keystrokes < 5 ? (
+          <div className="py-8 text-center text-xs text-muted italic font-mono bg-black/20 rounded-lg border border-white/5">
+            Begin typing in the verification field to initialize your behavioral baseline...
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
           {/* Keystroke Collection */}
           <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
             <div className="text-[9px] uppercase tracking-wider text-muted mb-2">Keystroke Data</div>
@@ -544,7 +564,7 @@ export default function SignUpPage() {
             <div className="space-y-1.5">
               <div className="flex justify-between text-[11px] font-mono">
                 <span className="text-muted">WPM</span>
-                <span className={liveStats.wpm > 80 ? "text-amber-400" : "text-emerald-400"}>{liveStats.wpm}</span>
+                <span className={liveStats.wpm < 20 ? "text-amber-400" : "text-emerald-400"}>{liveStats.wpm}</span>
               </div>
               <div className="flex justify-between text-[11px] font-mono">
                 <span className="text-muted">Corrections</span>
@@ -579,10 +599,10 @@ export default function SignUpPage() {
           <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
-                liveStats.keystrokes >= 40 ? "bg-emerald-400" :
+                liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "bg-emerald-400" :
                 liveStats.keystrokes >= 20 ? "bg-yellow-400" : "bg-red-400"
               }`}
-              style={{ width: `${Math.min(100, (liveStats.keystrokes / 50) * 100)}%` }}
+              style={{ width: `${Math.min(100, ((liveStats.keystrokes / 40) * 50) + ((liveStats.digraphCount / 15) * 50))}%` }}
             />
           </div>
         </div>
@@ -596,7 +616,7 @@ export default function SignUpPage() {
             ) : (
               liveStats.sequence.map((id, idx) => (
                 <span key={idx} className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[9px] font-mono text-slate-300">
-                  {idx + 1}. {id.replace('signup-', '').replace('behavioral-', '')}
+                  {idx + 1}. {id.replace('signup-', '').replace('behavioral-verify-text', 'verify').replace('behavioral-', '')}
                 </span>
               ))
             )}
@@ -610,6 +630,8 @@ export default function SignUpPage() {
             This data creates the foundation of your secure profile. Your next 4 logins will help us complete your behavioral fingerprint to ensure you are fully protected. No extra steps required!
           </p>
         </div>
+        </>
+        )}
       </div>
     </AuthShell>
   );

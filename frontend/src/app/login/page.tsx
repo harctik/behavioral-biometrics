@@ -78,12 +78,21 @@ export default function LoginPage() {
       const data = await res.json();
       
       if (!res.ok) {
-        throw new Error(data.error || "Login failed");
+        throw new Error(data.error || (res.status === 401 ? "Invalid credentials." : "An unexpected error occurred."));
       }
       
-      router.push("/otp");
+      if (data.mfa_required) {
+        router.push("/otp");
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed. Please try again.");
+      const msg = err instanceof Error ? err.message : "Login failed. Please try again.";
+      if (msg.toLowerCase().includes("fetch")) {
+        setError("Network error: Could not connect to the server.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -266,11 +275,6 @@ export default function LoginPage() {
                 )}
               </button>
               
-              <div className="text-center mt-3">
-                <Link href="/otp" className="text-[10px] text-muted hover:text-white transition-colors">
-                  Behavioral auth failing? Use MFA fallback
-                </Link>
-              </div>
             </form>
 
             <div className="mt-8 pt-6 border-t border-border flex items-center justify-between text-xs">
