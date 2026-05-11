@@ -30,3 +30,4 @@ psycopg2-binary==2.9.9
 cffi>=1.15,<2.0
 requests>=2.31,<3.0
 celery==5.4.0
+resend>=1.1.0,<3.0
