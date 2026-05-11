@@ -145,21 +145,7 @@ export default function LoginPage() {
         {/* Right Side Login Form */}
         <div className="p-8 lg:p-12 relative flex flex-col justify-center border-l border-white/5">
           <div className="max-w-sm w-full mx-auto">
-            {enrollmentState && (
-              <motion.div 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mb-6 bg-accent-warning/10 border border-accent-warning/20 rounded-xl px-4 py-3 flex items-start gap-3"
-              >
-                <Activity className="w-4 h-4 text-accent-warning shrink-0 mt-0.5" />
-                <div>
-                  <div className="text-xs font-semibold text-accent-warning uppercase tracking-wider">Profile building: Session {enrollmentState.completed + 1} of {enrollmentState.required}</div>
-                  <p className="text-[10px] text-muted mt-1 leading-relaxed">
-                    The system is still learning your behavioral baseline. Please log in normally to continue your enrollment phase.
-                  </p>
-                </div>
-              </motion.div>
-            )}
+
 
             <div className="mb-8">
               <h2 className="text-2xl font-bold text-fg tracking-tight mb-2">Sign in to Console</h2>
@@ -192,7 +178,7 @@ export default function LoginPage() {
                     onChange={(e) => setUsername(e.target.value)}
                     required
                     placeholder="Username or email address"
-                    className="w-full bg-black/20 border border-border text-fg rounded-xl py-3 pl-11 pr-4 text-sm outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary/30 transition-all placeholder:text-muted-2"
+                    className="w-full bg-black/20 border border-border text-fg rounded-xl py-3 pl-11 pr-4 text-sm outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary/30 transition-all placeholder:text-muted-2 font-mono"
                   />
                 </div>
               </div>
@@ -229,41 +215,54 @@ export default function LoginPage() {
               </div>
 
               {/* ── Live Keystroke Telemetry Counter ───────────────────────── */}
-              {keystrokeCount > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  className="bg-accent-primary/5 border border-accent-primary/15 rounded-xl px-4 py-3"
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Keyboard className="w-3.5 h-3.5 text-accent-primary" />
-                    <span className="text-[10px] uppercase tracking-widest font-bold text-accent-primary">Live Keystroke Capture</span>
+              <div className="bg-accent-primary/5 border border-accent-primary/15 rounded-xl px-4 py-3 min-h-[76px] flex flex-col justify-center">
+                <div className="flex items-center gap-2 mb-3">
+                  <Keyboard className="w-3.5 h-3.5 text-accent-primary" />
+                  <span className="text-[10px] uppercase tracking-widest font-bold text-accent-primary">Live Keystroke Capture</span>
+                </div>
+                {keystrokeCount === 0 ? (
+                  <div className="text-xs text-muted font-mono italic">Waiting for keystrokes...</div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-4 text-[10px] font-mono text-muted">
+                    <div>
+                      <div className="mb-1">Keystrokes: <span className="text-fg font-semibold">{keystrokeCount}</span></div>
+                      <div className="h-1 bg-black/40 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${Math.min(100, keystrokeCount * 2)}%` }}></div></div>
+                    </div>
+                    <div>
+                      <div className="mb-1">Hold: <span className="text-fg font-semibold">{avgHoldTime}ms</span></div>
+                      <div className="h-1 bg-black/40 rounded-full overflow-hidden"><div className="h-full bg-cyan-500 rounded-full transition-all duration-300" style={{ width: `${Math.min(100, (avgHoldTime / 300) * 100)}%` }}></div></div>
+                    </div>
+                    <div>
+                      <div className="mb-1">Flight: <span className="text-fg font-semibold">{avgFlightTime}ms</span></div>
+                      <div className="h-1 bg-black/40 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${Math.min(100, (avgFlightTime / 600) * 100)}%` }}></div></div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-xs font-mono text-muted">
-                    <span>Keystrokes: <span className="text-fg font-semibold">{keystrokeCount}</span></span>
-                    <span className="text-border">·</span>
-                    <span>Avg hold: <span className="text-fg font-semibold">{avgHoldTime}ms</span></span>
-                    <span className="text-border">·</span>
-                    <span>Flight: <span className="text-fg font-semibold">{avgFlightTime}ms</span></span>
-                  </div>
-                </motion.div>
-              )}
+                )}
+              </div>
 
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-accent-primary hover:bg-blue-600 text-white font-medium rounded-xl py-3 mt-4 transition-colors flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
+                className="w-full bg-accent-primary hover:bg-blue-600 text-white font-medium rounded-xl mt-4 transition-colors relative overflow-hidden group disabled:opacity-90 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    <span className="text-sm">Analyzing your session...</span>
-                  </>
+                  <div className="w-full relative h-12 flex items-center justify-center gap-3">
+                    <div className="absolute inset-0 bg-blue-600/50">
+                      <motion.div 
+                        initial={{ width: "0%" }} 
+                        animate={{ width: "100%" }} 
+                        transition={{ duration: 2.5, ease: "easeInOut" }} 
+                        className="h-full bg-blue-500/50" 
+                      />
+                    </div>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin relative z-10"></div>
+                    <span className="text-sm relative z-10 font-medium">Analyzing behavioral session...</span>
+                  </div>
                 ) : (
-                  <>
+                  <div className="w-full h-12 flex items-center justify-center gap-2">
                     Authenticate
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </>
+                  </div>
                 )}
               </button>
               
