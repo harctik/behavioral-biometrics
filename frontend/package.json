@@ -10,6 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@vercel/speed-insights": "^2.0.0",
     "baseline-browser-mapping": "^2.10.29",
     "caniuse-lite": "^1.0.30001792",
     "clsx": "^2.1.1",

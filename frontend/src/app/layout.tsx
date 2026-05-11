@@ -5,6 +5,7 @@ import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistratio
 import { NavBar } from "@/components/NavBar";
 import { BehavioralProvider } from "@/components/BehavioralProvider";
 import { SessionTimeoutWarning } from "@/components/SessionTimeoutWarning";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -40,6 +41,7 @@ export default function RootLayout({
         <main className="flex-1 relative z-10">
           {children}
         </main>
+        <SpeedInsights />
       </body>
     </html>
   );
