@@ -6,7 +6,7 @@ import { apiClient } from "@/lib/api-client";
 import { getCollector } from "@/lib/behavioral-collector";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { AuthButton, AuthInlineMessage, AuthInput } from "@/components/auth/AuthPrimitives";
-import { Mail } from "lucide-react";
+import { Mail, ArrowLeft } from "lucide-react";
 
 export default function ForgotPasswordPage() {
   const [identifier, setIdentifier] = useState("");
@@ -14,12 +14,16 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  // Gap 6: Start behavioral collection on forgot-password page
-  useEffect(() => {
+  // Initialize behavioral collection outside useEffect so it starts immediately
+  useState(() => {
     const collector = getCollector();
     collector.setContext("FORGOT_PASSWORD");
     collector.reset();
     collector.start();
+  });
+
+  useEffect(() => {
+    const collector = getCollector();
     return () => collector.stop();
   }, []);
 
@@ -29,12 +33,23 @@ export default function ForgotPasswordPage() {
     setMessage("");
     setIsLoading(true);
 
+    if (identifier.length < 3) {
+      setError("Please enter a valid username or email.");
+      setIsLoading(false);
+      return;
+    }
+
+    const isEmail = identifier.includes("@");
+    if (isEmail && !identifier.includes(".")) {
+      setError("Please enter a valid email address.");
+      setIsLoading(false);
+      return;
+    }
+
     // Gap 6: Flush behavioral data on forgot-password submit
     const collector = getCollector();
     const behavioralData = collector.flush("forgot_password");
 
-    // Backend accepts both username and email - detect which one the user typed
-    const isEmail = identifier.includes("@");
     const payload = isEmail
       ? { email: identifier, behavioral_data: behavioralData }
       : { username: identifier, behavioral_data: behavioralData };
@@ -49,14 +64,40 @@ export default function ForgotPasswordPage() {
           "If this account exists, password reset instructions have been sent."
       );
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unable to process request");
+      const errMsg = err instanceof Error ? err.message : "Unable to process request";
+      if (errMsg.toLowerCase().includes("too many") || errMsg.toLowerCase().includes("rate limit") || errMsg.includes("429")) {
+        setError("Too many attempts. Please wait a moment before trying again.");
+      } else if (errMsg.toLowerCase().includes("fetch") || errMsg.toLowerCase().includes("timeout")) {
+        setError("Network error: Please check your connection.");
+      } else {
+        setError(errMsg);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
+  if (message) {
+    return (
+      <AuthShell title="Check your inbox" subtitle="If the account exists, we've sent reset instructions.">
+        <div className="text-center space-y-6 mt-4">
+          <AuthInlineMessage tone="success">{message}</AuthInlineMessage>
+          <Link href="/login" className="block w-full">
+            <AuthButton className="w-full">Return to login</AuthButton>
+          </Link>
+        </div>
+      </AuthShell>
+    );
+  }
+
   return (
     <AuthShell title="Forgot password" subtitle="We'll send reset instructions (if the account exists).">
+      <div className="mb-6">
+        <Link href="/login" className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-white transition-colors group">
+          <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
+          Back to login
+        </Link>
+      </div>
       <form
         onSubmit={handleSubmit}
         className="space-y-4"
@@ -69,7 +110,7 @@ export default function ForgotPasswordPage() {
           <AuthInput
             type="text"
             name="identifier"
-            autoComplete="username email"
+            autoComplete="username"
             placeholder="Username or email"
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
@@ -78,16 +119,15 @@ export default function ForgotPasswordPage() {
           />
         </div>
 
-        <AuthButton type="submit" disabled={isLoading}>
+        <AuthButton type="submit" disabled={isLoading} className="mt-4 w-full">
           {isLoading ? "Sending..." : "Send reset link"}
         </AuthButton>
 
-        <p className="text-center text-xs text-white/60">
-          Back to{" "}
-          <Link href="/login" className="text-white hover:text-white/70 transition-colors">
-            Sign in
-          </Link>
-        </p>
+        {/* ── Behavioral Profiling Status Bar ── */}
+        <div className="mt-6 flex items-center justify-center gap-2.5 text-[10px] text-muted font-mono bg-black/20 border border-border/50 rounded-lg p-3">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+          <span>Minimal capture — helps detect bots</span>
+        </div>
       </form>
     </AuthShell>
   );
