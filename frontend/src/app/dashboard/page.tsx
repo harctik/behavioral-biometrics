@@ -430,15 +430,15 @@ export default function DashboardPage() {
           <div className="w-8 h-8 bg-accent-primary/20 rounded-lg flex items-center justify-center border border-accent-primary/30">
             <div className="w-3 h-3 bg-accent-primary rounded-sm"></div>
           </div>
-          <span className="font-semibold tracking-tight text-lg">NexaBank</span>
+          <span className="font-semibold tracking-tight text-lg">AetherAuth</span>
         </div>
         <div className="p-4 flex flex-col gap-1 flex-1">
           <div className="text-[10px] uppercase tracking-wider text-muted font-bold mb-2 px-3 mt-2">Menu</div>
-          <SidebarItem icon={LayoutGrid} label="Overview" active />
-          <SidebarItem icon={ArrowLeftRight} label="Transfers" />
-          <SidebarItem icon={CreditCard} label="Cards" />
-          <SidebarItem icon={PieChart} label="Investments" />
-          <SidebarItem icon={FileText} label="Statements" />
+          <SidebarItem icon={LayoutGrid} label="Overview" active href="/dashboard" />
+          <SidebarItem icon={ArrowLeftRight} label="Transfers" href="/dashboard/transfers" />
+          <SidebarItem icon={CreditCard} label="Cards" href="/dashboard/cards" />
+          <SidebarItem icon={PieChart} label="Investments" href="/dashboard/investments" />
+          <SidebarItem icon={FileText} label="Statements" href="/dashboard/statements" />
         </div>
         <div className="p-4 border-t border-border flex items-center gap-3 cursor-pointer hover:bg-surface-2 transition-colors m-2 rounded-xl">
           <div className="w-9 h-9 rounded-full bg-black/40 flex items-center justify-center font-medium text-xs border border-border">

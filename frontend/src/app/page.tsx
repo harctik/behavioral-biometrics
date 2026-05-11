@@ -38,7 +38,7 @@ export default function LandingPage() {
       <nav className="relative z-10 flex items-center justify-between px-6 py-4 max-w-7xl mx-auto">
         <div className="flex items-center gap-2">
           <Shield className="w-8 h-8 text-blue-500" />
-          <span className="font-bold text-xl tracking-tight text-white">NexaBank<span className="text-blue-500">Secure</span></span>
+          <span className="font-bold text-xl tracking-tight text-white">AetherAuth<span className="text-blue-500">Secure</span></span>
         </div>
         <div className="flex items-center gap-4">
           <Link href="/login" className="text-sm font-semibold text-slate-300 hover:text-white transition-colors">
@@ -69,7 +69,7 @@ export default function LandingPage() {
             </motion.h1>
 
             <motion.p variants={itemVariants} className="text-lg text-slate-400 leading-relaxed max-w-xl">
-              NexaBank leverages continuous behavioral biometrics. We analyze your keystroke dynamics, mouse movements, and cognitive patterns to protect your account without friction.
+              AetherAuth leverages continuous behavioral biometrics. We analyze your keystroke dynamics, mouse movements, and cognitive patterns to protect your account without friction.
             </motion.p>
 
             <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 pt-4">

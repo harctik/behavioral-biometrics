@@ -55,7 +55,7 @@ export default function StatementsPage() {
           <div className="w-8 h-8 bg-accent-primary/20 rounded-lg flex items-center justify-center border border-accent-primary/30">
             <div className="w-3 h-3 bg-accent-primary rounded-sm"></div>
           </div>
-          <span className="font-semibold tracking-tight text-lg">NexaBank</span>
+          <span className="font-semibold tracking-tight text-lg">AetherAuth</span>
         </div>
         <div className="p-4 flex flex-col gap-1 flex-1">
           <div className="text-[10px] uppercase tracking-wider text-muted font-bold mb-2 px-3 mt-2">Menu</div>

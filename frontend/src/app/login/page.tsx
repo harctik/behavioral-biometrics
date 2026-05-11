@@ -97,7 +97,7 @@ export default function LoginPage() {
               <div className="w-10 h-10 bg-accent-primary/10 border border-accent-primary/30 rounded-lg flex items-center justify-center text-accent-primary">
                 <ShieldCheck size={24} />
               </div>
-              <span className="text-2xl font-bold tracking-tight text-fg">NexaBank</span>
+              <span className="text-2xl font-bold tracking-tight text-fg">AetherAuth</span>
             </div>
             
             <h1 className="text-4xl font-bold leading-tight text-fg mb-6">
