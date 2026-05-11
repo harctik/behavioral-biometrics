@@ -46,7 +46,9 @@ export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
+  const [mfaSecret, setMfaSecret] = useState("");
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [mfaSecret, setMfaSecret] = useState("");
 
   // ── Behavioral Typing Prompt ──────────────────────────────────────────
   const [typingPrompt] = useState(() => getRandomPrompt());
@@ -256,8 +258,13 @@ export default function SignUpPage() {
         return;
       }
 
-      setSuccessMsg(`Account created! Your MFA Secret: ${result.data.mfa_secret}. Please save this in your Authenticator app. Redirecting to sign in...`);
-      setTimeout(() => router.push("/login"), 10000);
+      setMfaSecret(result.data.mfa_secret);
+      setIsEnrolled(true);
+      setIsLoading(false);
+      
+      // Store initial enrollment progress in localStorage for the login page banner
+      localStorage.setItem("bba_enrollment_completed", "1");
+      localStorage.setItem("bba_enrollment_required", "5");
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : "Registration failed";
       if (raw.includes("Password must contain")) {
@@ -272,8 +279,49 @@ export default function SignUpPage() {
     }
   };
 
+  if (isEnrolled) {
+    return (
+      <AuthShell title="Welcome to Secure Banking" subtitle="Your account has been created.">
+        <div className="space-y-6 text-center">
+          <div className="mx-auto w-16 h-16 bg-emerald-500/10 flex items-center justify-center rounded-full border border-emerald-500/20">
+            <ShieldCheck className="w-8 h-8 text-emerald-400" />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-lg font-medium text-fg">Verify your email to continue</h3>
+            <p className="text-sm text-muted">
+              We've sent a verification link to <strong>{email}</strong>. Please check your inbox.
+            </p>
+          </div>
+          <div className="bg-slate-900/60 border border-border rounded-xl p-5 text-left space-y-4">
+            <div className="flex items-start gap-3">
+              <Activity className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-medium text-fg">Enrollment Phase: 1 of 5 Sessions</h4>
+                <p className="text-xs text-muted mt-1 leading-relaxed">
+                  Your baseline profile has been seeded. The next 4 times you log in, we will continue building your behavioral profile silently.
+                </p>
+              </div>
+            </div>
+            <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
+              <div className="h-full bg-cyan-400 rounded-full w-1/5" />
+            </div>
+          </div>
+          {mfaSecret && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left">
+              <h4 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">Save MFA Secret</h4>
+              <p className="text-xs text-amber-400/80 font-mono select-all bg-black/40 p-2 rounded">{mfaSecret}</p>
+            </div>
+          )}
+          <Link href="/login" className="block w-full">
+            <AuthButton className="w-full">Continue to Login</AuthButton>
+          </Link>
+        </div>
+      </AuthShell>
+    );
+  }
+
   return (
-    <AuthShell title="System Enrollment" subtitle="Create a secure banking profile. Your behavior is being silently profiled.">
+    <AuthShell title="Create your account" subtitle="Sign up for secure banking. We protect your account using behavioral patterns.">
       <form onSubmit={handleSubmit} className="space-y-5">
         {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
         {successMsg ? <AuthInlineMessage tone="success">{successMsg}</AuthInlineMessage> : null}
@@ -341,9 +389,6 @@ export default function SignUpPage() {
                 {showPassword ? <Eye className="w-4 h-4" /> : <EyeClosed className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-[10px] text-white/40 mt-1.5 px-1">
-              Min 8 chars · uppercase · lowercase · digit · special (@$!%*?&amp;)
-            </p>
           </div>
 
           {/* ── Password Strength Meter ── */}
@@ -386,12 +431,14 @@ export default function SignUpPage() {
             <div className="flex items-center gap-2">
               <Fingerprint className="w-4 h-4 text-cyan-400" />
               <label className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">
-                Quick Verification
+                Create Your Typing Profile
               </label>
             </div>
-            <p className="text-[10px] text-white/50 leading-relaxed">
-              Type the text below exactly as shown — this helps us verify you&apos;re human and seeds your behavioral profile.
-            </p>
+            <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3">
+              <p className="text-xs text-cyan-300">
+                Type this naturally — we're capturing your rhythm, not your speed. Pasting won't work here.
+              </p>
+            </div>
 
             {/* Prompt display */}
             <div className="bg-slate-900/60 border border-cyan-500/20 rounded-lg px-4 py-3 font-mono text-sm text-cyan-300 tracking-wide select-none">
@@ -464,7 +511,7 @@ export default function SignUpPage() {
       <div className="mt-6 bg-slate-900/40 border border-border rounded-xl p-4">
         <div className="flex items-center gap-2 mb-4">
           <Activity className="w-4 h-4 text-accent-primary" />
-          <span className="text-[10px] uppercase tracking-widest font-bold text-accent-primary">Session 0 — Enrollment Seed Analysis</span>
+          <span className="text-[10px] uppercase tracking-widest font-bold text-accent-primary">Your Behavioral Profile Baseline</span>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -560,7 +607,7 @@ export default function SignUpPage() {
         <div className="mt-3 flex items-start gap-2 bg-cyan-500/5 border border-cyan-500/15 rounded-lg px-3 py-2">
           <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 mt-0.5 flex-shrink-0" />
           <p className="text-[9px] text-cyan-400/80 leading-relaxed">
-            This data becomes <strong>Session 0</strong> of your behavioral profile. 4 more login sessions will complete enrollment. No explicit calibration needed.
+            This data creates the foundation of your secure profile. Your next 4 logins will help us complete your behavioral fingerprint to ensure you are fully protected. No extra steps required!
           </p>
         </div>
       </div>

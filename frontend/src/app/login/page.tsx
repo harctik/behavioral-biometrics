@@ -20,6 +20,17 @@ export default function LoginPage() {
   const [avgHoldTime, setAvgHoldTime] = useState(0);
   const [avgFlightTime, setAvgFlightTime] = useState(0);
 
+  // Enrollment phase state from localStorage
+  const [enrollmentState, setEnrollmentState] = useState<{completed: number, required: number} | null>(null);
+
+  useEffect(() => {
+    const completed = localStorage.getItem("bba_enrollment_completed");
+    const required = localStorage.getItem("bba_enrollment_required");
+    if (completed && required && parseInt(completed) < parseInt(required)) {
+      setEnrollmentState({ completed: parseInt(completed), required: parseInt(required) });
+    }
+  }, []);
+
   // Start passive keystroke collection
   useEffect(() => {
     const collector = getCollector();
@@ -112,9 +123,13 @@ export default function LoginPage() {
           </div>
 
           <div className="relative z-10 flex flex-col gap-4 mt-12">
-            <div className="flex items-center gap-3 text-xs text-muted-2 font-mono">
+            <div className="group relative flex items-center gap-3 text-xs text-muted-2 font-mono cursor-help w-max">
               <Activity size={14} className="text-accent-primary" />
               PASSIVE PROFILING ACTIVE
+              {/* Tooltip */}
+              <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 border border-border rounded text-[10px] text-white shadow-xl">
+                We're analyzing your typing patterns to verify it's really you. This happens completely in the background.
+              </div>
             </div>
             <div className="h-px w-full bg-border" />
             <div className="flex items-center gap-4 text-xs text-muted">
@@ -130,6 +145,22 @@ export default function LoginPage() {
         {/* Right Side Login Form */}
         <div className="p-8 lg:p-12 relative flex flex-col justify-center border-l border-white/5">
           <div className="max-w-sm w-full mx-auto">
+            {enrollmentState && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6 bg-accent-warning/10 border border-accent-warning/20 rounded-xl px-4 py-3 flex items-start gap-3"
+              >
+                <Activity className="w-4 h-4 text-accent-warning shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-xs font-semibold text-accent-warning uppercase tracking-wider">Profile building: Session {enrollmentState.completed + 1} of {enrollmentState.required}</div>
+                  <p className="text-[10px] text-muted mt-1 leading-relaxed">
+                    The system is still learning your behavioral baseline. Please log in normally to continue your enrollment phase.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
             <div className="mb-8">
               <h2 className="text-2xl font-bold text-fg tracking-tight mb-2">Sign in to Console</h2>
               <p className="text-sm text-muted">Enter your administrative credentials.</p>
@@ -224,7 +255,10 @@ export default function LoginPage() {
                 className="w-full bg-accent-primary hover:bg-blue-600 text-white font-medium rounded-xl py-3 mt-4 transition-colors flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span className="text-sm">Analyzing your session...</span>
+                  </>
                 ) : (
                   <>
                     Authenticate
@@ -232,19 +266,32 @@ export default function LoginPage() {
                   </>
                 )}
               </button>
+              
+              <div className="text-center mt-3">
+                <Link href="/otp" className="text-[10px] text-muted hover:text-white transition-colors">
+                  Behavioral auth failing? Use MFA fallback
+                </Link>
+              </div>
             </form>
 
             <div className="mt-8 pt-6 border-t border-border flex items-center justify-between text-xs">
               <span className="text-muted">No account yet?</span>
               <Link href="/signup" className="text-accent-primary font-medium hover:text-blue-400 transition-colors">
-                Register device
+                Create account
               </Link>
             </div>
 
             {/* ── Behavioral Profiling Status Bar ──────────────────────────── */}
-            <div className="mt-6 flex items-center gap-2.5 text-[10px] text-muted font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
-              <span>Behavioral profiling active — keystroke dynamics being captured</span>
+            <div className="mt-6 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-[10px] text-muted font-mono">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+                <span>Behavioral profiling active</span>
+              </div>
+              {enrollmentState && (
+                <div className="bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] px-2 py-1 rounded font-mono">
+                  Profile building: session {enrollmentState.completed + 1} of {enrollmentState.required}
+                </div>
+              )}
             </div>
           </div>
         </div>
