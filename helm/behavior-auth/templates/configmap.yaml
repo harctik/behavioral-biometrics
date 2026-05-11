@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "behavior-auth.fullname" . }}-config
+  labels:
+    {{- include "behavior-auth.labels" . | nindent 4 }}
+data:
+  FLASK_ENV: "{{ .Values.config.flaskEnv }}"
+  LOG_LEVEL: "{{ .Values.config.logLevel }}"
+  IP_ALLOWLIST: "{{ .Values.config.ipAllowlist }}"
+  IP_DENYLIST: "{{ .Values.config.ipDenylist }}"
+  RATE_LIMIT: "{{ .Values.config.rateLimit }}"
+  METRICS_BASIC_AUTH_USER: "{{ .Values.config.metricsUser }}"
+  METRICS_BASIC_AUTH_PASS: "{{ .Values.config.metricsPass }}"

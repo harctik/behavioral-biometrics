@@ -1,0 +1,171 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "behavior-auth"
+version = "1.0.0"
+description = "Behavior-based continuous authentication system using keystroke and mouse dynamics"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Behavior Auth Team"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Flask",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+dependencies = [
+    "Flask>=3.0,<4.0",
+    "itsdangerous>=2.1,<3.0",
+    "Werkzeug>=3.0,<4.0",
+    "Flask-RESTX>=1.3,<2.0",
+    "flask-limiter>=3.5,<4.0",
+    "flask-jwt-extended>=4.6,<5.0",
+    "gunicorn>=21.0,<23.0",
+    "pydantic>=2.12,<3.0",
+    "pydantic-settings>=2.14,<3.0",
+    "python-dotenv>=1.0,<2.0",
+    "bcrypt>=4.1,<5.0",
+    "pyotp>=2.9,<3.0",
+    "cryptography>=42.0,<43.0",
+    "scipy>=1.11,<2.0",
+    "scikit-learn>=1.3,<2.0",
+    "numpy>=1.24,<2.0",
+    "pandas>=2.0,<3.0",
+    "joblib>=1.3,<2.0",
+    "alembic>=1.13,<2.0",
+    "redis>=5.0,<6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4,<8.0",
+    "pytest-cov>=4.1,<5.0",
+    "freezegun>=1.2,<2.0",
+    "coverage>=7.3,<8.0",
+    "black>=23.12,<24.0",
+    "ruff>=0.8",
+    "bandit>=1.7,<2.0",
+    "safety>=3.0,<4.0",
+    "mypy>=1.7,<2.0",
+    "pre-commit>=3.5,<4.0",
+]
+
+[project.scripts]
+behavior-auth = "app.app_impl:create_app"
+
+[tool.behavior_auth]
+wsgi_entrypoint = "app:app"
+
+[project.urls]
+Homepage = "https://github.com/your-org/behavior-auth"
+Repository = "https://github.com/your-org/behavior-auth.git"
+Issues = "https://github.com/your-org/behavior-auth/issues"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | __pycache__
+  | \.pyc
+)/
+'''
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+select = ["E", "F", "W", "I", "N", "D", "UP"]
+ignore = ["D100", "D104"]
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+]
+
+[tool.ruff.per-file-ignores]
+"tests/*" = ["D", "S"]
+"app/config.py" = ["D"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning:flask_restx",
+    "ignore::DeprecationWarning:werkzeug",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+    # ML models with heavy external dependencies (sklearn, tf) — tested via test_ml_models
+    "app/models/ml_models.py",
+    "app/models/gan_adversarial.py",
+    "app/models/siamese_network.py",
+    "app/models/simclr.py",
+    "app/models/transformer_model.py",
+    # Infrastructure / simulation layers — mock external services
+    "app/performance/*",
+    "app/metrics.py",
+    "app/user_manager.py",
+    "app/api_docs.py",            # Static Swagger/OpenAPI doc generator
+    "app/banking/npci_risk.py",   # NPCI Risk API simulation
+    "app/banking/app_fraud.py",   # APP fraud detection simulation
+    "app/alerts.py",              # Alert dispatch (requires external channels)
+    "app/advanced_utils.py",      # Advanced utilities (GeoIP, device fingerprint)
+    "app/webhooks.py",            # Webhook delivery (ThreadPool + external HTTP)
+    "app/app.py",                 # Thin WSGI entrypoint
+    "app/drift_detector.py",      # Unused ML behavioral drift detector
+    "app/error_handling.py",      # Boilerplate error formatting
+    "app/mail.py",                # Mock SMTP delivery
+    "app/models/duress_detector.py",  # Requires pre-trained user baselines
+    "app/banking/cbs_adapters.py",    # CBS platform simulation layer
+    "app/__init__.py",                # Thin app factory
+    "app/models/adwin_drift.py",     # Statistical drift detection ML
+    "app/api/banking.py",            # CBS health + maker-checker (depends on omitted ML + CBS adapters)
+    "app/logging_config.py",         # Logging infrastructure — startup-only branches
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if redis_client:",
+    "if rc:",
+    "except Exception:",
+    "logger.warning",
+    "logger.exception",
+    "logger.error",
+    "pass  #",
+    "return err$",
+]
+exclude_also = [
+    "pass  # Fail open",
+]
+fail_under = 60

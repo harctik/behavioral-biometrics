@@ -1,0 +1,331 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { AuthShell } from "@/components/auth/AuthShell";
+import { AuthButton, AuthInlineMessage, AuthInput } from "@/components/auth/AuthPrimitives";
+import { KeyRound, Timer, ArrowRight, Mail, Brain, RefreshCw } from "lucide-react";
+import { normalizeOtp, isValidOtp } from "@/lib/otp";
+import { getCollector } from "@/lib/behavioral-collector";
+
+const OTP_TTL = 60; // seconds
+
+export default function OtpPage() {
+  const router = useRouter();
+  const [otp, setOtp] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(OTP_TTL);
+  const [timerActive, setTimerActive] = useState(false);
+  const [expired, setExpired] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [mlMetrics, setMlMetrics] = useState<{authenticityScore: number, riskLevel: string, manual: boolean, avgInterDigit: number} | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Start behavioral collection on OTP page
+  useEffect(() => {
+    const collector = getCollector();
+    collector.setContext("OTP_VERIFY");
+    collector.reset();
+    collector.start();
+    return () => collector.stop();
+  }, []);
+
+  // Start or restart the countdown timer
+  const startTimer = useCallback(() => {
+    // Clear any existing timer
+    if (timerRef.current) clearInterval(timerRef.current);
+    setCountdown(OTP_TTL);
+    setExpired(false);
+    setTimerActive(true);
+
+    timerRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          // Timer hit zero — stop it
+          if (timerRef.current) clearInterval(timerRef.current);
+          timerRef.current = null;
+          setTimerActive(false);
+          setExpired(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // Send OTP to user's email
+  const sendOtpEmail = useCallback(async (sid: string) => {
+    try {
+      const res = await fetch("/api/auth/send-otp-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sid }),
+      });
+      if (res.ok) {
+        setEmailSent(true);
+        setInfo("OTP code sent to your registered email address.");
+        setError("");
+        startTimer(); // START timer only when email is successfully sent
+      } else {
+        setError("Failed to send OTP. Please try again.");
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    }
+  }, [startTimer]);
+
+  // On mount: check auth + auto-send OTP
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+          const data = await res.json();
+          const sid = data.session_id || null;
+          setSessionId(sid);
+          if (sid) {
+            sendOtpEmail(sid);
+          }
+        }
+      } catch {}
+    };
+    checkAuth();
+  }, [sendOtpEmail]);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+
+    const normalizedOtp = normalizeOtp(otp);
+    if (!isValidOtp(normalizedOtp)) {
+      setError("Enter a valid 6-digit OTP code.");
+      return;
+    }
+
+    if (!sessionId) {
+      setError("No active session found. Please sign in again.");
+      return;
+    }
+
+    if (expired) {
+      setError("This OTP has expired. Please request a new one.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const collector = getCollector();
+      const behavioralData = collector.flush("otp_verify");
+
+      const res = await fetch("/api/auth/mfa-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, otp: normalizedOtp, behavioral_data: behavioralData }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        // Stop timer on successful verify
+        if (timerRef.current) clearInterval(timerRef.current);
+        router.push("/dashboard");
+        return;
+      }
+
+      setError(data.error ?? "OTP verification failed.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "OTP verification failed.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setOtp("");
+    setError("");
+    setInfo("");
+    setMlMetrics(null);
+    if (sessionId) {
+      setInfo("Sending new OTP...");
+      await sendOtpEmail(sessionId);
+    }
+  };
+
+  const countdownLow = countdown <= 10 && countdown > 0;
+  const minutes = String(Math.floor(countdown / 60)).padStart(2, '0');
+  const seconds = String(countdown % 60).padStart(2, '0');
+
+  return (
+    <AuthShell title="Verify OTP" subtitle="A 6-digit code has been sent to your registered email. Valid for 60 seconds.">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
+        {!error && info ? (
+          <div className="bg-accent-primary/10 border border-accent-primary/20 text-accent-primary px-4 py-3 rounded-xl text-xs flex items-center gap-2">
+            <Mail className="w-4 h-4" />
+            {info}
+          </div>
+        ) : null}
+
+        {/* Countdown timer */}
+        <div className={`flex items-center justify-center gap-2 py-3 border rounded-xl mb-4 transition-colors ${
+          expired ? 'bg-red-500/10 border-red-500/30' :
+          countdownLow ? 'bg-amber-500/10 border-amber-500/30' :
+          'bg-black/20 border-border'
+        }`}>
+          <Timer className={`w-4 h-4 ${
+            expired ? 'text-red-500' :
+            countdownLow ? 'text-amber-500' : 'text-accent-primary'
+          }`} />
+          {expired ? (
+            <span className="text-sm font-mono font-semibold text-red-500">
+              Code expired — request a new one
+            </span>
+          ) : (
+            <span className={`text-lg font-mono font-semibold tabular-nums tracking-widest ${
+              countdownLow ? 'text-amber-500' : 'text-accent-primary'
+            }`}>
+              {minutes}:{seconds}
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted uppercase tracking-wider ml-1">Authentication Code</label>
+          <div className="relative">
+            <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-2" />
+            <AuthInput
+              id="otp-input"
+              type="text"
+              name="otp"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              value={otp}
+              onChange={async (e) => {
+                const val = normalizeOtp(e.target.value);
+                setOtp(val);
+                if (val.length === 6) {
+                  const collector = getCollector();
+                  const snap = collector.snapshot("otp_analysis");
+                  const otpKeys = snap.keystroke_events.filter(k => /^[0-9]$/.test(k.key));
+                  const flights = otpKeys.map(k => k.flight_time).filter(f => f > 0 && f < 10000);
+                  const avgFlight = flights.length > 0 ? Math.round(flights.reduce((a, b) => a + b, 0) / flights.length) : 0;
+                  const isPaste = snap.cognitive_events.some(c => c.type === 'copy_paste') || otpKeys.length < 3;
+                  
+                  try {
+                    const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+                    const res = await fetch("/api/v1/session/metrics", {
+                      headers: { "X-CSRF-TOKEN": csrfToken }
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      setMlMetrics({
+                        authenticityScore: Math.round((data.authenticity_score || 0) * 100),
+                        riskLevel: data.risk_level || "low",
+                        manual: !isPaste,
+                        avgInterDigit: avgFlight
+                      });
+                    }
+                  } catch {}
+                } else {
+                  setMlMetrics(null);
+                }
+              }}
+              maxLength={6}
+              required
+              disabled={expired}
+              className="pl-10 text-center tracking-[0.5em] font-mono text-lg"
+            />
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-[10px] text-muted font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.5)]"></span>
+            Typing pattern analysis active — digit-by-digit behavior monitored
+          </div>
+        </div>
+
+        {/* Submit button — hidden when expired */}
+        {!expired && (
+          <AuthButton type="submit" disabled={isLoading} className="w-full mt-4">
+            {isLoading ? "Verifying..." : (
+              <span className="flex items-center gap-2">
+                Verify Token <ArrowRight className="w-4 h-4" />
+              </span>
+            )}
+          </AuthButton>
+        )}
+
+        {/* Resend button — only visible after expiry */}
+        {expired && (
+          <button
+            type="button"
+            onClick={handleResend}
+            className="w-full bg-accent-primary text-white font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Resend OTP Code
+          </button>
+        )}
+
+        {/* Always show a subtle resend link if not expired (for impatient users) */}
+        {!expired && emailSent && (
+          <button
+            type="button"
+            onClick={handleResend}
+            className="w-full text-center text-xs text-muted hover:text-accent-primary transition-colors py-2 cursor-pointer mt-1 flex items-center justify-center gap-1"
+          >
+            <Mail className="w-3 h-3" />
+            Didn't receive it? Resend OTP
+          </button>
+        )}
+
+        <p className="text-center text-xs text-muted leading-relaxed mt-4">
+          Wrong account?{" "}
+          <Link href="/login" className="text-accent-primary hover:text-blue-400 transition-colors">
+            Back to sign in
+          </Link>
+        </p>
+      </form>
+
+      {/* ML Behavioral Analysis Card */}
+      {mlMetrics && (
+        <div className="mt-5 bg-surface-2/50 border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Brain className="w-4 h-4 text-accent-primary" />
+            <span className="text-[10px] uppercase tracking-widest font-bold text-accent-primary">ML Risk Assessment</span>
+          </div>
+          <div className="space-y-2 text-xs font-mono">
+            <div className="flex items-center justify-between">
+              <span className="text-muted">Authenticity Score</span>
+              <span className={mlMetrics.authenticityScore >= 70 ? "text-accent-success" : mlMetrics.authenticityScore >= 40 ? "text-accent-warning" : "text-accent-danger"}>
+                {mlMetrics.authenticityScore}% match
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted">Ensemble Risk Level</span>
+              <span className={mlMetrics.riskLevel === 'low' ? "text-accent-success" : mlMetrics.riskLevel === 'medium' ? "text-accent-warning" : "text-accent-danger"}>
+                {mlMetrics.riskLevel.toUpperCase()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted">Input Method</span>
+              <span className={mlMetrics.manual ? "text-accent-success" : "text-accent-danger"}>
+                {mlMetrics.manual ? "Human / Keystrokes" : "Paste / Autofill"}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </AuthShell>
+  );
+}

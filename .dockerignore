@@ -1,0 +1,56 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Environment and secrets
+.env
+.env.*
+secrets.json
+*.pem
+*.key
+
+# Frontend (built separately or via multi-stage)
+frontend/
+node_modules/
+
+# Databases and logs (generated at runtime)
+*.db
+*.sqlite3
+*.log
+behavioral_auth.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation and development files
+docs/
+*.md
+*.docx
+*.txt
+!requirements.txt
+!requirements-ml.txt
+helm/
+.github/
+.pre-commit-config.yaml
+
+# Test files (not needed in production image)
+tests/

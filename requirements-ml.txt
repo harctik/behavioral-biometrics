@@ -1,0 +1,21 @@
+# Heavy ML and optional dependencies — install separately if needed.
+# pip install -r requirements-ml.txt
+
+tensorflow>=2.13,<2.15
+keras>=2.13,<3.0
+torch>=2.0,<3.0
+transformers>=4.30,<5.0
+sentence-transformers>=2.2,<3.0
+shap>=0.44,<0.45
+onnxruntime>=1.15,<2.0
+onnx>=1.14,<2.0
+river>=0.15,<0.16  # For ADWIN drift detection
+
+# Optional database drivers
+psycopg2-binary>=2.9,<3.0
+kafka-python>=2.0,<3.0
+neo4j>=5.14,<6.0
+
+# Optional JWT libraries (if python-jose usage is needed)
+python-jose>=3.3,<4.0
+pyjwt>=2.8,<3.0

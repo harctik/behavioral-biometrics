@@ -1,0 +1,75 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.env
+.venv
+
+# Security and Secrets (NEVER COMMIT THESE!)
+.env.local
+.env.*
+secrets.json
+*.pem
+*.key
+
+# SQLite Databases
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS Data
+.DS_Store
+Thumbs.db
+
+# Machine Learning models (optional depending on size)
+models/saved/*/*.h5
+models/saved/*/*.pkl
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Python caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Coverage artifacts
+.coverage
+htmlcov/
+coverage.xml
+
+# Debug scratch files
+error.txt
+netbanking_error.txt
+test_out.txt
+test_out2.txt
+
+# Frontend env
+frontend/.env.local
+
+# Vercel (contains OIDC tokens)
+frontend/.vercel/.env.*
+
+# Next.js build output
+frontend/.next/
+
+# Database files
+database/
+
+# Large report images
+report_diagrams_png/

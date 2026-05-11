@@ -1,0 +1,11 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "behavior-auth.fullname" . }}-pdb
+  labels:
+    {{- include "behavior-auth.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "behavior-auth.selectorLabels" . | nindent 6 }}
