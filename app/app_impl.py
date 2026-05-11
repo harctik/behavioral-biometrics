@@ -25,10 +25,7 @@ from .config import Settings
 from .config import Settings
 _settings = Settings()
 
-if _settings.SQLALCHEMY_DATABASE_URI and _settings.SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
-    from .database_pg import get_engine
-else:
-    from .database import get_engine
+from .database_pg import get_engine
 from .logging_config import setup_logging, get_logger
 from .redis_store import get_redis_client
 from .error_handling import make_error_response, ErrorHandler
@@ -359,18 +356,18 @@ def create_app(env: str = "development"):
         return None
 
     # ── Database & Redis ────────────────────────────────────────────────────
-    if _settings.SQLALCHEMY_DATABASE_URI and _settings.SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
-        try:
-            db = get_engine(app.config["SQLALCHEMY_DATABASE_URI"])
-        except Exception as pg_err:
-            logger.error(
-                "PostgreSQL connection failed (%s). Falling back to SQLite at %s",
-                pg_err, app.config["DATABASE_PATH"]
-            )
-            from app.database import get_engine as get_sqlite_engine
-            db = get_sqlite_engine(app.config["DATABASE_PATH"])
-    else:
-        db = get_engine(app.config["DATABASE_PATH"])
+    if not _settings.SQLALCHEMY_DATABASE_URI or not _settings.SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
+        raise RuntimeError("SQLALCHEMY_DATABASE_URI must be a PostgreSQL connection string for production.")
+
+    try:
+        db = get_engine(app.config["SQLALCHEMY_DATABASE_URI"])
+        # Test connection immediately
+        with db.get_connection() as conn:
+            conn.execute("SELECT 1")
+    except Exception as pg_err:
+        logger.error("CRITICAL: PostgreSQL connection failed: %s", pg_err)
+        raise RuntimeError(f"Could not connect to Supabase: {pg_err}") from pg_err
+
     redis_client = (
         get_redis_client(app.config.get("REDIS_URL") or "")
         if app.config.get("REDIS_URL")
