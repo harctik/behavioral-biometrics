@@ -150,26 +150,26 @@ class DatabaseManager:
             # Retrofit existing databases safely
             try:
                 cursor.execute(
-                    "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0"
+                    f"ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT {_bool_false}"
                 )
             except Exception:
                 pass
             try:
                 cursor.execute(
-                    "ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0"
+                    f"ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN DEFAULT {_bool_false}"
                 )
             except Exception:
                 pass
 
             # ── Sessions ────────────────────────────────────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    is_active BOOLEAN DEFAULT 1,
+                    is_active BOOLEAN DEFAULT {_bool_true},
                     ip_address TEXT,
                     user_agent TEXT,
                     device_id TEXT,
@@ -476,15 +476,30 @@ class DatabaseManager:
 
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    """
-                INSERT INTO users (username, email, password_hash, mfa_secret)
-                VALUES (?, ?, ?, ?)
-            """,
-                    (username, email, password_hash, encrypted_mfa_secret),
-                )
+                if self.is_pg:
+                    # PostgreSQL: use RETURNING to get the auto-generated ID
+                    cursor.execute(
+                        """
+                    INSERT INTO users (username, email, password_hash, mfa_secret)
+                    VALUES (?, ?, ?, ?) RETURNING user_id
+                """,
+                        (username, email, password_hash, encrypted_mfa_secret),
+                    )
+                    row = cursor.fetchone()
+                    user_id = row["user_id"] if row else None
+                else:
+                    cursor.execute(
+                        """
+                    INSERT INTO users (username, email, password_hash, mfa_secret)
+                    VALUES (?, ?, ?, ?)
+                """,
+                        (username, email, password_hash, encrypted_mfa_secret),
+                    )
+                    user_id = cursor.lastrowid
 
-                user_id = cursor.lastrowid
+                if not user_id:
+                    conn.commit()
+                    return None
 
                 # Initialize model metadata
                 cursor.execute(
@@ -648,8 +663,10 @@ class DatabaseManager:
         """Set user's email as verified."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # Use TRUE for PostgreSQL, 1 for SQLite
+            val = "TRUE" if self.is_pg else "1"
             cursor.execute(
-                "UPDATE users SET email_verified = 1 WHERE user_id = ?",
+                f"UPDATE users SET email_verified = {val} WHERE user_id = ?",
                 (user_id,),
             )
             conn.commit()
@@ -1059,15 +1076,27 @@ class DatabaseManager:
         """Persist a consent record to the database."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO consent_records (user_id, purposes, version, consent_hash)
-                VALUES (?, ?, ?, ?)
-                """,
-                (user_id, json.dumps(purposes), version, consent_hash),
-            )
-            conn.commit()
-            return cursor.lastrowid
+            if self.is_pg:
+                cursor.execute(
+                    """
+                    INSERT INTO consent_records (user_id, purposes, version, consent_hash)
+                    VALUES (?, ?, ?, ?) RETURNING consent_id
+                    """,
+                    (user_id, json.dumps(purposes), version, consent_hash),
+                )
+                row = cursor.fetchone()
+                conn.commit()
+                return row["consent_id"] if row else 0
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO consent_records (user_id, purposes, version, consent_hash)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (user_id, json.dumps(purposes), version, consent_hash),
+                )
+                conn.commit()
+                return cursor.lastrowid
 
     def withdraw_consent(self, user_id: int, purposes: list = None) -> bool:
         """Mark consent as withdrawn (full or partial)."""
@@ -1172,6 +1201,9 @@ class DatabaseManager:
     def update_user_password(self, user_id: int, new_password: str) -> bool:
         """Update user password hash. Bcrypt embeds the salt in the hash."""
         password_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt())
+        # Decode bytes to str for PostgreSQL TEXT column
+        if isinstance(password_hash, bytes):
+            password_hash = password_hash.decode("utf-8")
         with self.get_connection() as conn:
             conn.execute(
                 "UPDATE users SET password_hash = ?, failed_attempts = 0, locked_until = NULL WHERE user_id = ?",
@@ -1183,9 +1215,10 @@ class DatabaseManager:
     def anonymize_user(self, user_id: int) -> None:
         """Anonymize user PII and deactivate account."""
         anon = f"deleted_{user_id}"
+        _false = "FALSE" if self.is_pg else "0"
         with self.get_connection() as conn:
             conn.execute(
-                "UPDATE users SET username = ?, email = ?, is_active = 0 WHERE user_id = ?",
+                f"UPDATE users SET username = ?, email = ?, is_active = {_false} WHERE user_id = ?",
                 (anon, f"{anon}@example.invalid", user_id),
             )
             # Remove raw_data payloads for minimization
