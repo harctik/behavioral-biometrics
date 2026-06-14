@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel, Field, EmailStr, validator
 from flask_restx import fields, Model
+from flask import request
 
 
 # ============================================================================

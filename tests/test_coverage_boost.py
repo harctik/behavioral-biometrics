@@ -157,7 +157,7 @@ class TestBehavioralFeatureEngine:
         info = engine.get_info()
         assert info["total_features"] == engine.FEATURE_COUNT
         assert "categories" in info
-        assert len(info["categories"]) == 8
+        assert len(info["categories"]) == 9
         assert info["all_feature_names"] == engine.ALL_FEATURES
 
     def test_singleton(self):
@@ -354,7 +354,7 @@ class TestPassiveEnrollment:
     def test_ready_phase(self, mgr):
         for i in range(3):
             mgr.ingest_session_data(1, keystroke_features=self._features(i))
-        mgr._enrollment_status[1] = False
+        mgr._enrollment_status_mem[1] = False
         status = mgr.get_enrollment_status(1)
         assert status["enrollment_phase"] == "ready"
 

@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import { getCollector } from "@/lib/behavioral-collector";
-import { AuthShell } from "@/components/auth/AuthShell";
 import { AuthButton, AuthInlineMessage, AuthInput } from "@/components/auth/AuthPrimitives";
 import { Eye, EyeClosed, Mail, Lock, User, Activity, Fingerprint, ShieldCheck, Type, AlertTriangle } from "lucide-react";
+import { motion } from "framer-motion";
+import { TypingDNA } from "@/components/behavioral/TypingDNA";
+import { BiometricScanner } from "@/components/behavioral/BiometricScanner";
+import { DataQualityRadar } from "@/components/behavioral/DataQualityRadar";
 
 // ── Verification Prompts ───────────────────────────────────────────────────
-// Pangrams and sentences designed for maximum digraph coverage
 const TYPING_PROMPTS = [
   "The quick brown fox jumps over the lazy dog",
   "Pack my box with five dozen liquor jugs",
@@ -56,6 +58,8 @@ export default function SignUpPage() {
   const typingRef = useRef<HTMLTextAreaElement>(null);
 
   // ── Live Analysis State ───────────────────────────────────────────────
+  const [holdTimeSeries, setHoldTimeSeries] = useState<number[]>([]);
+  const [flightTimeSeries, setFlightTimeSeries] = useState<number[]>([]);
   const [liveStats, setLiveStats] = useState<{
     wpm: number;
     correctionRate: number;
@@ -101,8 +105,10 @@ export default function SignUpPage() {
       const flights = ks.map(k => k.flight_time).filter(f => f > 0 && f < 5000);
       const holdMean = holds.length > 0 ? Math.round(holds.reduce((a, b) => a + b, 0) / holds.length) : 0;
       const flightMean = flights.length > 0 ? Math.round(flights.reduce((a, b) => a + b, 0) / flights.length) : 0;
+      setHoldTimeSeries(holds);
+      setFlightTimeSeries(flights);
 
-      // Unique digraph counting (consecutive character pairs)
+      // Unique digraph counting
       const digraphs = new Set<string>();
       for (let i = 0; i < ks.length - 1; i++) {
         if (ks[i].key && ks[i+1].key && ks[i].key.length === 1 && ks[i+1].key.length === 1) {
@@ -180,9 +186,7 @@ export default function SignUpPage() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
-    setSuccessMsg("");
 
-    // Client-side validation
     if (username.length < 3) {
       setError("Username must be at least 3 characters.");
       return;
@@ -198,7 +202,6 @@ export default function SignUpPage() {
       return;
     }
 
-    // ── Behavioral data quality check ──
     const collector = getCollector();
     const preCheck = collector.snapshot("signup_quality_check");
     if (preCheck.keystroke_events.length < 20) {
@@ -216,15 +219,7 @@ export default function SignUpPage() {
 
     setIsLoading(true);
 
-    // ── Flush enrollment seed with full behavioral context ──
     const enrollmentSeed = collector.flush("NEW_ACCOUNT_ENROLLMENT");
-
-    console.log("🧬 [BBA] Enrollment Seed Captured:", {
-      keystroke_events: enrollmentSeed.keystroke_events.length,
-      mouse_events: enrollmentSeed.mouse_events.length,
-      cognitive_events: enrollmentSeed.cognitive_events.length,
-      context: enrollmentSeed.page_context,
-    });
 
     try {
       const result = await apiClient<{
@@ -261,7 +256,6 @@ export default function SignUpPage() {
       setIsEnrolled(true);
       setIsLoading(false);
       
-      // Store initial enrollment progress in localStorage for the login page banner
       localStorage.setItem("bba_enrollment_completed", "1");
       localStorage.setItem("bba_enrollment_required", "5");
     } catch (err: unknown) {
@@ -278,361 +272,407 @@ export default function SignUpPage() {
     }
   };
 
-  if (isEnrolled) {
-    return (
-      <AuthShell title="Welcome to Secure Banking" subtitle="Your account has been created.">
-        <div className="space-y-6 text-center">
-          <div className="mx-auto w-16 h-16 bg-emerald-500/10 flex items-center justify-center rounded-full border border-emerald-500/20">
-            <ShieldCheck className="w-8 h-8 text-emerald-400" />
+  // ── Render ─────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center p-4 lg:p-8 bg-bg bg-grid-pattern">
+      {/* Background Orbs */}
+      <div className="absolute top-1/4 -left-64 w-[500px] h-[500px] bg-accent-primary/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-64 w-[500px] h-[500px] bg-accent-success/10 rounded-full blur-[120px] pointer-events-none" />
+
+      {/* Cyber-ring Scanner Animation */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] pointer-events-none opacity-20">
+        <motion.div
+          className="absolute inset-0 rounded-full border-[1px] border-accent-primary/20"
+          animate={{ rotate: 360, scale: [1, 1.05, 1] }}
+          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+        />
+        <motion.div
+          className="absolute inset-8 rounded-full border-[1px] border-accent-success/20 border-dashed"
+          animate={{ rotate: -360, scale: [1, 0.95, 1] }}
+          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+        />
+      </div>
+
+      <BiometricScanner isVisible={isLoading} status="Encrypting enrollment seed..." />
+
+      {isEnrolled ? (
+        <motion.div
+          initial={{ opacity: 0, y: 30, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full max-w-md relative z-10 glass-panel-glow rounded-3xl p-8 overflow-hidden"
+        >
+          {/* Top Edge Glow line */}
+          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-accent-primary to-transparent opacity-50" />
+          
+          <div className="space-y-6 text-center">
+            <div className="mx-auto w-16 h-16 bg-emerald-500/10 flex items-center justify-center rounded-full border border-emerald-500/20">
+              <ShieldCheck className="w-8 h-8 text-emerald-400" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold tracking-tight text-fg">Verify your email to continue</h3>
+              <p className="text-sm text-muted">
+                We've sent a verification link to <strong>{email}</strong>. Please check your inbox.
+              </p>
+            </div>
+            <div className="bg-slate-900/60 border border-border rounded-xl p-5 text-left space-y-4">
+              <div className="flex items-start gap-3">
+                <Activity className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-medium text-fg">Enrollment Phase: 1 of 5 Sessions</h4>
+                  <p className="text-xs text-muted mt-1 leading-relaxed">
+                    Your baseline profile has been seeded. The next 4 times you log in, we will continue building your behavioral profile silently.
+                  </p>
+                </div>
+              </div>
+              <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
+                <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${(1 / parseInt(typeof window !== 'undefined' ? localStorage.getItem('bba_enrollment_required') || '5' : '5')) * 100}%` }} />
+              </div>
+            </div>
+            {mfaSecret && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left">
+                <h4 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">Save MFA Secret</h4>
+                <div className="flex items-center gap-2">
+                  <p className="flex-1 text-xs text-amber-400/80 font-mono bg-black/40 p-2 rounded">{mfaSecret}</p>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(mfaSecret)} 
+                    className="bg-black/40 hover:bg-black/60 text-amber-400/80 p-2 rounded transition-colors text-xs font-medium"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+            <Link href="/login" className="block w-full">
+              <AuthButton className="w-full">Continue to Login</AuthButton>
+            </Link>
           </div>
-          <div className="space-y-2">
-            <h3 className="text-lg font-medium text-fg">Verify your email to continue</h3>
-            <p className="text-sm text-muted">
-              We've sent a verification link to <strong>{email}</strong>. Please check your inbox.
-            </p>
-          </div>
-          <div className="bg-slate-900/60 border border-border rounded-xl p-5 text-left space-y-4">
-            <div className="flex items-start gap-3">
-              <Activity className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="w-full max-w-[1000px] h-[calc(100vh-2rem)] max-h-[760px] relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-stretch"
+        >
+          {/* ── Left Column: Form ── */}
+          <div className="lg:col-span-5 glass-panel-glow rounded-3xl p-5 lg:p-7 relative overflow-hidden flex flex-col h-full bg-slate-950/60 border border-white/5">
+            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-accent-primary to-transparent opacity-50" />
+            
+            <div className="flex items-center gap-3 mb-5 shrink-0">
+              <motion.div 
+                className="w-10 h-10 rounded-xl bg-black/40 border border-border flex items-center justify-center text-accent-primary relative overflow-hidden shrink-0"
+                whileHover={{ scale: 1.05 }}
+              >
+                <div className="absolute inset-0 bg-accent-primary/10" />
+                <ShieldCheck size={20} className="relative z-10" />
+              </motion.div>
               <div>
-                <h4 className="text-sm font-medium text-fg">Enrollment Phase: 1 of 5 Sessions</h4>
-                <p className="text-xs text-muted mt-1 leading-relaxed">
-                  Your baseline profile has been seeded. The next 4 times you log in, we will continue building your behavioral profile silently.
+                <h1 className="text-xl font-bold tracking-tight text-fg">Create account</h1>
+                <p className="text-muted text-xs leading-relaxed">
+                  Secured by invisible behavioral patterns.
                 </p>
               </div>
             </div>
-            <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
-              <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${(1 / parseInt(typeof window !== 'undefined' ? localStorage.getItem('bba_enrollment_required') || '5' : '5')) * 100}%` }} />
-            </div>
-          </div>
-          {mfaSecret && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left">
-              <h4 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">Save MFA Secret</h4>
-              <div className="flex items-center gap-2">
-                <p className="flex-1 text-xs text-amber-400/80 font-mono bg-black/40 p-2 rounded">{mfaSecret}</p>
-                <button 
-                  onClick={() => navigator.clipboard.writeText(mfaSecret)} 
-                  className="bg-black/40 hover:bg-black/60 text-amber-400/80 p-2 rounded transition-colors text-xs font-medium"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          )}
-          <Link href="/login" className="block w-full">
-            <AuthButton className="w-full">Continue to Login</AuthButton>
-          </Link>
-        </div>
-      </AuthShell>
-    );
-  }
 
-  return (
-    <AuthShell title="Create your account" subtitle="Sign up for secure banking. We protect your account using behavioral patterns.">
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
+            <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between overflow-y-auto pr-1 custom-scrollbar">
+              <div className="space-y-3.5">
+                {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
 
-        <div className="space-y-4">
-          {/* ── Username ── */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted uppercase tracking-wider ml-1">Username</label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-2" />
-              <AuthInput
-                id="signup-username"
-                type="text"
-                name="username"
-                autoComplete="username"
-                placeholder="Enter username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                className="pl-10"
-              />
-            </div>
-          </div>
-
-          {/* ── Email ── */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted uppercase tracking-wider ml-1">Email</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-2" />
-              <AuthInput
-                id="signup-email"
-                type="email"
-                name="email"
-                autoComplete="email"
-                placeholder="Enter email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="pl-10"
-              />
-            </div>
-          </div>
-
-          {/* ── Password ── */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted uppercase tracking-wider ml-1">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-2" />
-              <AuthInput
-                id="signup-password"
-                type={showPassword ? "text" : "password"}
-                name="password"
-                autoComplete="new-password"
-                placeholder="Secure password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="pl-10 pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-2 hover:text-fg transition-colors"
-              >
-                {showPassword ? <Eye className="w-4 h-4" /> : <EyeClosed className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* ── Password Strength Meter ── */}
-          {password.length > 0 && (
-            <div className="space-y-1.5 mt-3">
-              <div className="flex justify-between items-center text-[10px] uppercase tracking-wider">
-                <span className="text-muted">Password Strength</span>
-                <span className={strengthColors[Math.max(0, strength)].replace("bg-", "text-")}>
-                  {strengthLabels[Math.max(0, strength)]}
-                </span>
-              </div>
-              <div className="flex gap-1 h-1.5">
-                {[1, 2, 3, 4, 5].map((level) => (
-                  <div
-                    key={level}
-                    className={`h-full flex-1 rounded-full transition-colors duration-300 ${
-                      level <= strength ? strengthColors[strength] : "bg-white/10"
-                    }`}
-                  />
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-2">
-                {[
-                  { label: "8+ characters", ok: passwordChecks.length },
-                  { label: "Lowercase", ok: passwordChecks.lowercase },
-                  { label: "Uppercase", ok: passwordChecks.uppercase },
-                  { label: "Digit", ok: passwordChecks.digit },
-                  { label: "Special @$!%*?&", ok: passwordChecks.special },
-                ].map((c) => (
-                  <span key={c.label} className={`text-[10px] ${c.ok ? "text-emerald-400" : "text-white/30"}`}>
-                    {c.ok ? "✓" : "○"} {c.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Behavioral Typing Verification ── */}
-          <div className="mt-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <Fingerprint className="w-4 h-4 text-cyan-400" />
-              <label className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">
-                Create Your Typing Profile
-              </label>
-            </div>
-            <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3">
-              <p className="text-xs text-cyan-300">
-                Type this naturally — we're capturing your rhythm, not your speed. Pasting won't work here.
-              </p>
-            </div>
-
-            {/* Prompt display */}
-            <div className="bg-slate-900/60 border border-cyan-500/20 rounded-lg px-4 py-3 font-mono text-sm text-cyan-300 tracking-wide select-none">
-              {typingPrompt}
-            </div>
-
-            {/* Typing textarea */}
-            <div className="relative">
-              <Type className="absolute left-3 top-3 w-4 h-4 text-muted-2" />
-              <textarea
-                ref={typingRef}
-                id="behavioral-verify-text"
-                value={typedText}
-                onChange={(e) => setTypedText(e.target.value)}
-                onPaste={handleVerifyPaste}
-                placeholder="Type the text above here..."
-                rows={2}
-                className="w-full bg-surface border border-border rounded-lg pl-10 pr-4 py-3 text-sm text-fg placeholder:text-muted-2 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/40 font-mono resize-none transition-all"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-
-            {/* Paste detection warning */}
-            {pasteDetected && (
-              <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 animate-pulse">
-                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                <span className="text-[10px] text-red-400 font-medium">
-                  Paste detected — please type the text manually. This is a behavioral verification.
-                </span>
-              </div>
-            )}
-
-            {/* Live accuracy meter */}
-            {typedText.length > 0 && (
-              <div className="flex flex-col gap-1.5 mt-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 h-1 bg-black/40 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-300 rounded-full ${
-                        liveStats.typingAccuracy >= 90 ? "bg-emerald-400" :
-                        liveStats.typingAccuracy >= 70 ? "bg-yellow-400" : "bg-red-400"
-                      }`}
-                      style={{ width: `${liveStats.typingAccuracy}%` }}
+                {/* Username */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Username</label>
+                  <div className="relative">
+                    <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-2" />
+                    <AuthInput
+                      id="signup-username"
+                      type="text"
+                      name="username"
+                      autoComplete="username"
+                      placeholder="Enter username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      required
+                      className="pl-8 py-2 text-sm"
                     />
                   </div>
-                  <span className={`text-[10px] tabular-nums font-mono ${
-                    liveStats.typingAccuracy >= 90 ? "text-emerald-400" :
-                    liveStats.typingAccuracy >= 70 ? "text-yellow-400" : "text-red-400"
-                  }`}>
-                    {liveStats.typingAccuracy}% match
-                  </span>
-                  <span className="text-[9px] text-muted-2">(Min 70%)</span>
                 </div>
-                {liveStats.keystrokes < 20 && (
-                  <div className="text-[10px] text-amber-400 font-medium">
-                    {20 - liveStats.keystrokes} more keystrokes needed for enrollment
+
+                {/* Email */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Email</label>
+                  <div className="relative">
+                    <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-2" />
+                    <AuthInput
+                      id="signup-email"
+                      type="email"
+                      name="email"
+                      autoComplete="email"
+                      placeholder="Enter email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="pl-8 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Password */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-2" />
+                    <AuthInput
+                      id="signup-password"
+                      type={showPassword ? "text" : "password"}
+                      name="password"
+                      autoComplete="new-password"
+                      placeholder="Secure password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      className="pl-8 pr-8 py-2 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-2 hover:text-fg transition-colors"
+                    >
+                      {showPassword ? <Eye className="w-3.5 h-3.5" /> : <EyeClosed className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Password Strength */}
+                {password.length > 0 && (
+                  <div className="space-y-1.5 mt-1">
+                    <div className="flex justify-between items-center text-[9px] uppercase tracking-wider">
+                      <span className="text-muted">Strength</span>
+                      <span className={strengthColors[Math.max(0, strength)].replace("bg-", "text-")}>
+                        {strengthLabels[Math.max(0, strength)]}
+                      </span>
+                    </div>
+                    <div className="flex gap-1 h-1">
+                      {[1, 2, 3, 4, 5].map((level) => (
+                        <div
+                          key={level}
+                          className={`h-full flex-1 rounded-full transition-colors duration-300 ${
+                            level <= strength ? strengthColors[strength] : "bg-white/10"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 mt-1">
+                      {[
+                        { label: "8+ chars", ok: passwordChecks.length },
+                        { label: "Lowercase", ok: passwordChecks.lowercase },
+                        { label: "Uppercase", ok: passwordChecks.uppercase },
+                        { label: "Digit", ok: passwordChecks.digit },
+                        { label: "Special", ok: passwordChecks.special },
+                      ].map((c) => (
+                        <span key={c.label} className={`text-[9px] ${c.ok ? "text-emerald-400" : "text-white/30"}`}>
+                          {c.ok ? "✓" : "○"} {c.label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
+
+                {/* ── Typing Verification Widget ── */}
+                <div className="pt-3 mt-2 border-t border-white/5 space-y-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <Fingerprint className="w-3.5 h-3.5 text-cyan-400" />
+                    <label className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider">
+                      Seed Your Typing Profile
+                    </label>
+                  </div>
+                  
+                  <div className="bg-cyan-500/5 border border-cyan-500/10 rounded px-2.5 py-1.5">
+                    <p className="text-[10px] text-cyan-400/80 leading-snug">
+                      Type this naturally — we're capturing your rhythm. Pasting is disabled.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-900/60 border border-cyan-500/20 rounded-md px-3 py-2 font-mono text-[11px] leading-tight text-cyan-300 tracking-wide select-none">
+                    {typingPrompt}
+                  </div>
+
+                  <div className="relative">
+                    <Type className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-2" />
+                    <textarea
+                      ref={typingRef}
+                      id="behavioral-verify-text"
+                      value={typedText}
+                      onChange={(e) => setTypedText(e.target.value)}
+                      onPaste={handleVerifyPaste}
+                      placeholder="Type the text above here..."
+                      className="w-full bg-black/40 border border-white/10 rounded-md pl-8 pr-3 py-2 text-xs text-fg placeholder:text-muted-2 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/40 font-mono resize-none transition-all h-[52px]"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </div>
+
+                  {pasteDetected && (
+                    <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded px-2 py-1.5 animate-pulse">
+                      <AlertTriangle className="w-3 h-3 text-red-400" />
+                      <span className="text-[9px] text-red-400 font-medium">
+                        Paste detected — type manually.
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
+
+              <div className="mt-5 pt-3 sticky bottom-0 bg-slate-950/60 backdrop-blur-md pb-1">
+                <AuthButton type="submit" disabled={isLoading || !allPasswordValid} className="w-full py-2 text-sm">
+                  {isLoading ? "Provisioning..." : "Create Account"}
+                </AuthButton>
+                <p className="text-center text-[10px] text-muted mt-3">
+                  Already have an account?{" "}
+                  <Link href="/login" className="text-accent-primary hover:text-blue-400 transition-colors">
+                    Sign in
+                  </Link>
+                </p>
+              </div>
+            </form>
           </div>
-        </div>
 
-        <AuthButton type="submit" disabled={isLoading || !allPasswordValid} className="mt-6 w-full">
-          {isLoading ? "Provisioning..." : "Enroll Device"}
-        </AuthButton>
-
-        <p className="text-center text-xs text-muted mt-4">
-          Already have an account?{" "}
-          <Link href="/login" className="text-accent-primary hover:text-blue-400 transition-colors">
-            Sign in
-          </Link>
-        </p>
-      </form>
-
-      {/* ── Enrollment Seed Analysis Panel ── */}
-      <div className="mt-6 bg-slate-900/40 border border-border rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-4">
-          <Activity className="w-4 h-4 text-accent-primary" />
-          <span className="text-[10px] uppercase tracking-widest font-bold text-accent-primary">Your Behavioral Profile Baseline</span>
-        </div>
-
-        {liveStats.keystrokes < 5 ? (
-          <div className="py-8 text-center text-xs text-muted italic font-mono bg-black/20 rounded-lg border border-white/5">
-            Begin typing in the verification field to initialize your behavioral baseline...
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-          {/* Keystroke Collection */}
-          <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
-            <div className="text-[9px] uppercase tracking-wider text-muted mb-2">Keystroke Data</div>
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-muted">Total Keys</span>
-                <span className={liveStats.keystrokes > 20 ? "text-emerald-400" : "text-amber-400"}>{liveStats.keystrokes}</span>
+          {/* ── Right Column: Behavioral Profile ── */}
+          <div className="lg:col-span-7 glass-panel-glow rounded-3xl p-5 lg:p-7 relative overflow-hidden bg-slate-950/60 border border-white/5 flex flex-col h-full">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-cyan-400" />
+                <h2 className="text-[11px] uppercase tracking-widest font-bold text-cyan-400">Behavioral Profile Baseline</h2>
               </div>
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-muted">Hold Time</span>
-                <span className="text-slate-300">{liveStats.holdMean}ms</span>
+              <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-black/40 rounded-full border border-white/5">
+                <span className={`w-1.5 h-1.5 rounded-full ${liveStats.keystrokes >= 20 ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                <span className="text-[9px] font-mono text-muted font-bold">{liveStats.keystrokes >= 20 ? 'READY' : 'RECORDING'}</span>
               </div>
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-muted">Flight Time</span>
-                <span className="text-slate-300">{liveStats.flightMean}ms</span>
+            </div>
+
+            {/* ── Live Stats Grid ── */}
+            <div className="grid grid-cols-2 gap-3 mb-3 flex-1">
+              {/* Left Data Column */}
+              <div className="space-y-3 flex flex-col">
+                <div className="bg-black/30 rounded-xl p-3 border border-white/5 flex-1 flex flex-col justify-center">
+                  <div className="text-[9px] uppercase tracking-wider text-muted font-bold mb-2">Keystroke Data</div>
+                  <div className="space-y-1.5">
+                    <StatRow label="Total Keys" value={liveStats.keystrokes} color={liveStats.keystrokes > 20 ? "text-emerald-400" : "text-amber-400"} />
+                    <StatRow label="Hold Time" value={`${liveStats.holdMean}ms`} color="text-blue-400" />
+                    <StatRow label="Flight Time" value={`${liveStats.flightMean}ms`} color="text-purple-400" />
+                    <StatRow label="Digraphs" value={liveStats.digraphCount} color={liveStats.digraphCount > 15 ? "text-emerald-400" : "text-slate-300"} />
+                  </div>
+                </div>
+
+                <div className="bg-black/30 rounded-xl p-3 border border-white/5 flex-1 flex flex-col justify-center">
+                  <div className="text-[9px] uppercase tracking-wider text-muted font-bold mb-2">Behavioral Signals</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <StatBox label="WPM" value={liveStats.wpm} color={liveStats.wpm < 20 ? "text-amber-400" : "text-emerald-400"} />
+                    <StatBox label="Corrections" value={`${liveStats.correctionRate}%`} color="text-slate-300" />
+                    <StatBox label="Mouse Events" value={liveStats.mouseEvents} color="text-slate-300" />
+                    <StatBox label="Paste" value={liveStats.pasteCount > 0 ? `⚠ ${liveStats.pasteCount}` : "0 ✓"} color={liveStats.pasteCount > 0 ? "text-red-400" : "text-emerald-400"} />
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-muted">Unique Digraphs</span>
-                <span className={liveStats.digraphCount > 15 ? "text-emerald-400" : "text-slate-300"}>{liveStats.digraphCount}</span>
+
+              {/* Right Data Column */}
+              <div className="space-y-3 flex flex-col">
+                <div className="flex flex-col items-center justify-center bg-black/30 rounded-xl p-3 border border-white/5 flex-[2]">
+                  <DataQualityRadar
+                    digraphs={liveStats.digraphCount}
+                    consistency={Math.max(0, 100 - liveStats.correctionRate)}
+                    rhythm={holdTimeSeries.length > 3 ? Math.min(100, Math.round(100 - (Math.abs(liveStats.holdMean - 120) / 120) * 50)) : 0}
+                    volume={Math.min(100, Math.round((liveStats.keystrokes / 40) * 100))}
+                    accuracy={liveStats.typingAccuracy}
+                    size={140}
+                  />
+                  <span className="text-[9px] text-muted-2 font-mono mt-3 uppercase tracking-widest">Data Quality</span>
+                </div>
+
+                <div className="bg-black/30 rounded-xl p-3 border border-white/5 flex-1 flex flex-col justify-center">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[9px] uppercase tracking-wider text-muted font-bold">Enrollment Seed Quality</span>
+                    <span className={`text-[9px] font-mono font-semibold ${
+                      liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "text-emerald-400" :
+                      liveStats.keystrokes >= 20 ? "text-yellow-400" : "text-red-400"
+                    }`}>
+                      {liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "✓ Excellent" :
+                       liveStats.keystrokes >= 20 ? "◐ Sufficient" : "○ Need typing"}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
+                    <motion.div
+                      className={`h-full rounded-full ${
+                        liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "bg-gradient-to-r from-emerald-500 to-emerald-400" :
+                        liveStats.keystrokes >= 20 ? "bg-gradient-to-r from-yellow-500 to-yellow-400" : "bg-gradient-to-r from-red-500 to-red-400"
+                      }`}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min(100, ((liveStats.keystrokes / 40) * 50) + ((liveStats.digraphCount / 15) * 50))}%` }}
+                      transition={{ duration: 0.5, ease: "easeOut" }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Bio-Signature & Navigation Footer ── */}
+            <div className="bg-black/30 rounded-xl p-3 border border-white/5 flex flex-col shrink-0">
+              <div>
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <Fingerprint className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="text-[9px] uppercase tracking-widest text-cyan-400 font-bold">Unique Bio-Signature</span>
+                  </div>
+                  <span className="text-[9px] text-muted font-mono">{holdTimeSeries.length} samples</span>
+                </div>
+                <div className="bg-black/20 rounded border border-white/5 p-1.5">
+                  <TypingDNA holdTimes={holdTimeSeries} flightTimes={flightTimeSeries} height={32} />
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-white/5 space-y-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] uppercase tracking-wider text-muted font-bold">Navigation:</span>
+                  {liveStats.sequence.length === 0 ? (
+                    <span className="text-[9px] text-slate-500 italic">Waiting...</span>
+                  ) : (
+                    liveStats.sequence.map((id, idx) => (
+                      <span key={idx} className="px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-[8px] font-mono text-cyan-400">
+                        {idx + 1}. {id.replace('signup-', '').replace('behavioral-verify-text', 'verify').replace('behavioral-', '')}
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex items-start gap-1.5">
+                  <ShieldCheck className="w-3 h-3 text-cyan-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-[9px] text-cyan-400/80 leading-relaxed pr-1">
+                    This data creates the foundation of your secure profile. Your next 4 logins will complete your behavioral fingerprint to ensure you are fully protected. No extra steps required!
+                  </p>
+                </div>
               </div>
             </div>
           </div>
+        </motion.div>
+      )}
+    </div>
+  );
+}
 
-          {/* Behavioral Signals */}
-          <div className="bg-black/20 rounded-lg p-3 border border-slate-700/50">
-            <div className="text-[9px] uppercase tracking-wider text-muted mb-2">Behavioral Signals</div>
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-muted">WPM</span>
-                <span className={liveStats.wpm < 20 ? "text-amber-400" : "text-emerald-400"}>{liveStats.wpm}</span>
-              </div>
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-muted">Corrections</span>
-                <span className="text-slate-300">{liveStats.correctionRate}%</span>
-              </div>
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-muted">Mouse Events</span>
-                <span className="text-slate-300">{liveStats.mouseEvents}</span>
-              </div>
-              <div className="flex justify-between text-[11px] font-mono">
-                <span className="text-muted">Paste Attempts</span>
-                <span className={liveStats.pasteCount > 0 ? "text-red-400" : "text-emerald-400"}>
-                  {liveStats.pasteCount > 0 ? `⚠ ${liveStats.pasteCount}` : "0 ✓"}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+function StatRow({ label, value, color }: { label: string; value: string | number; color: string }) {
+  return (
+    <div className="flex items-center justify-between bg-black/40 rounded px-2.5 py-1 border border-white/5">
+      <span className="text-[9px] text-muted">{label}</span>
+      <span className={`text-[10px] font-mono font-semibold ${color}`}>{value}</span>
+    </div>
+  );
+}
 
-        {/* Data Quality Indicator */}
-        <div className="mt-3 pt-3 border-t border-slate-700/50">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[9px] uppercase tracking-wider text-muted">Enrollment Seed Quality</span>
-            <span className={`text-[10px] font-mono ${
-              liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "text-emerald-400" :
-              liveStats.keystrokes >= 20 ? "text-yellow-400" : "text-red-400"
-            }`}>
-              {liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "✓ Excellent" :
-               liveStats.keystrokes >= 20 ? "◐ Sufficient" : "○ Need more typing"}
-            </span>
-          </div>
-          <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "bg-emerald-400" :
-                liveStats.keystrokes >= 20 ? "bg-yellow-400" : "bg-red-400"
-              }`}
-              style={{ width: `${Math.min(100, ((liveStats.keystrokes / 40) * 50) + ((liveStats.digraphCount / 15) * 50))}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Field Sequence */}
-        <div className="mt-3">
-          <div className="text-[9px] uppercase tracking-wider text-muted mb-1.5">Field Navigation Sequence</div>
-          <div className="flex flex-wrap gap-1.5">
-            {liveStats.sequence.length === 0 ? (
-              <span className="text-[10px] text-slate-500 italic">Waiting for interaction...</span>
-            ) : (
-              liveStats.sequence.map((id, idx) => (
-                <span key={idx} className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[9px] font-mono text-slate-300">
-                  {idx + 1}. {id.replace('signup-', '').replace('behavioral-verify-text', 'verify').replace('behavioral-', '')}
-                </span>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Passive enrollment explanation */}
-        <div className="mt-3 flex items-start gap-2 bg-cyan-500/5 border border-cyan-500/15 rounded-lg px-3 py-2">
-          <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 mt-0.5 flex-shrink-0" />
-          <p className="text-[9px] text-cyan-400/80 leading-relaxed">
-            This data creates the foundation of your secure profile. Your next 4 logins will help us complete your behavioral fingerprint to ensure you are fully protected. No extra steps required!
-          </p>
-        </div>
-        </>
-        )}
-      </div>
-    </AuthShell>
+function StatBox({ label, value, color }: { label: string; value: string | number; color: string }) {
+  return (
+    <div className="bg-black/40 rounded p-1.5 border border-white/5 flex flex-col items-center justify-center text-center">
+      <span className={`text-[11px] font-mono font-bold ${color}`}>{value}</span>
+      <span className="text-[7px] uppercase tracking-wider text-muted mt-0.5">{label}</span>
+    </div>
   );
 }

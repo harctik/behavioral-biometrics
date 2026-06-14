@@ -7,6 +7,9 @@ import { BehavioralProvider } from "@/components/BehavioralProvider";
 import { SessionTimeoutWarning } from "@/components/SessionTimeoutWarning";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
+import { Footer } from "@/components/Footer";
+import { Toaster } from "sonner";
+
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
@@ -37,10 +40,10 @@ export default function RootLayout({
         <ServiceWorkerRegistration />
         <BehavioralProvider />
         <SessionTimeoutWarning />
-        <NavBar />
         <main className="flex-1 relative z-10">
           {children}
         </main>
+        <Toaster theme="dark" position="bottom-right" />
         <SpeedInsights />
       </body>
     </html>

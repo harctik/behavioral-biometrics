@@ -91,6 +91,18 @@ class LivenessDetector:
 
         # ── Bot indicators ────────────────────────────────────────────
 
+        # Burst injection detection: flight_time_cv near-zero = automated
+        flight_cv = features.get("flight_time_cv", 1.0)
+        bigram_mean = features.get("bigram_speed_mean", 150)
+
+        # Suspiciously fast AND robotic rhythm = script injection
+        if bigram_mean < 50 and flight_cv < 0.1:
+            evidence_bot += 0.4
+            flags.append(f"liveness:sub50ms_burst_injection (mean={bigram_mean:.0f}ms, cv={flight_cv:.3f})")
+        elif bigram_mean < 80 and flight_cv < 0.15:
+            evidence_bot += 0.2
+            flags.append(f"liveness:suspicious_burst_speed (mean={bigram_mean:.0f}ms)")
+
         # Zero scroll variation = programmatic
         scroll_vel_std = features.get("scroll_velocity_std", 0)
         scroll_vel_mean = features.get("scroll_velocity_mean", 0)
@@ -119,11 +131,60 @@ class LivenessDetector:
             evidence_bot += 0.3
             flags.append("liveness:failed_challenges")
 
+        # Zero backspaces over meaningful keycount = inhuman perfection
+        total_keys = features.get("total_keystrokes", 0)
+        if total_keys > 20 and correction_rate == 0.0:
+            evidence_bot += 0.25
+            flags.append(f"liveness:zero_errors_over_{int(total_keys)}_keys")
+
+        # Flight time CV near zero = robotic injection
+        if flight_cv < 0.05 and total_keys > 30:
+            evidence_bot += 0.3
+            flags.append(
+                f"liveness:robotic_rhythm(cv={flight_cv:.3f}, keys={total_keys})"
+            )
+
+        # Zero modifier overlaps on extended typing = no shift usage = script
+        mod_count = features.get("modifier_overlap_count", 0)
+        if total_keys > 50 and mod_count == 0:
+            evidence_bot += 0.15
+            flags.append("liveness:zero_modifier_overlaps")
+
+        # ── Digraph-based human indicators ────────────────────────────
+
+        # Natural digraph variance = human (each pair has unique rhythm)
+        digraph_stds = [
+            v for k, v in features.items()
+            if k.startswith("digraph_") and k.endswith("_std") and v > 0
+        ]
+        if len(digraph_stds) >= 3:
+            import numpy as np
+            avg_digraph_std = float(np.mean(digraph_stds))
+            if avg_digraph_std > 15:  # Natural variance in ms
+                evidence_human += 0.1
+                flags.append(f"liveness:natural_digraph_variance(avg_std={avg_digraph_std:.0f}ms)")
+            elif avg_digraph_std < 3:  # Too consistent = scripted
+                evidence_bot += 0.2
+                flags.append(f"liveness:uniform_digraph_timing(avg_std={avg_digraph_std:.0f}ms)")
+
+        # Modifier overlap presence = human (bots rarely hold shift naturally)
+        mod_mean = features.get("modifier_overlap_mean", 0)
+        if mod_count > 0 and 50 < mod_mean < 500:
+            evidence_human += 0.08
+            flags.append(
+                f"liveness:natural_modifier_usage"
+                f"(count={mod_count}, mean={mod_mean:.0f}ms)"
+            )
+
         # ── Score computation ─────────────────────────────────────────
 
         # Liveness = human evidence minus bot evidence
         liveness = 0.5 + evidence_human - evidence_bot
         liveness = max(0.0, min(1.0, liveness))
+
+        # Confidence based on total evidence collected
+        total_evidence = evidence_human + evidence_bot
+        confidence = min(1.0, total_evidence / 0.8)  # Saturates at 0.8 total
 
         if liveness >= 0.6:
             classification = "human"
@@ -136,4 +197,8 @@ class LivenessDetector:
             "liveness_score": round(liveness, 4),
             "liveness_flags": flags,
             "classification": classification,
+            "confidence": round(confidence, 4),
+            "evidence_human": round(evidence_human, 4),
+            "evidence_bot": round(evidence_bot, 4),
         }
+

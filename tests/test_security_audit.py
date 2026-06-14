@@ -43,8 +43,14 @@ class TestPasswordResetEndToEnd:
         with app.app_context():
             db = get_db()
             with db.get_connection() as conn:
+                try:
+                    from app.database_pg import DatabaseManager as PostgresDatabaseManager
+                    is_pg = isinstance(db, PostgresDatabaseManager)
+                except ImportError:
+                    is_pg = False
+                placeholder = "%s" if is_pg else "?"
                 row = conn.execute(
-                    "SELECT token_hash FROM password_reset_tokens WHERE user_id = ? ORDER BY issued_at DESC LIMIT 1",
+                    f"SELECT token_hash FROM password_reset_tokens WHERE user_id = {placeholder} ORDER BY issued_at DESC LIMIT 1",
                     (user_id,),
                 ).fetchone()
 

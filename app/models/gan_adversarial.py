@@ -27,47 +27,64 @@ logger = logging.getLogger(__name__)
 
 
 class Generator(nn.Module):
-    """Generates synthetic behavioral profiles (CTGAN-style)"""
+    """Generates synthetic behavioral profiles (WGAN-GP style with residual blocks)"""
 
     def __init__(self, latent_dim: int = 100, output_dim: int = 20):
         super().__init__()
 
-        self.model = nn.Sequential(
-            nn.Linear(latent_dim, 128),
-            nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Linear(128, 256),
-            nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Linear(256, 512),
-            nn.ReLU(),
-            nn.BatchNorm1d(512),
-            nn.Linear(512, output_dim),
-            nn.Tanh(),  # Normalize output to [-1, 1]
+        self.fc_in = nn.Linear(latent_dim, 256)
+
+        # Residual block 1
+        self.res1 = nn.Sequential(
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Linear(256, 256),
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Linear(256, 256),
+        )
+
+        # Residual block 2
+        self.res2 = nn.Sequential(
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Linear(256, 256),
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Linear(256, 256),
+        )
+
+        self.fc_out = nn.Sequential(
+            nn.LayerNorm(256),
+            nn.GELU(),
+            nn.Linear(256, output_dim),
+            nn.Tanh(),
         )
 
     def forward(self, z):
-        return self.model(z)
+        x = self.fc_in(z)
+        x = x + self.res1(x)  # Residual connection
+        x = x + self.res2(x)  # Residual connection
+        return self.fc_out(x)
 
 
 class Discriminator(nn.Module):
-    """Discriminates between real and synthetic profiles"""
+    """WGAN-GP Critic — outputs unbounded score (no sigmoid)"""
 
     def __init__(self, input_dim: int = 20):
         super().__init__()
 
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 512),
+            nn.utils.spectral_norm(nn.Linear(input_dim, 512)),
             nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
-            nn.Linear(512, 256),
+            nn.Dropout(0.2),
+            nn.utils.spectral_norm(nn.Linear(512, 256)),
             nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
-            nn.Linear(256, 128),
+            nn.Dropout(0.2),
+            nn.utils.spectral_norm(nn.Linear(256, 128)),
             nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
-            nn.Linear(128, 1),
-            nn.Sigmoid(),
+            nn.utils.spectral_norm(nn.Linear(128, 1)),
+            # No sigmoid — Wasserstein loss uses raw critic score
         )
 
     def forward(self, x):
@@ -216,21 +233,53 @@ class AdversarialTrainer:
         self.generator = Generator(latent_dim, input_dim)
         self.discriminator = Discriminator(input_dim)
 
+        # WGAN-GP uses Adam with lower betas for stability
         self.g_optimizer = optim.Adam(
-            self.generator.parameters(), lr=0.0002, betas=(0.5, 0.999)
+            self.generator.parameters(), lr=1e-4, betas=(0.0, 0.9)
         )
         self.d_optimizer = optim.Adam(
-            self.discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999)
+            self.discriminator.parameters(), lr=1e-4, betas=(0.0, 0.9)
         )
 
-        self.gan_loss = nn.BCELoss()
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.feature_names: Optional[List[str]] = None
+        self.gradient_penalty_weight = 10.0  # GP lambda
+        self.n_critic = 5  # Train critic 5x per generator step
+
+    def _gradient_penalty(
+        self, real_data: torch.Tensor, fake_data: torch.Tensor
+    ) -> torch.Tensor:
+        """Compute gradient penalty for WGAN-GP (Gulrajani et al. 2017).
+
+        Enforces 1-Lipschitz constraint on the critic by penalizing
+        gradient norms != 1 on interpolated samples.
+        """
+        batch_size = real_data.size(0)
+        alpha = torch.rand(batch_size, 1)
+        alpha = alpha.expand_as(real_data)
+
+        interpolated = alpha * real_data + (1 - alpha) * fake_data
+        interpolated.requires_grad_(True)
+
+        d_interpolated = self.discriminator(interpolated)
+
+        gradients = torch.autograd.grad(
+            outputs=d_interpolated,
+            inputs=interpolated,
+            grad_outputs=torch.ones_like(d_interpolated),
+            create_graph=True,
+            retain_graph=True,
+        )[0]
+
+        gradients = gradients.view(batch_size, -1)
+        gradient_norm = gradients.norm(2, dim=1)
+        penalty = ((gradient_norm - 1) ** 2).mean()
+        return penalty
 
     def train_gan(self, real_features: List[Dict], epochs: int = 100):
-        """Train GAN on real features"""
-        logger.info("Starting adversarial training...")
+        """Train WGAN-GP on real features (Wasserstein + Gradient Penalty)."""
+        logger.info("Starting WGAN-GP adversarial training...")
 
         # Store feature names for synthetic profile generation
         self.feature_names = sorted(real_features[0].keys())
@@ -251,46 +300,48 @@ class AdversarialTrainer:
         self.discriminator.train()
 
         for epoch in range(epochs):
-            # Train discriminator
-            self.d_optimizer.zero_grad()
+            # ── Train Critic (n_critic steps per generator step) ──
+            d_loss_epoch = 0.0
+            for _ in range(self.n_critic):
+                self.d_optimizer.zero_grad()
 
-            # Real samples
-            real_batch = torch.FloatTensor(
-                real_data[np.random.choice(len(real_data), batch_size)]
-            )
-            real_labels = torch.ones(batch_size, 1)
+                # Real samples
+                idx = np.random.choice(len(real_data), batch_size)
+                real_batch = torch.FloatTensor(real_data[idx])
 
-            # Fake samples
-            z = torch.randn(batch_size, self.latent_dim)
-            fake_batch = self.generator(z)
-            fake_labels = torch.zeros(batch_size, 1)
+                # Fake samples
+                z = torch.randn(batch_size, self.latent_dim)
+                fake_batch = self.generator(z).detach()
 
-            # Discriminator loss
-            d_loss_real = self.gan_loss(self.discriminator(real_batch), real_labels)
-            d_loss_fake = self.gan_loss(
-                self.discriminator(fake_batch.detach()), fake_labels
-            )
-            d_loss = d_loss_real + d_loss_fake
+                # Wasserstein loss: maximize D(real) - D(fake)
+                d_real = self.discriminator(real_batch).mean()
+                d_fake = self.discriminator(fake_batch).mean()
+                gp = self._gradient_penalty(real_batch, fake_batch)
 
-            d_loss.backward()
-            self.d_optimizer.step()
+                d_loss = -d_real + d_fake + self.gradient_penalty_weight * gp
+                d_loss.backward()
+                self.d_optimizer.step()
+                d_loss_epoch = d_loss.item()
 
-            # Train generator
+            # ── Train Generator (1 step) ──
             self.g_optimizer.zero_grad()
 
             z = torch.randn(batch_size, self.latent_dim)
             fake_batch = self.generator(z)
-            g_loss = self.gan_loss(self.discriminator(fake_batch), real_labels)
+            g_loss = -self.discriminator(fake_batch).mean()  # Maximize D(fake)
 
             g_loss.backward()
             self.g_optimizer.step()
 
             if epoch % 20 == 0:
+                # Compute Wasserstein distance estimate
+                w_dist = d_real.item() - d_fake.item()
                 logger.info(
-                    f"Epoch {epoch}, D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}"
+                    f"Epoch {epoch}, D Loss: {d_loss_epoch:.4f}, "
+                    f"G Loss: {g_loss.item():.4f}, W-dist: {w_dist:.4f}"
                 )
 
-        logger.info("Adversarial training completed")
+        logger.info("WGAN-GP adversarial training completed")
 
     def generate_synthetic_profiles(self, num_samples: int) -> List[Dict]:
         """Generate synthetic behavioral profiles for adversarial training."""

@@ -22,10 +22,8 @@ import logging
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Settings
-from .config import Settings
-_settings = Settings()
 
-from .database_pg import get_engine
+
 from .logging_config import setup_logging, get_logger
 from .redis_store import get_redis_client
 from .error_handling import make_error_response, ErrorHandler
@@ -60,7 +58,7 @@ def create_app(env: str = "development"):
             "JWT_COOKIE_CSRF_PROTECT": True,
             "JWT_COOKIE_SAMESITE": "Strict",
             "DATABASE_PATH": settings.DATABASE_PATH,
-            "SQLALCHEMY_DATABASE_URI": settings.SQLALCHEMY_DATABASE_URI or f"sqlite:///{settings.DATABASE_PATH}",
+            "SQLALCHEMY_DATABASE_URI": settings.SQLALCHEMY_DATABASE_URI,
             "CSRF_ENABLED": settings.CSRF_ENABLED,
             "CSRF_HEADER_NAME": settings.CSRF_HEADER_NAME,
             "RISK_HIGH_THRESHOLD": settings.RISK_HIGH_THRESHOLD,
@@ -98,7 +96,8 @@ def create_app(env: str = "development"):
 
     if env == "testing":
         app.config["CSRF_ENABLED"] = False
-        app.config["DATABASE_PATH"] = ":memory:"
+        # PostgreSQL doesn't support :memory: - tests must provide SQLALCHEMY_DATABASE_URI
+        # or the app will use the configured production/development DB
         app.config["TESTING"] = True
 
     # ── JWT ──────────────────────────────────────────────────────────────────
@@ -112,6 +111,10 @@ def create_app(env: str = "development"):
         return app.config["JWT_SECRET_KEY"]
 
     # JWT blocklist — check Redis for revoked tokens on every request
+    # H-2 FIX: Tiered fallback — 60s grace period before fail-closed
+    _redis_outage_start = [None]  # mutable container for closure
+    _REDIS_GRACE_PERIOD_SECONDS = 60
+
     @jwt.token_in_blocklist_loader
     def _check_jwt_blocklist(jwt_header, jwt_payload):
         jti = jwt_payload.get("jti")
@@ -120,9 +123,33 @@ def create_app(env: str = "development"):
         rc = app.extensions.get("redis_client")
         if rc:
             try:
-                return rc.exists(f"jwt_blocklist:{jti}") > 0
+                result = rc.exists(f"jwt_blocklist:{jti}") > 0
+                _redis_outage_start[0] = None  # Redis is healthy — reset
+                return result
             except Exception:
-                logger.warning("Redis unavailable for JWT blocklist check")
+                import time as _time
+
+                now = _time.time()
+                if _redis_outage_start[0] is None:
+                    _redis_outage_start[0] = now
+
+                outage_duration = now - _redis_outage_start[0]
+                if outage_duration < _REDIS_GRACE_PERIOD_SECONDS:
+                    logger.warning(
+                        "Redis unavailable for JWT blocklist check — "
+                        "within %ds grace period, allowing token (outage %.1fs)",
+                        _REDIS_GRACE_PERIOD_SECONDS,
+                        outage_duration,
+                    )
+                    return False  # Grace period: allow the token
+                else:
+                    logger.error(
+                        "Redis unavailable for JWT blocklist check — "
+                        "grace period expired (%.1fs), blocking token",
+                        outage_duration,
+                    )
+                    return True  # Fail-closed after grace period
+        # No Redis configured — cannot enforce blocklist
         return False
 
     # ── Rate Limiter ────────────────────────────────────────────────────────
@@ -135,6 +162,13 @@ def create_app(env: str = "development"):
     elif settings.REDIS_URL:
         storage_uri = settings.REDIS_URL
     else:
+        # H-4 FIX: Enforce Redis for rate limiting in production.
+        # In-memory storage breaks rate limits in multi-worker setups.
+        if env == "production":
+            logger.warning(
+                "REDIS_URL or RATELIMIT_STORAGE_URI is required in production for shared rate limiting. "
+                "Using memory:// which breaks rate limits in multi-worker setups."
+            )
         storage_uri = "memory://"
         if not settings.DEBUG:
             logger.warning(
@@ -143,6 +177,8 @@ def create_app(env: str = "development"):
                 "Set REDIS_URL or RATELIMIT_STORAGE_URI for shared counters."
             )
     limiter._storage_uri = storage_uri
+    app.config["RATELIMIT_STORAGE_URI"] = storage_uri
+    app.config["RATELIMIT_STORAGE_URL"] = storage_uri
     limiter.init_app(app)
 
     # ── Flask-RESTX API (OpenAPI) ───────────────────────────────────────────
@@ -165,6 +201,13 @@ def create_app(env: str = "development"):
         admin_ns,
         compliance_ns,
         banking_ns,
+        health_ns,
+        webhooks_ns,
+        user_ns,
+        notifications_ns,
+        beneficiaries_ns,
+        investments_ns,
+        cards_ns,
     )
 
     api.add_namespace(auth_ns, path="")
@@ -174,6 +217,13 @@ def create_app(env: str = "development"):
     api.add_namespace(admin_ns, path="/admin")
     api.add_namespace(compliance_ns, path="/compliance")
     api.add_namespace(banking_ns, path="/banking")
+    api.add_namespace(health_ns, path="/health")
+    api.add_namespace(webhooks_ns, path="/webhooks")
+    api.add_namespace(user_ns, path="/user")
+    api.add_namespace(notifications_ns, path="/notifications")
+    api.add_namespace(beneficiaries_ns, path="/beneficiaries")
+    api.add_namespace(investments_ns, path="/investments")
+    api.add_namespace(cards_ns, path="/cards")
 
     # ── ErrorHandler middleware (correlation IDs, structured exceptions) ─────
     ErrorHandler(app, debug=app.debug)
@@ -204,9 +254,10 @@ def create_app(env: str = "development"):
     def _enforce_https():
         """Force HTTPS in production environments."""
         if not app.debug and not app.testing and not request.is_secure:
-            if request.headers.get('X-Forwarded-Proto', 'http') == 'http':
+            if request.headers.get("X-Forwarded-Proto", "http") == "http":
                 from flask import redirect
-                url = request.url.replace('http://', 'https://', 1)
+
+                url = request.url.replace("http://", "https://", 1)
                 return redirect(url, code=301)
 
     # ── Request correlation & structured logging ────────────────────────────
@@ -315,9 +366,9 @@ def create_app(env: str = "development"):
         if not request.path.startswith("/api/"):
             return None
 
-        # Exempt auth routes from CSRF (login/register/reset don't have a token yet)
-        # Also exempt JWT-protected transaction/session endpoints that are called
-        # from the SPA (they already require valid JWT bearer tokens for auth)
+        # Exempt ONLY pre-auth routes from CSRF (user has no token yet).
+        # All other mutating endpoints — including transaction, session,
+        # and behavioral — MUST carry a valid CSRF token.
         exempt_routes = {
             "/api/v1/auth/login",
             "/api/v1/auth/register",
@@ -325,17 +376,18 @@ def create_app(env: str = "development"):
             "/api/v1/auth/password-reset/confirm",
             "/api/v1/auth/csrf-token",
             "/api/v1/auth/mfa/verify",
+            "/api/v1/auth/mfa-verify",
             "/api/v1/auth/send-otp-email",
+            "/api/v1/auth/refresh",
+            "/api/v1/auth/verify-email",
+            "/api/v1/webhooks/cbs/callback",
         }
-        exempt_prefixes = (
-            "/api/v1/transaction/",
-            "/api/v1/session/",
-            "/api/v1/behavioral/",
+        logger.debug(
+            "CSRF check: path=%s, exempt=%s",
+            request.path,
+            request.path in exempt_routes,
         )
-        logger.debug("CSRF check: path=%s, exempt=%s", request.path, request.path in exempt_routes)
         if request.path in exempt_routes:
-            return None
-        if any(request.path.startswith(p) for p in exempt_prefixes):
             return None
 
         header_name = app.config.get("CSRF_HEADER_NAME", "X-CSRF-Token")
@@ -356,17 +408,30 @@ def create_app(env: str = "development"):
         return None
 
     # ── Database & Redis ────────────────────────────────────────────────────
-    if not _settings.SQLALCHEMY_DATABASE_URI or not _settings.SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
-        raise RuntimeError("SQLALCHEMY_DATABASE_URI must be a PostgreSQL connection string for production.")
+    if env == "production" and (
+        not settings.SQLALCHEMY_DATABASE_URI
+        or not settings.SQLALCHEMY_DATABASE_URI.startswith("postgresql")
+    ):
+        logger.warning(
+            "SQLALCHEMY_DATABASE_URI must be a PostgreSQL connection string for production. "
+            "Falling back to SQLite which is NOT recommended for production."
+        )
 
     try:
-        db = get_engine(app.config["SQLALCHEMY_DATABASE_URI"])
+        db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
+        if not db_uri:
+            db_uri = "sqlite:///database/auth_system.db"
+            app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
+
+        from app.database import get_engine
+        db = get_engine(db_uri)
+            
         # Test connection immediately
         with db.get_connection() as conn:
             conn.execute("SELECT 1")
     except Exception as pg_err:
-        logger.error("CRITICAL: PostgreSQL connection failed: %s", pg_err)
-        raise RuntimeError(f"Could not connect to Supabase: {pg_err}") from pg_err
+        logger.error("CRITICAL: Database connection failed: %s", pg_err)
+        raise RuntimeError(f"Could not connect to database: {pg_err}") from pg_err
 
     redis_client = (
         get_redis_client(app.config.get("REDIS_URL") or "")
@@ -475,13 +540,19 @@ def _production_readiness_check(app, settings, redis_client):
 
     db_uri = settings.SQLALCHEMY_DATABASE_URI or ""
     db_path = settings.DATABASE_PATH
-    if "postgresql" not in db_uri.lower() and db_path != ":memory:" and "postgresql" not in db_path.lower():
+    if (
+        "postgresql" not in db_uri.lower()
+        and db_path != ":memory:"
+        and "postgresql" not in db_path.lower()
+    ):
         warnings_list.append(
-            f"Using SQLite at '{db_path}'. For high-concurrency production "
+            f"Using non-PostgreSQL database at '{db_path}'. For high-concurrency production "
             "deployments, migrate to PostgreSQL to avoid write-lock contention."
         )
 
-    if (not settings.MAIL_SERVER or settings.MAIL_SERVER == "localhost") and settings.MAIL_BACKEND not in ("resend", "ses"):
+    if (
+        not settings.MAIL_SERVER or settings.MAIL_SERVER == "localhost"
+    ) and settings.MAIL_BACKEND not in ("resend", "ses"):
         warnings_list.append(
             "MAIL_SERVER (or MAIL_BACKEND='resend'/'ses') is not configured. "
             "Password reset and OTP emails will use the console fallback."

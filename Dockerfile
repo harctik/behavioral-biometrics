@@ -39,7 +39,7 @@ EXPOSE 5000
 
 # Healthcheck to detect hung processes
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:5000/api/swagger.json || exit 1
+    CMD curl -f http://localhost:5000/healthz || exit 1
 
 # Run Alembic migrations then start the application with gunicorn.
 CMD ["sh", "-c", "alembic upgrade head && gunicorn -w 4 -b 0.0.0.0:5000 --timeout 120 --access-logfile - --error-logfile - run:app"]

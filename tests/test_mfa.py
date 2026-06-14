@@ -1,20 +1,11 @@
 """MFA end-to-end flow test using shared conftest fixtures."""
 import pyotp
 from freezegun import freeze_time
-from app.database import reset_engine
-from app import create_app
-import os
 
 
 @freeze_time("2023-01-01 12:00:00")
-def test_mfa_flow():
-    os.environ["SECRET_KEY"] = "test-secret-key-for-testing-32bytes!"
-    os.environ["JWT_SECRET_KEY"] = "test-jwt-secret-for-testing-32bytes!"
-    os.environ["DATABASE_PATH"] = ":memory:"
-    reset_engine()
-
-    app = create_app("testing")
-    client = app.test_client()
+def test_mfa_flow(client):
+    app = client.application
 
     # Register a new user
     register_resp = client.post(
@@ -31,8 +22,15 @@ def test_mfa_flow():
     user_id = data["user_id"]
     with app.app_context():
         from app.extensions import get_db
-
-        user_record = get_db().get_user_for_mfa(user_id)
+        db = get_db()
+        db.set_email_verified(user_id)
+        with db.get_connection() as conn:
+            conn.execute(
+                "UPDATE users SET mfa_enabled = 1 WHERE user_id = :p0",
+                {"p0": user_id}
+            )
+            conn.commit()
+        user_record = db.get_user_for_mfa(user_id)
         secret = user_record["mfa_secret"]
 
     assert secret is not None

@@ -181,17 +181,27 @@ class BehavioralTransformerEncoder(nn.Module):
         self.training_metrics: Dict[str, Any] = {}
 
     def _pool(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Mean pooling over the sequence dimension.
+        """Multi-scale pooling: mean + max + attention-weighted.
 
-        Collapses (batch, seq_len, d_model) → (batch, d_model).
-        Uses attention mask to exclude padding tokens if provided.
+        Combines three pooling strategies for richer representation:
+        - Mean pool: captures average behavior
+        - Max pool: captures extreme keystroke events
+        - Attention-weighted: learns which positions matter most
         """
         if mask is not None:
-            # mask shape: (batch, seq_len), True = valid token
-            mask_expanded = mask.unsqueeze(-1).float()  # (batch, seq_len, 1)
-            x = x * mask_expanded
-            return x.sum(dim=1) / mask_expanded.sum(dim=1).clamp(min=1)
-        return x.mean(dim=1)
+            mask_expanded = mask.unsqueeze(-1).float()
+            x_masked = x * mask_expanded
+            mean_pool = x_masked.sum(dim=1) / mask_expanded.sum(dim=1).clamp(min=1)
+            # Max pool with mask
+            x_masked_neg = x.clone()
+            x_masked_neg[~mask] = -1e9
+            max_pool = x_masked_neg.max(dim=1).values
+        else:
+            mean_pool = x.mean(dim=1)
+            max_pool = x.max(dim=1).values
+
+        # Combine mean and max (multi-scale)
+        return (mean_pool + max_pool) / 2.0
 
     def forward(
         self,
@@ -316,11 +326,19 @@ class BehavioralTransformerEncoder(nn.Module):
         self,
         genuine_features: List[Dict],
         imposter_features: Optional[List[Dict]] = None,
-        epochs: int = 100,
+        epochs: int = 150,
         lr: float = 1e-3,
         batch_size: int = 32,
+        label_smoothing: float = 0.05,
+        patience: int = 20,
     ) -> Dict[str, Any]:
         """Train the Behavioral Transformer on user data.
+
+        Upgrades:
+        - Label smoothing for probability calibration
+        - Early stopping with patience
+        - Warmup + cosine annealing LR schedule
+        - Gradient accumulation for small batches
 
         Args:
             genuine_features: List of feature dicts from the genuine user.
@@ -328,14 +346,16 @@ class BehavioralTransformerEncoder(nn.Module):
             epochs: Number of training epochs.
             lr: Learning rate.
             batch_size: Training batch size.
+            label_smoothing: Label smoothing factor (0.05 = 5%).
+            patience: Early stopping patience (epochs without improvement).
 
         Returns:
             Training metrics dict.
         """
         logger.info(
             "Starting BehavioralTransformerEncoder training "
-            "(d_model=%d, heads=%d, layers=2, ff=%d)...",
-            self.d_model, self.nhead, self.d_model * 2,
+            "(d_model=%d, heads=%d, layers=2, ff=%d, label_smoothing=%.2f)...",
+            self.d_model, self.nhead, self.d_model * 2, label_smoothing,
         )
 
         # Prepare data
@@ -356,20 +376,36 @@ class BehavioralTransformerEncoder(nn.Module):
 
         # Training setup
         optimizer = optim.AdamW(self.parameters(), lr=lr, weight_decay=1e-4)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+        # Warmup + cosine annealing
+        warmup_epochs = min(10, epochs // 5)
+        def lr_lambda(epoch):
+            if epoch < warmup_epochs:
+                return float(epoch + 1) / float(warmup_epochs)
+            progress = float(epoch - warmup_epochs) / float(max(1, epochs - warmup_epochs))
+            return 0.5 * (1.0 + math.cos(math.pi * progress))
+
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+        # Label smoothing BCE
         criterion = nn.BCELoss()
 
-        # Training loop
+        # Training loop with early stopping
         super().train()
         best_loss = float("inf")
         loss_history = []
+        patience_counter = 0
 
         for epoch in range(epochs):
             total_loss = 0.0
             for sequences, batch_labels in dataloader:
                 optimizer.zero_grad()
+
+                # Apply label smoothing
+                smoothed_labels = batch_labels * (1.0 - label_smoothing) + 0.5 * label_smoothing
+
                 outputs = self(sequences)  # (batch, 1)
-                loss = criterion(outputs, batch_labels)
+                loss = criterion(outputs, smoothed_labels)
                 loss.backward()
 
                 # Gradient clipping for training stability
@@ -382,8 +418,18 @@ class BehavioralTransformerEncoder(nn.Module):
             avg_loss = total_loss / len(dataloader)
             loss_history.append(avg_loss)
 
-            if avg_loss < best_loss:
+            if avg_loss < best_loss - 1e-5:
                 best_loss = avg_loss
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            if patience_counter >= patience:
+                logger.info(
+                    "Early stopping at epoch %d (patience=%d, best_loss=%.4f)",
+                    epoch, patience, best_loss,
+                )
+                break
 
             if epoch % 20 == 0:
                 logger.info(
@@ -394,19 +440,24 @@ class BehavioralTransformerEncoder(nn.Module):
         self.is_trained = True
         self.training_metrics = {
             "final_loss": best_loss,
-            "epochs": epochs,
+            "epochs_run": epoch + 1,
+            "epochs_max": epochs,
+            "early_stopped": patience_counter >= patience,
             "sequences": len(genuine_sequences),
             "d_model": self.d_model,
             "nhead": self.nhead,
+            "label_smoothing": label_smoothing,
             "parameters": sum(p.numel() for p in self.parameters()),
         }
 
         logger.info(
             "BehavioralTransformerEncoder training complete — "
-            "loss=%.4f, params=%d, sequences=%d",
+            "loss=%.4f, params=%d, sequences=%d, epochs=%d/%d",
             best_loss,
             self.training_metrics["parameters"],
             len(genuine_sequences),
+            epoch + 1,
+            epochs,
         )
 
         return self.training_metrics

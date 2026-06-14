@@ -8,21 +8,23 @@ export async function POST(request: Request) {
     
     // Read the current username from cookies
     const cookieStore = await cookies();
-    const username = cookieStore.get('username')?.value;
+    const sessionId = cookieStore.get('session_id')?.value;
+    const accessToken = cookieStore.get('access_token_cookie')?.value;
     
-    if (!username) {
+    if (!sessionId || !accessToken) {
       return NextResponse.json({ error: 'Session expired. Please log in again.' }, { status: 401 });
     }
 
     const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
     
-    // We treat the challenge as a re-authentication (login)
-    const res = await fetch(`${backendUrl}/api/v1/auth/login`, {
+    // We treat the challenge as a step-up authentication within the SAME session
+    const res = await fetch(`${backendUrl}/api/v1/auth/password-verify`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
       },
-      body: JSON.stringify({ username, password, behavioral_data }),
+      body: JSON.stringify({ password, behavioral_data }),
     });
 
     const data = await res.json();
@@ -35,32 +37,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: errorMsg }, { status: res.status });
     }
 
-    const { access_token, session_id } = data.data;
-
-    const response = NextResponse.json({ success: true, session_id, username }, { status: 200 });
-
-    // Refresh the tokens
-    response.cookies.set({
-      name: 'access_token_cookie',
-      value: access_token,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 15 * 60,
-    });
-
-    response.cookies.set({
-      name: 'session_id',
-      value: session_id,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 8 * 3600,
-    });
-
-    return response;
+    return NextResponse.json({ success: true, session_id: sessionId }, { status: 200 });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Internal server error';
     return NextResponse.json({ error: errorMsg }, { status: 500 });

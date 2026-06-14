@@ -1,27 +1,33 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { behavioral_data } = body;
-    
-    // Mock backend extending session and checking behavioral data
-    const ksCount = behavioral_data?.keystroke_events?.length || 0;
-    const msCount = behavioral_data?.mouse_events?.length || 0;
-    
-    if (ksCount > 5 || msCount > 10) {
-      return NextResponse.json({
-        extended: true,
-        step_up_required: false
-      });
-    } else {
-      // Not enough interaction, trigger step up challenge
-      return NextResponse.json({
-        extended: true,
-        step_up_required: true
-      });
+
+    const cookieStore = await cookies();
+    const accessToken = cookieStore.get("access_token_cookie")?.value;
+
+    if (!accessToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:5000";
+
+    // Forward behavioral data to the backend for re-evaluation
+    const flaskRes = await fetch(`${backendUrl}/api/v1/session/extend`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const flaskData = await flaskRes.json();
+    return NextResponse.json(flaskData, { status: flaskRes.status });
   } catch (error) {
+    console.error("Session extend error:", error);
     return NextResponse.json({ error: "Extension failed" }, { status: 500 });
   }
 }

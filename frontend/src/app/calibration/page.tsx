@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCollector } from "@/lib/behavioral-collector";
@@ -18,15 +19,20 @@ import {
 } from "lucide-react";
 
 const SAMPLE_PHRASES = [
-  "The quick brown fox jumps over the lazy dog near the riverbank",
-  "Secure banking requires vigilance and modern authentication methods",
-  "Every keystroke tells a story about the person behind the keyboard",
+  "The quick brown fox jumps over the lazy dog near the riverbank at dusk",
+  "Secure banking requires vigilance and modern continuous authentication methods",
+  "Every keystroke tells a unique story about the person sitting behind the keyboard",
+  "Behavioral biometrics analyzes how you type, not just what you know or have",
+  "My account security depends on consistent typing patterns across every session",
+  "Financial transactions require the highest level of identity verification available",
+  "The system continuously monitors my interaction patterns to ensure session integrity",
+  "Strong authentication combines something you know with something uniquely you",
 ];
 
-const REQUIRED_KEYSTROKES = 80;
+const REQUIRED_KEYSTROKES = 200;
 const REQUIRED_MOUSE_EVENTS = 40;
 
-type CalibrationStage = "intro" | "typing" | "mouse" | "processing" | "complete";
+type CalibrationStage = "intro" | "typing" | "mouse" | "freetyping" | "processing" | "complete";
 
 export default function CalibrationPage() {
   const router = useRouter();
@@ -36,10 +42,12 @@ export default function CalibrationPage() {
   const [keystrokeCount, setKeystrokeCount] = useState(0);
   const [mouseEventCount, setMouseEventCount] = useState(0);
   const [enrollmentScore, setEnrollmentScore] = useState(0);
-  const [error, setError] = useState("");
+  
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mouseAreaRef = useRef<HTMLDivElement>(null);
-  const [currentPhrase] = useState(() => SAMPLE_PHRASES[Math.floor(Math.random() * SAMPLE_PHRASES.length)]);
+  const [phraseIndex, setPhraseIndex] = useState(() => Math.floor(Math.random() * SAMPLE_PHRASES.length));
+  const currentPhrase = SAMPLE_PHRASES[phraseIndex];
+  const [freeText, setFreeText] = useState("");
   const [dots, setDots] = useState<{ x: number; y: number; id: number }[]>([]);
   const dotIdRef = useRef(0);
 
@@ -64,6 +72,7 @@ export default function CalibrationPage() {
   // Start behavioral collector
   useEffect(() => {
     const collector = getCollector();
+    collector.setContext("CALIBRATION");
     collector.reset();
     collector.start();
     return () => collector.stop();
@@ -93,20 +102,24 @@ export default function CalibrationPage() {
   useEffect(() => {
     if (stage === "typing" && keystrokeCount >= REQUIRED_KEYSTROKES) {
       setTimeout(() => setStage("mouse"), 500);
+    } else if (stage === "typing" && typedText.length >= currentPhrase.length * 0.9) {
+      // Phrase completed — load next phrase and clear textarea
+      setTypedText("");
+      setPhraseIndex(prev => (prev + 1) % SAMPLE_PHRASES.length);
     }
-  }, [keystrokeCount, stage]);
+  }, [keystrokeCount, stage, typedText, currentPhrase]);
 
   // Auto-advance from mouse to processing when enough events
   useEffect(() => {
     if (stage === "mouse" && mouseEventCount >= REQUIRED_MOUSE_EVENTS) {
-      setTimeout(() => submitCalibration(), 500);
+      setTimeout(() => setStage("freetyping"), 500);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mouseEventCount, stage]);
 
   const submitCalibration = async () => {
     setStage("processing");
-    setError("");
+    ;
 
     try {
       const collector = getCollector();
@@ -381,6 +394,41 @@ export default function CalibrationPage() {
               </motion.div>
             )}
 
+            {/* ─── FREE TYPING STAGE ─── */}
+            {stage === "freetyping" && (
+              <motion.div
+                key="freetyping"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-5"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                    <Keyboard size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-100">Type freely</h2>
+                    <p className="text-xs text-slate-400">
+                      Write anything — a sentence, your plans, anything. We capture your natural rhythm.
+                    </p>
+                  </div>
+                </div>
+                <textarea
+                  value={freeText}
+                  onChange={(e) => {
+                    setFreeText(e.target.value);
+                    if (e.target.value.length >= 100) setTimeout(() => submitCalibration(), 600);
+                  }}
+                  placeholder="Write anything naturally here — a few sentences is enough..."
+                  rows={5}
+                  autoFocus
+                  className="w-full bg-black/30 border border-white/10 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/10 transition-all resize-none font-mono placeholder:text-slate-600"
+                />
+                <div className="text-xs text-muted text-right font-mono">{freeText.length} / 100 characters</div>
+              </motion.div>
+            )}
+
             {/* ─── PROCESSING STAGE ─── */}
             {stage === "processing" && (
               <motion.div
@@ -462,12 +510,6 @@ export default function CalibrationPage() {
                   <Sparkles size={12} className="text-violet-400" />
                   Passive enrollment will continue to refine your profile
                 </div>
-
-                {error && (
-                  <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
-                    {error}
-                  </div>
-                )}
 
                 <button
                   onClick={() => router.push("/dashboard")}

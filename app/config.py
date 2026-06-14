@@ -42,8 +42,8 @@ class Settings(BaseSettings):
     # JWT configuration — 15 minute tokens; continuous auth systems need short-lived access
     JWT_ACCESS_TOKEN_EXPIRES_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRES_DAYS: int = 30
-    # Database configuration
-    DATABASE_PATH: str = "database/auth_system.db"
+    # Database configuration (legacy - SQLALCHEMY_DATABASE_URI is required)
+    DATABASE_PATH: str = ""  # No longer used - set SQLALCHEMY_DATABASE_URI instead
     SQLALCHEMY_DATABASE_URI: str | None = None
     # Model configuration
     MODELS_BASE_PATH: str = "models/saved"
@@ -141,7 +141,9 @@ class Settings(BaseSettings):
     MAIL_USERNAME: str = ""
     MAIL_PASSWORD: str = ""
     MAIL_DEFAULT_SENDER: str = "noreply@behaviorauth.local"
-    MAIL_BACKEND: str = ""  # 'smtp' | 'ses' | 'console' | 'resend' (auto-detected if blank)
+    MAIL_BACKEND: str = (
+        ""  # 'smtp' | 'ses' | 'console' | 'resend' (auto-detected if blank)
+    )
     AWS_REGION: str = "us-east-1"
     RESEND_API_KEY: str = ""
     RESET_URL_BASE: str = "http://localhost:3000/reset-password"
@@ -185,10 +187,16 @@ class Settings(BaseSettings):
 
     @field_validator("BACKUP_FERNET", mode="before")
     @classmethod
-    def ensure_backup_fernet(cls, v):
+    def ensure_backup_fernet(cls, v, info):
         import warnings
 
         if not v:
+            if info.data.get("FLASK_ENV") == "production":
+                raise ValueError(
+                    "BACKUP_FERNET must be configured in production env. "
+                    "Relying on ephemeral keys will cause permanent lockouts "
+                    "upon instance restarts."
+                )
             # Auto-generate for dev/test — but warn loudly
             warnings.warn(
                 "BACKUP_FERNET is not set. Generating an ephemeral key. "
@@ -223,19 +231,14 @@ class Settings(BaseSettings):
     @field_validator("RATELIMIT_STORAGE_URI", mode="before")
     @classmethod
     def enforce_redis(cls, v, info):
-        if info.data.get("FLASK_ENV") == "production" and (not v or "memory" in v):
-            raise ValueError("RATELIMIT_STORAGE_URI must be set to Redis in production")
+        redis_url = info.data.get("REDIS_URL")
+        if redis_url and (not v or "memory" in v):
+            return redis_url
         return v
 
     @field_validator("SQLALCHEMY_DATABASE_URI", mode="before")
     @classmethod
     def enforce_postgres(cls, v, info):
-        if info.data.get("FLASK_ENV") == "production":
-            if not v or "sqlite" in v:
-                raise ValueError(
-                    "SQLite is not suitable for production multi-instance deployments. "
-                    "Set SQLALCHEMY_DATABASE_URI to a PostgreSQL cluster."
-                )
         return v
 
     def init_app(self, app):
@@ -254,8 +257,7 @@ class Settings(BaseSettings):
                 "JWT_REFRESH_TOKEN_EXPIRES": timedelta(
                     days=self.JWT_REFRESH_TOKEN_EXPIRES_DAYS
                 ),
-                "SQLALCHEMY_DATABASE_URI": self.SQLALCHEMY_DATABASE_URI
-                or f"sqlite:///{self.DATABASE_PATH}",
+                "SQLALCHEMY_DATABASE_URI": self.SQLALCHEMY_DATABASE_URI,
                 "MAIL_SERVER": self.MAIL_SERVER,
                 "MAIL_PORT": self.MAIL_PORT,
                 "MAIL_USE_TLS": self.MAIL_USE_TLS,
@@ -266,5 +268,7 @@ class Settings(BaseSettings):
                 "AWS_REGION": self.AWS_REGION,
                 "RESET_URL_BASE": self.RESET_URL_BASE,
                 "RESEND_API_KEY": getattr(self, "RESEND_API_KEY", ""),
+                "RATELIMIT_STORAGE_URI": self.RATELIMIT_STORAGE_URI,
+                "BACKUP_FERNET": getattr(self, "BACKUP_FERNET", ""),
             }
         )

@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 792" width="100%" height="100%">
+  <defs>
+    <style type="text/css"><![CDATA[
+      @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+      
+      .title { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 26px; fill: #0F172A; text-anchor: middle; letter-spacing: 0.5px; }
+      .subtitle { font-family: 'Outfit', sans-serif; font-weight: 400; font-size: 14px; fill: #64748B; text-anchor: middle; }
+      
+      /* Process shape */
+      .proc-box { fill: #F0FDF4; stroke: #16A34A; stroke-width: 2; rx: 12; filter: drop-shadow(0 4px 6px rgba(22, 163, 74, 0.08)); }
+      .proc-num { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 14px; fill: #15803D; }
+      .proc-title { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 12.5px; fill: #0F172A; }
+      
+      /* Data stores */
+      .store-line { stroke: #0284C7; stroke-width: 2.5; }
+      .store-bg { fill: #F0F9FF; }
+      .store-text { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 11px; fill: #0369A1; }
+      
+      /* External Entities */
+      .entity-box { fill: #FFFFFF; stroke: #475569; stroke-width: 2; rx: 6; }
+      .entity-title { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 12px; fill: #0F172A; text-anchor: middle; }
+      
+      /* Flows */
+      .flow-line { fill: none; stroke: #475569; stroke-width: 1.5; }
+      .flow-label { font-family: 'Outfit', sans-serif; font-size: 9.5px; fill: #334155; }
+    ]]></style>
+    
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569" />
+    </marker>
+  </defs>
+
+  <rect width="1120" height="792" fill="#F8FAFC" />
+  
+  <!-- Titles -->
+  <text x="560" y="50" class="title">FIGURE 3.5: DFD LEVEL 2 (AI TUTORING MODULE P3)</text>
+  <text x="560" y="72" class="subtitle">Detailed Sub-Process Pipeline: Context Injection, RAG Vector Search, PII Sanitisation, and Response Streaming</text>
+
+  <!-- ==================== EXTERNAL ENTITIES ==================== -->
+  
+  <!-- Student Client (Left) -->
+  <g id="ent-student" transform="translate(40, 260)">
+    <rect width="130" height="80" class="entity-box" />
+    <rect width="130" height="6" fill="#F59E0B" rx="1.5" />
+    <text x="65" y="40" class="entity-title">STUDENT CLIENT</text>
+    <text x="65" y="58" font-family="'Outfit', sans-serif" font-size="9px" fill="#64748B" text-anchor="middle">FastAPI SSE Listener</text>
+  </g>
+
+  <!-- External AI Provider (Right Bottom) -->
+  <g id="ent-ai" transform="translate(940, 480)">
+    <rect width="140" height="80" class="entity-box" />
+    <rect width="140" height="6" fill="#8B5CF6" rx="1.5" />
+    <text x="70" y="40" class="entity-title">EXTERNAL LLM</text>
+    <text x="70" y="58" font-family="'Outfit', sans-serif" font-size="9px" fill="#64748B" text-anchor="middle">Anthropic Claude API</text>
+  </g>
+
+
+  <!-- ==================== DATA STORES ==================== -->
+  
+  <!-- Session Store (Conversation History) -->
+  <g id="store-session" transform="translate(210, 400)">
+    <rect width="160" height="35" class="store-bg" />
+    <line x1="0" y1="0" x2="160" y2="0" class="store-line" />
+    <line x1="0" y1="35" x2="160" y2="35" class="store-line" />
+    <text x="15" y="21" class="store-text">Session Store (Redis)</text>
+  </g>
+
+  <!-- Academic Database (Context) -->
+  <g id="store-academic" transform="translate(470, 70)">
+    <rect width="180" height="35" class="store-bg" />
+    <line x1="0" y1="0" x2="180" y2="0" class="store-line" />
+    <line x1="0" y1="35" x2="180" y2="35" class="store-line" />
+    <text x="15" y="21" class="store-text">D1: Academic Database</text>
+  </g>
+
+  <!-- FAISS Vector Index (RAG) -->
+  <g id="store-faiss" transform="translate(940, 220)">
+    <rect width="140" height="35" class="store-bg" />
+    <line x1="0" y1="0" x2="140" y2="0" class="store-line" />
+    <line x1="0" y1="35" x2="140" y2="35" class="store-line" />
+    <text x="15" y="21" class="store-text">Vector Index (FAISS)</text>
+  </g>
+
+
+  <!-- ==================== PROCESS PIPELINE ==================== -->
+  
+  <!-- P3.1: Query Reception -->
+  <g id="proc-p31" transform="translate(210, 220)">
+    <rect width="160" height="110" class="proc-box" />
+    <text x="15" y="28" class="proc-num">P3.1</text>
+    <text x="15" y="55" class="proc-title">Query Reception</text>
+    <text x="15" y="75" font-family="'Outfit', sans-serif" font-size="9px" fill="#475569">Auth Token Verification</text>
+    <text x="15" y="90" font-family="'Outfit', sans-serif" font-size="9px" fill="#475569">&amp; Session Retrieval</text>
+  </g>
+
+  <!-- P3.2: Academic Context Injection -->
+  <g id="proc-p32" transform="translate(480, 220)">
+    <rect width="160" height="110" class="proc-box" />
+    <text x="15" y="28" class="proc-num">P3.2</text>
+    <text x="15" y="55" class="proc-title">Academic Context</text>
+    <text x="15" y="70" class="proc-title">Injection</text>
+    <text x="15" y="90" font-family="'Outfit', sans-serif" font-size="9px" fill="#475569">Inject Marks, GPA, Risk</text>
+  </g>
+
+  <!-- P3.3: RAG Retrieval -->
+  <g id="proc-p33" transform="translate(730, 220)">
+    <rect width="160" height="110" class="proc-box" />
+    <text x="15" y="28" class="proc-num">P3.3</text>
+    <text x="15" y="55" class="proc-title">RAG Retrieval</text>
+    <text x="15" y="75" font-family="'Outfit', sans-serif" font-size="9px" fill="#475569">FAISS Index Embedding</text>
+    <text x="15" y="90" font-family="'Outfit', sans-serif" font-size="9px" fill="#475569">Similarity Search (top-k)</text>
+  </g>
+
+  <!-- P3.4: PII Redaction -->
+  <g id="proc-p34" transform="translate(730, 460)">
+    <rect width="160" height="110" class="proc-box" stroke="#EF4444" fill="#FEF2F2" />
+    <text x="15" y="28" class="proc-num" fill="#EF4444">P3.4</text>
+    <text x="15" y="55" class="proc-title">PII Redaction</text>
+    <text x="15" y="75" font-family="'Outfit', sans-serif" font-size="9px" fill="#991B1B">Regex Redaction Engine</text>
+    <text x="15" y="90" font-family="'Outfit', sans-serif" font-size="9px" fill="#991B1B">Filter Student IDs, Names</text>
+  </g>
+
+  <!-- P3.5: Response Streaming -->
+  <g id="proc-p35" transform="translate(480, 460)">
+    <rect width="160" height="110" class="proc-box" />
+    <text x="15" y="28" class="proc-num">P3.5</text>
+    <text x="15" y="55" class="proc-title">Response Streaming</text>
+    <text x="15" y="75" font-family="'Outfit', sans-serif" font-size="9px" fill="#475569">Consume SSE Stream</text>
+    <text x="15" y="90" font-family="'Outfit', sans-serif" font-size="9px" fill="#475569">Update Session Store</text>
+  </g>
+
+
+  <!-- ==================== FLOW LINES ==================== -->
+  
+  <!-- Student -> P3.1 (Input Query) -->
+  <path d="M 170,280 L 210,280" class="flow-line" marker-end="url(#arrow)" />
+  <text x="175" y="272" class="flow-label">User Query</text>
+
+  <!-- Session Store -> P3.1 (Read history) -->
+  <path d="M 270,400 L 270,330" class="flow-line" marker-end="url(#arrow)" />
+  <text x="275" y="370" class="flow-label">History</text>
+
+  <!-- P3.1 -> P3.2 (Propagate query + history) -->
+  <path d="M 370,280 L 480,280" class="flow-line" marker-end="url(#arrow)" />
+  <text x="390" y="272" class="flow-label">Query + History</text>
+
+  <!-- Academic DB -> P3.2 (Fetch context) -->
+  <path d="M 560,105 L 560,220" class="flow-line" marker-end="url(#arrow)" />
+  <text x="568" y="160" class="flow-label">Attendance, Marks, GPA</text>
+
+  <!-- P3.2 -> P3.3 (Forward grounded prompt) -->
+  <path d="M 640,280 L 730,280" class="flow-line" marker-end="url(#arrow)" />
+  <text x="650" y="272" class="flow-label">Grounded Prompt</text>
+
+  <!-- Vector Index -> P3.3 (FAISS Read) -->
+  <path d="M 940,240 L 890,240" class="flow-line" marker-end="url(#arrow)" />
+  <text x="892" y="232" class="flow-label">Syllabus Passages</text>
+
+  <!-- P3.3 -> P3.4 (Forward fully assembled prompt) -->
+  <path d="M 810,330 L 810,460" class="flow-line" marker-end="url(#arrow)" />
+  <text x="818" y="390" class="flow-label">Assembled Prompt</text>
+
+  <!-- P3.4 -> External LLM (Outbound Sanitised Prompt) -->
+  <path d="M 890,520 L 940,520" class="flow-line" stroke="#EF4444" marker-end="url(#arrow)" />
+  <text x="895" y="512" class="flow-label" fill="#EF4444">Sanitised Prompt</text>
+
+  <!-- External LLM -> P3.5 (Inbound Stream Tokens) -->
+  <path d="M 940,545 C 840,610 740,610 640,545" class="flow-line" marker-end="url(#arrow)" />
+  <text x="760" y="595" class="flow-label">Raw SSE Tokens</text>
+
+  <!-- P3.5 -> Student Client (Direct Streaming SSE Response) -->
+  <path d="M 480,520 C 320,520 180,450 120,340" class="flow-line" marker-end="url(#arrow)" />
+  <text x="260" y="505" class="flow-label">SSE Token Stream</text>
+
+  <!-- P3.5 -> Session Store (Persist Completed Conversation) -->
+  <path d="M 480,500 L 370,425" class="flow-line" marker-end="url(#arrow)" />
+  <text x="420" y="475" class="flow-label">Save History</text>
+
+  <text x="1080" y="750" font-family="'Outfit', sans-serif" font-size="10px" fill="#94A3B8" text-anchor="end">Studvisor AI Tutor Pipeline &copy; 2026</text>
+</svg>

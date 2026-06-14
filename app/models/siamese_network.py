@@ -25,24 +25,38 @@ logger = logging.getLogger(__name__)
 
 
 class SiameseEncoder(nn.Module):
-    """Shared-weight encoder for behavioral embedding extraction."""
+    """Shared-weight encoder with residual connections for behavioral embedding."""
 
     def __init__(self, input_dim: int = 38, embedding_dim: int = 64):
         super().__init__()
-        self.encoder = nn.Sequential(
+        self.input_proj = nn.Sequential(
             nn.Linear(input_dim, 128),
-            nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Dropout(0.2),
+            nn.LayerNorm(128),
+            nn.GELU(),
+        )
+
+        # Residual block for richer feature extraction
+        self.res_block = nn.Sequential(
+            nn.Linear(128, 128),
+            nn.LayerNorm(128),
+            nn.GELU(),
+            nn.Dropout(0.15),
+            nn.Linear(128, 128),
+            nn.LayerNorm(128),
+        )
+
+        self.out_proj = nn.Sequential(
+            nn.GELU(),
             nn.Linear(128, 96),
-            nn.ReLU(),
-            nn.BatchNorm1d(96),
-            nn.Dropout(0.1),
+            nn.LayerNorm(96),
+            nn.GELU(),
             nn.Linear(96, embedding_dim),
         )
 
     def forward(self, x):
-        return self.encoder(x)
+        h = self.input_proj(x)
+        h = h + self.res_block(h)  # Residual connection
+        return self.out_proj(h)
 
 
 class SiameseNetwork(nn.Module):
@@ -91,15 +105,21 @@ class SiameseNetwork(nn.Module):
         loss = label * distance.pow(2) + (1 - label) * F.relu(margin - distance).pow(2)
         return loss.mean()
 
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        """Ensure all feature dicts have the same keys."""
-        if not features:
-            return features
-        if self.feature_names is None:
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-        return [
-            {name: f.get(name, 0.0) for name in self.feature_names} for f in features
-        ]
+    def triplet_loss(
+        self,
+        anchor: torch.Tensor,
+        positive: torch.Tensor,
+        negative: torch.Tensor,
+        margin: float = 0.5,
+    ) -> torch.Tensor:
+        """Triplet loss with semi-hard negative mining.
+
+        Enforces: dist(anchor, positive) + margin < dist(anchor, negative)
+        """
+        pos_dist = F.pairwise_distance(anchor, positive)
+        neg_dist = F.pairwise_distance(anchor, negative)
+        loss = F.relu(pos_dist - neg_dist + margin)
+        return loss.mean()
 
     def prepare_data(
         self, features: List[Dict], fit_scaler: bool = False

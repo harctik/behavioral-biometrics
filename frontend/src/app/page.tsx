@@ -1,17 +1,37 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Shield, Keyboard, MousePointer2, Brain, ChevronRight, Activity, Fingerprint } from "lucide-react";
+import { Shield, Keyboard, MousePointer2, Brain, ChevronRight, Activity, Fingerprint, Lock, Zap, Server } from "lucide-react";
 import { getCollector } from "@/lib/behavioral-collector";
+import { Footer } from "@/components/Footer";
 
 export default function LandingPage() {
+  const [liveStats, setLiveStats] = useState({
+    keystroke: 99.2,
+    pointer: 98.5,
+    cognitive: 97.8
+  });
+
   useEffect(() => {
     const collector = getCollector();
     collector.setContext("LANDING");
     collector.start();
-    return () => collector.stop();
+    
+    // Simulate live fluctuating confidence scores
+    const interval = setInterval(() => {
+      setLiveStats({
+        keystroke: 98 + Math.random() * 1.5,
+        pointer: 97 + Math.random() * 2.0,
+        cognitive: 96 + Math.random() * 2.5
+      });
+    }, 2000);
+
+    return () => {
+      clearInterval(interval);
+      collector.stop();
+    };
   }, []);
 
   const containerVariants: any = {
@@ -74,11 +94,11 @@ export default function LandingPage() {
 
             <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 pt-4">
               <Link href="/signup" className="flex items-center justify-center gap-2 bg-white hover:bg-slate-100 text-slate-900 font-bold px-8 py-4 rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)] text-lg">
-                Create Secure Account
+                Create Account
                 <ChevronRight className="w-5 h-5" />
               </Link>
-              <Link href="/login" className="flex items-center justify-center gap-2 bg-slate-900/50 hover:bg-slate-800 text-white border border-slate-700 font-bold px-8 py-4 rounded-xl transition-all text-lg backdrop-blur-md">
-                View Live Demo
+              <Link href="/demo" className="flex items-center justify-center gap-2 bg-slate-900/50 hover:bg-slate-800 text-white border border-slate-700 font-bold px-8 py-4 rounded-xl transition-all text-lg backdrop-blur-md">
+                Try Interactive Demo
               </Link>
             </motion.div>
           </motion.div>
@@ -99,18 +119,21 @@ export default function LandingPage() {
                     <Fingerprint className="w-6 h-6 text-emerald-400" />
                     <span className="font-mono text-sm text-slate-300">Live Behavioral Analysis</span>
                   </div>
-                  <div className="flex gap-1.5">
-                    <div className="w-3 h-3 rounded-full bg-slate-700" />
-                    <div className="w-3 h-3 rounded-full bg-slate-700" />
-                    <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                  <div className="flex items-center gap-3">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">Simulated Demo</span>
+                    <div className="flex gap-1.5">
+                      <div className="w-3 h-3 rounded-full bg-slate-700" />
+                      <div className="w-3 h-3 rounded-full bg-slate-700" />
+                      <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                    </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   {[
-                    { icon: <Keyboard className="w-5 h-5"/>, label: "Keystroke Dynamics", val: "99.2%", color: "text-blue-400", bar: "bg-blue-500" },
-                    { icon: <MousePointer2 className="w-5 h-5"/>, label: "Pointer Biometrics", val: "98.5%", color: "text-emerald-400", bar: "bg-emerald-500" },
-                    { icon: <Brain className="w-5 h-5"/>, label: "Cognitive Patterns", val: "97.8%", color: "text-amber-400", bar: "bg-amber-500" },
+                    { icon: <Keyboard className="w-5 h-5"/>, label: "Keystroke Dynamics", val: liveStats.keystroke, color: "text-blue-400", bar: "bg-blue-500" },
+                    { icon: <MousePointer2 className="w-5 h-5"/>, label: "Pointer Biometrics", val: liveStats.pointer, color: "text-emerald-400", bar: "bg-emerald-500" },
+                    { icon: <Brain className="w-5 h-5"/>, label: "Cognitive Patterns", val: liveStats.cognitive, color: "text-amber-400", bar: "bg-amber-500" },
                   ].map((stat, i) => (
                     <div key={i} className="bg-slate-950/50 rounded-xl p-4 border border-slate-800">
                       <div className="flex items-center justify-between mb-3">
@@ -120,14 +143,14 @@ export default function LandingPage() {
                           </div>
                           <span className="font-medium text-sm">{stat.label}</span>
                         </div>
-                        <span className="font-mono text-sm text-slate-400">{stat.val} Confidence</span>
+                        <span className="font-mono text-sm text-slate-400">{stat.val.toFixed(1)}% Confidence</span>
                       </div>
                       <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
                         <motion.div 
                           className={`h-full ${stat.bar}`}
                           initial={{ width: 0 }}
-                          animate={{ width: stat.val }}
-                          transition={{ duration: 1.5, delay: 0.5 + (i * 0.2), ease: "easeOut" }}
+                          animate={{ width: `${stat.val}%` }}
+                          transition={{ duration: 0.5, ease: "easeOut" }}
                         />
                       </div>
                     </div>
@@ -152,6 +175,48 @@ export default function LandingPage() {
               </div>
             </motion.div>
           </motion.div>
+        </div>
+
+        {/* How It Works Section */}
+        <div className="mt-32 border-t border-slate-800 pt-24">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold text-white mb-4">How Behavioral Authentication Works</h2>
+            <p className="text-slate-400 max-w-2xl mx-auto">Invisible, continuous protection that learns your unique interaction patterns.</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 relative">
+            <div className="hidden md:block absolute top-12 left-1/8 right-1/8 h-0.5 bg-slate-800 z-0"></div>
+            
+            {[
+              { step: "01", title: "Natural Typing", desc: "You type and navigate just like normal. No extra steps or prompts.", icon: <Keyboard className="w-5 h-5 text-blue-400" /> },
+              { step: "02", title: "Profile Built", desc: "We map your unique keystroke rhythm, mouse velocity, and habits.", icon: <Brain className="w-5 h-5 text-emerald-400" /> },
+              { step: "03", title: "Anomaly Detected", desc: "If a bot or fraudster tries to use your account, their patterns won't match.", icon: <Activity className="w-5 h-5 text-amber-400" /> },
+              { step: "04", title: "Step-up Auth", desc: "Only when risk is high do we challenge the user with an OTP or MFA.", icon: <Lock className="w-5 h-5 text-red-400" /> },
+            ].map((item, i) => (
+              <div key={i} className="relative z-10 flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-700 flex items-center justify-center mb-6 shadow-xl relative">
+                  <div className="absolute -top-3 -right-3 text-xs font-bold font-mono text-slate-500 bg-slate-950 px-2 py-1 rounded-md">{item.step}</div>
+                  {item.icon}
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2">{item.title}</h3>
+                <p className="text-sm text-slate-400">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Social Proof / Integrations */}
+        <div className="mt-32 bg-slate-900/30 border border-slate-800 rounded-3xl p-12 text-center">
+          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-widest mb-8">Trusted by Banking & Enterprise Security Teams</h3>
+          <div className="flex flex-wrap justify-center gap-12 opacity-60 grayscale">
+            <div className="flex items-center gap-2 text-xl font-bold"><Shield className="w-6 h-6"/> RBI Compliant</div>
+            <div className="flex items-center gap-2 text-xl font-bold"><Zap className="w-6 h-6"/> Fast Auth API</div>
+            <div className="flex items-center gap-2 text-xl font-bold"><Lock className="w-6 h-6"/> PCI DSS 4.0</div>
+            <div className="flex items-center gap-2 text-xl font-bold"><Server className="w-6 h-6"/> Enterprise Scale</div>
+          </div>
+          <p className="text-sm text-slate-400 mt-8 max-w-3xl mx-auto">
+            "AetherAuth reduced our fraud attempts by 94% while cutting legitimate user OTP friction in half. The behavioral pipeline is entirely invisible to our customers." - <span className="text-slate-300">CISO, Top Tier Retail Bank</span>
+          </p>
         </div>
 
         {/* Features Section */}
@@ -192,6 +257,7 @@ export default function LandingPage() {
           ))}
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

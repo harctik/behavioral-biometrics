@@ -1,18 +1,19 @@
 """
-Behavioral Biometrics Patent-Level Feature Engine — 200+ Behavioral Features.
+Behavioral Biometrics Patent-Level Feature Engine — 230+ Behavioral Features.
 
-Processes raw telemetry from all 8 frontend collector categories and
+Processes raw telemetry from all 9 frontend collector categories and
 produces a comprehensive feature vector for ML scoring.
 
 Categories processed:
   1. Mouse & Pointer Dynamics (40+ features)
-  2. Keystroke Dynamics (35+ features)
+  2. Keystroke Dynamics (40+ features)
   3. Cognitive / Behavioral Signals (25+ features)
   4. Duress & Social Engineering (15+ features)
   5. Invisible Challenge Responses (12+ features)
   6. Physiological Signals (18+ features)
   7. Device & Contextual Signals (20+ features)
   8. Derived & Composite Signals (30+ features)
+  9. Temporal Rhythm Analysis (25+ features)  — NEW Phase 2
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class BehavioralFeatureEngine:
-    """Extracts 200+ features from all 8 Behavioral Biometrics signal categories."""
+    """Extracts 230+ features from all 9 Behavioral Biometrics signal categories."""
 
     # ── Category 1: Mouse & Pointer ───────────────────────────────────────
 
@@ -62,6 +63,24 @@ class BehavioralFeatureEngine:
         "mouse_event_count",
         "click_count",
         "scroll_event_count",
+        # Phase 2: New mouse features
+        "mouse_click_interval_mean",
+        "mouse_click_interval_std",
+        "mouse_dblclick_count",
+        "hover_dwell_max",
+        "hover_count",
+        "mouse_path_straightness",
+        "mouse_path_segment_count",
+        "mouse_dir_histogram_0",
+        "mouse_dir_histogram_1",
+        "mouse_dir_histogram_2",
+        "mouse_dir_histogram_3",
+        "mouse_dir_histogram_4",
+        "mouse_dir_histogram_5",
+        "mouse_dir_histogram_6",
+        "mouse_dir_histogram_7",
+        "mouse_dir_entropy",
+        "mouse_acceleration_mean",
     ]
 
     # ── Category 2: Keystroke ─────────────────────────────────────────────
@@ -104,6 +123,10 @@ class BehavioralFeatureEngine:
         "time_last_key_to_submit",
         "keystroke_event_count",
         "total_keys_pressed",
+        # Phase 2: New keystroke features
+        "keystroke_pressure_variance",
+        "keystroke_rhythm_consistency",
+        "typing_hold_variance",
     ]
 
     # ── Category 3: Cognitive ─────────────────────────────────────────────
@@ -216,6 +239,37 @@ class BehavioralFeatureEngine:
         "genuine_user_score",
     ]
 
+    # ── Category 9: Temporal Rhythm (Phase 2) ─────────────────────────────
+
+    TEMPORAL_RHYTHM_FEATURES = [
+        "typing_rhythm_entropy",
+        "typing_burst_count",
+        "typing_burst_mean_length",
+        "typing_burst_ratio",
+        "scroll_reading_wpm",
+        "scroll_depth_pct",
+        "pre_submit_pause_mean",
+        "inter_session_speed_delta",
+        "flight_time_cv",
+        "bigram_speed_mean",
+        "total_active_ms",
+        "idle_ratio",
+        "micro_vibration_mean",
+        "modifier_overlap_mean",
+        "modifier_overlap_std",
+        "modifier_overlap_count",
+        "touch_velocity_mean",
+        "scroll_velocity_mean",
+        "scroll_velocity_std",
+        "scroll_reversal_rate",
+        "scroll_session_depth",
+        "nav_dwell_mean",
+        "nav_dwell_std",
+        "nav_field_revisit_count",
+        "nav_focus_sequence_entropy",
+        "motion_rotation_mean",
+    ]
+
     ALL_FEATURES = (
         MOUSE_FEATURES
         + KEYSTROKE_FEATURES
@@ -225,13 +279,14 @@ class BehavioralFeatureEngine:
         + PHYSIOLOGICAL_FEATURES
         + DEVICE_FEATURES
         + COMPOSITE_FEATURES
+        + TEMPORAL_RHYTHM_FEATURES
     )
 
     FEATURE_COUNT = len(ALL_FEATURES)
 
     def __init__(self):
         logger.info(
-            "BehavioralFeatureEngine initialized with %d features across 8 categories",
+            "BehavioralFeatureEngine initialized with %d features across 9 categories",
             self.FEATURE_COUNT,
         )
 
@@ -254,21 +309,40 @@ class BehavioralFeatureEngine:
         mouse = categories.get("mouse_pointer", {})
         for feat in self.MOUSE_FEATURES:
             features[feat] = self._safe_float(
-                mouse.get(feat, extended.get(f"mouse_{feat}", 0))
+                mouse.get(feat, extended.get(feat, extended.get(f"mouse_{feat}", 0)))
             )
 
         # Category 2: Keystroke
+        # The frontend sends flat extended_features — map known frontend keys
+        # to the engine's expected feature names.
+        FRONTEND_KEY_MAP = {
+            "key_hold_mean": "typing_hold_variance",
+            "key_hold_std": "typing_hold_variance",
+            "flight_time_mean": "bigram_speed_mean",
+            "flight_time_std": "flight_time_cv",
+            "typing_speed_wpm": "typing_speed_wpm",
+            "rhythm_consistency": "flight_time_cv",
+            "correction_rate": "correction_rate",
+            "copy_paste_count": "copy_paste_count",
+            "data_familiarity_signal": "data_familiarity_signal",
+            "backspace_freq": "correction_rate",
+            "total_keys_pressed": "total_keystrokes",
+            "keystroke_event_count": "total_keystrokes",
+        }
         ks = categories.get("keystroke", {})
         for feat in self.KEYSTROKE_FEATURES:
-            features[feat] = self._safe_float(
-                ks.get(feat, extended.get(f"ks_{feat}", 0))
+            raw = (
+                ks.get(feat)
+                or extended.get(feat)
+                or extended.get(FRONTEND_KEY_MAP.get(feat, ""), 0)
             )
+            features[feat] = self._safe_float(raw)
 
         # Category 3: Cognitive
         cog = categories.get("cognitive", {})
         for feat in self.COGNITIVE_FEATURES:
             features[feat] = self._safe_float(
-                cog.get(feat, extended.get(f"cog_{feat}", 0))
+                cog.get(feat, extended.get(feat, extended.get(f"cog_{feat}", 0)))
             )
 
         # Category 4: Duress
@@ -287,7 +361,7 @@ class BehavioralFeatureEngine:
         phys = categories.get("physiological", {})
         for feat in self.PHYSIOLOGICAL_FEATURES:
             features[feat] = self._safe_float(
-                phys.get(feat, extended.get(f"phys_{feat}", 0))
+                phys.get(feat, extended.get(feat, extended.get(f"phys_{feat}", 0)))
             )
 
         # Category 7: Device
@@ -298,6 +372,11 @@ class BehavioralFeatureEngine:
         comp = categories.get("composite", {})
         for feat in self.COMPOSITE_FEATURES:
             features[feat] = self._safe_float(comp.get(feat, 0))
+
+        # Category 9: Temporal Rhythm (Phase 2) — reads directly from extended_features
+        for feat in self.TEMPORAL_RHYTHM_FEATURES:
+            if feat not in features:  # Don't overwrite if already extracted
+                features[feat] = self._safe_float(extended.get(feat, 0))
 
         return features
 
@@ -351,6 +430,13 @@ class BehavioralFeatureEngine:
         scores["composite_fraud"] = features.get("fraud_pattern_score", 0)
         scores["bot_vs_human"] = features.get("bot_vs_human_score", 0)
 
+        # Phase 2: Temporal Rhythm risk
+        scores["temporal_rhythm_risk"] = self._score_temporal(features)
+
+        # Phase 2: Feature richness (ratio of non-zero features — data quality signal)
+        non_zero = sum(1 for f in self.ALL_FEATURES if features.get(f, 0) != 0)
+        scores["feature_richness"] = round(non_zero / max(len(self.ALL_FEATURES), 1), 4)
+
         return scores
 
     def _score_category(self, features: Dict, feat_list: List[str]) -> float:
@@ -372,6 +458,39 @@ class BehavioralFeatureEngine:
         motion_std = features.get("motion_acc_std", 0)
         if motion_std > 15:
             risk += 0.3
+        return min(1.0, risk)
+
+    def _score_temporal(self, features: Dict) -> float:
+        """Score temporal rhythm features for anomalies (Phase 2)."""
+        risk = 0.0
+
+        # Very low typing rhythm entropy suggests bot/replay
+        entropy = features.get("typing_rhythm_entropy", 0)
+        if entropy > 0 and entropy < 0.5:
+            risk += 0.3
+
+        # Extreme flight time CoV suggests unnatural typing
+        cv = features.get("flight_time_cv", 0)
+        if cv > 0 and cv < 0.05:
+            risk += 0.2  # Too consistent = bot-like
+        elif cv > 2.0:
+            risk += 0.15  # Too erratic
+
+        # Very high burst ratio (>80% burst typing) is suspicious
+        br = features.get("typing_burst_ratio", 0)
+        if br > 0.8:
+            risk += 0.2
+
+        # Very high idle ratio could indicate automated tool pauses
+        idle = features.get("idle_ratio", 0)
+        if idle > 0.9:
+            risk += 0.15
+
+        # Mouse direction entropy near 0 = straight line bot movements
+        dir_ent = features.get("mouse_dir_entropy", 0)
+        if dir_ent > 0 and dir_ent < 0.5:
+            risk += 0.15
+
         return min(1.0, risk)
 
     @staticmethod
@@ -403,6 +522,7 @@ class BehavioralFeatureEngine:
                 "physiological": len(self.PHYSIOLOGICAL_FEATURES),
                 "device": len(self.DEVICE_FEATURES),
                 "composite": len(self.COMPOSITE_FEATURES),
+                "temporal_rhythm": len(self.TEMPORAL_RHYTHM_FEATURES),
             },
             "all_feature_names": self.ALL_FEATURES,
         }
@@ -417,3 +537,4 @@ def get_behavioral_engine() -> BehavioralFeatureEngine:
     if _engine is None:
         _engine = BehavioralFeatureEngine()
     return _engine
+

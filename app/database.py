@@ -1,72 +1,113 @@
-import sqlite3
 import json
 import hashlib
 import secrets
 import bcrypt
 import pyotp
-from datetime import datetime, timedelta
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Tuple
 import os
+import re
 import logging
 from contextlib import contextmanager
+from typing import Optional, List, Dict, Any, Union
 from app.config import Settings
-from sqlalchemy.pool import QueuePool
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 
-# Pre-computed dummy hash for constant-time auth when user does not exist.
-# This prevents timing-based username enumeration.
 _DUMMY_HASH = bcrypt.hashpw(b"dummy-constant-time-padding", bcrypt.gensalt())
-
 logger = logging.getLogger(__name__)
 
+class QueryAdapter:
+    """Wraps SQLAlchemy Connection to behave like DBAPI cursor and auto-translate parameters."""
+    def __init__(self, conn):
+        self.conn = conn
+        self._result = None
+
+    def cursor(self):
+        return self
+        
+    def execute(self, query, params=None):
+        if params:
+            param_dict = {}
+            if isinstance(params, (tuple, list)):
+                def repl(match):
+                    idx = len(param_dict)
+                    if idx < len(params):
+                        key = f"p{idx}"
+                        param_dict[key] = params[idx]
+                        return f":{key}"
+                    return match.group(0)
+                
+                query = re.sub(r'(\?|%s)', repl, query)
+            elif isinstance(params, dict):
+                param_dict = params
+            self._result = self.conn.execute(text(query), param_dict)
+        else:
+            self._result = self.conn.execute(text(query))
+        return self
+
+    def fetchone(self):
+        if not self._result:
+            return None
+        row = self._result.fetchone()
+        if row:
+            return dict(row._mapping)
+        return None
+        
+    def fetchall(self):
+        if not self._result:
+            return []
+        return [dict(row._mapping) for row in self._result.fetchall()]
+
+    def commit(self):
+        pass
+        
+    def rollback(self):
+        pass
+
+    @property
+    def lastrowid(self):
+        if self._result:
+            return self._result.lastrowid
+        return None
 
 class DatabaseManager:
     """Manages all database operations for the continuous authentication system"""
 
     def __init__(self, db_path: str):
         self.db_path = db_path
-        if self.db_path != ":memory:":
-            self.pool = QueuePool(
-                creator=self._create_pool_connection,
-                pool_size=5,
-                max_overflow=10,
-                timeout=30,
-                recycle=1800,
-            )
+        
+        # Configure SQLAlchemy Engine
+        if self.db_path.startswith("postgresql://") or self.db_path.startswith("postgres://"):
+            self.engine = create_engine(self.db_path, pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=1800)
+            self.is_pg = True
         else:
-            self.pool = None
+            if self.db_path != ":memory:" and not self.db_path.startswith("sqlite"):
+                # SQLite file path
+                self.db_path = "sqlite:///" + self.db_path
+                self.engine = create_engine(self.db_path)
+            elif self.db_path == ":memory:":
+                self.engine = create_engine("sqlite:///:memory:")
+            else:
+                self.engine = create_engine(self.db_path)
+            self.is_pg = False
             
         self.init_database()
 
-    def _create_pool_connection(self):
-        """Create a new SQLite connection with row_factory pre-configured.
-
-        Setting ``row_factory`` in the creator ensures every connection
-        checked out of the pool returns ``sqlite3.Row`` objects (dict-like
-        access), regardless of pool recycling or thread reuse.
-        """
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        return conn
-
     def init_database(self):
-        """Initialize database with required tables.
-
-        Table definitions here match the canonical Alembic-managed schema
-        (migrations 001–004).  ``CREATE TABLE IF NOT EXISTS`` is idempotent —
-        for existing databases, schema evolution is handled exclusively by
-        ``alembic upgrade head``.
-        """
-        # Ensure directory exists for file-based databases (skip for in-memory)
-        dir_path = os.path.dirname(self.db_path)
-        if dir_path:
-            os.makedirs(dir_path, exist_ok=True)
+        """Initialize database with required tables."""
+        if not self.is_pg and self.db_path != "sqlite:///:memory:":
+            dir_path = os.path.dirname(self.db_path.replace("sqlite:///", ""))
+            if dir_path:
+                os.makedirs(dir_path, exist_ok=True)
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-
-            # Enable WAL mode for better concurrency
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            cursor.execute("PRAGMA synchronous=NORMAL;")
+            
+            if not self.is_pg:
+                cursor.execute("PRAGMA journal_mode=WAL;")
+                cursor.execute("PRAGMA synchronous=NORMAL;")
 
             # ── Users ───────────────────────────────────────────────────────
             cursor.execute(
@@ -83,10 +124,26 @@ class DatabaseManager:
                     failed_attempts INTEGER DEFAULT 0,
                     locked_until TIMESTAMP,
                     calibration_complete BOOLEAN DEFAULT 0,
+                    email_verified BOOLEAN DEFAULT 0,
+                    mfa_enabled BOOLEAN DEFAULT 0,
                     role TEXT DEFAULT 'user'
                 )
             """
             )
+
+            # Retrofit existing databases safely
+            try:
+                cursor.execute(
+                    "ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0"
+                )
+            except Exception:
+                pass
+            try:
+                cursor.execute(
+                    "ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0"
+                )
+            except Exception:
+                pass
 
             # ── Sessions ────────────────────────────────────────────────────
             cursor.execute(
@@ -102,10 +159,18 @@ class DatabaseManager:
                     device_id TEXT,
                     assurance_level TEXT DEFAULT 'pwd',
                     context_hash TEXT,
+                    ended_at TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
             """
             )
+            
+            try:
+                cursor.execute(
+                    "ALTER TABLE sessions ADD COLUMN ended_at TIMESTAMP"
+                )
+            except Exception:
+                pass
 
             # ── Behavioral data ─────────────────────────────────────────────
             cursor.execute(
@@ -250,28 +315,9 @@ class DatabaseManager:
 
     @contextmanager
     def get_connection(self):
-        """Context manager for database connections.
-        Uses a persistent in‑memory connection when ``self.db_path`` is ``":memory:"``.
-        Otherwise uses SQLAlchemy QueuePool for performance.
-        """
-        if self.db_path == ":memory:":
-            # Create a persistent connection for the lifetime of the manager
-            if not hasattr(self, "_mem_conn"):
-                self._mem_conn = sqlite3.connect(self.db_path, check_same_thread=False)
-                self._mem_conn.row_factory = sqlite3.Row
-            conn = self._mem_conn
-            try:
-                yield conn
-            finally:
-                # Do not close the in‑memory connection – it would lose data
-                pass
-        else:
-            conn = self.pool.connect()
-            # row_factory is set in _create_pool_connection, no need to re-set
-            try:
-                yield conn
-            finally:
-                conn.close()
+        """Context manager for database connections."""
+        with self.engine.begin() as conn:
+            yield QueryAdapter(conn)
 
     # ── Column projections are hardcoded in each query (no f-string SQL) ──
 
@@ -280,7 +326,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             row = conn.execute(
                 "SELECT user_id, username, email, role, is_active, calibration_complete, "
-                "created_at, last_login, failed_attempts, locked_until "
+                "created_at, last_login, failed_attempts, locked_until, email_verified "
                 "FROM users WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
@@ -295,7 +341,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             row = conn.execute(
                 "SELECT user_id, username, email, role, is_active, calibration_complete, "
-                "created_at, last_login, failed_attempts, locked_until "
+                "created_at, last_login, failed_attempts, locked_until, email_verified "
                 "FROM users WHERE username = ?",
                 (username,),
             ).fetchone()
@@ -306,7 +352,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             row = conn.execute(
                 "SELECT user_id, username, email, role, is_active, calibration_complete, "
-                "created_at, last_login, failed_attempts, locked_until "
+                "created_at, last_login, failed_attempts, locked_until, email_verified "
                 "FROM users WHERE email = ?",
                 (email,),
             ).fetchone()
@@ -317,7 +363,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             row = conn.execute(
                 "SELECT user_id, username, email, role, is_active, calibration_complete, "
-                "created_at, last_login, failed_attempts, locked_until, password_hash "
+                "created_at, last_login, failed_attempts, locked_until, password_hash, email_verified "
                 "FROM users WHERE username = ? AND is_active = 1",
                 (username,),
             ).fetchone()
@@ -401,8 +447,8 @@ class DatabaseManager:
             if fernet_key:
                 fernet = Fernet(fernet_key.encode("utf-8"))
                 encrypted_mfa_secret = fernet.encrypt(mfa_secret.encode("utf-8")).decode("utf-8")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to encrypt MFA secret, using plaintext fallback: %s", e)
 
         try:
             # Generate salt and hash password
@@ -433,7 +479,7 @@ class DatabaseManager:
                 conn.commit()
                 return user_id, mfa_secret
 
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             return None  # User already exists
 
     def authenticate_user(self, username: str, password: str) -> Optional[Dict]:
@@ -450,7 +496,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT user_id, username, email, role, is_active, calibration_complete, "
-                "created_at, last_login, failed_attempts, locked_until, password_hash "
+                "created_at, last_login, failed_attempts, locked_until, password_hash, email_verified "
                 "FROM users WHERE (username = ? OR email = ?) AND is_active = 1",
                 (username, username),
             )
@@ -465,7 +511,7 @@ class DatabaseManager:
             # Check if account is locked (DB-side comparison avoids UTC/local mismatch)
             if user["locked_until"]:
                 cursor.execute(
-                    "SELECT 1 FROM users WHERE user_id = ? AND locked_until > datetime('now')",
+                    "SELECT 1 FROM users WHERE user_id = ? AND locked_until > CURRENT_TIMESTAMP",
                     (user["user_id"],),
                 )
                 if cursor.fetchone():
@@ -489,18 +535,19 @@ class DatabaseManager:
                 return result
             else:
                 # Atomic increment — avoids TOCTOU race under concurrency
+                lockout_time = datetime.now(timezone.utc) + timedelta(minutes=15)
                 cursor.execute(
                     """
                     UPDATE users
                     SET failed_attempts = failed_attempts + 1,
                         locked_until = CASE
                             WHEN failed_attempts + 1 >= 5
-                            THEN datetime('now', '+15 minutes')
+                            THEN ?
                             ELSE locked_until
                         END
                     WHERE user_id = ?
                 """,
-                    (user["user_id"],),
+                    (lockout_time.isoformat(), user["user_id"]),
                 )
                 conn.commit()
 
@@ -575,6 +622,16 @@ class DatabaseManager:
             )
             conn.commit()
 
+    def set_email_verified(self, user_id: int):
+        """Set user's email as verified."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET email_verified = 1 WHERE user_id = ?",
+                (user_id,),
+            )
+            conn.commit()
+
     def update_session_activity(self, session_id: str):
         """Update last activity timestamp for session"""
         with self.get_connection() as conn:
@@ -594,7 +651,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE sessions SET is_active = 0
+                UPDATE sessions SET is_active = 0, ended_at = CURRENT_TIMESTAMP
                 WHERE session_id = ?
             """,
                 (session_id,),
@@ -1066,10 +1123,21 @@ class DatabaseManager:
                 return None
             if row["used_at"]:
                 return None
-            try:
-                expires_at = datetime.fromisoformat(row["expires_at"])
-            except Exception:
+            expires_at = row["expires_at"]
+            if isinstance(expires_at, str):
+                try:
+                    expires_at = datetime.fromisoformat(expires_at)
+                except Exception:
+                    expires_at = now
+            
+            if isinstance(expires_at, datetime):
+                if expires_at.tzinfo is not None and now.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=None)
+                elif expires_at.tzinfo is None and now.tzinfo is not None:
+                    now = now.replace(tzinfo=None)
+            else:
                 expires_at = now
+
             if expires_at < now:
                 return None
             cursor.execute(

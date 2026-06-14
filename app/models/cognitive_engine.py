@@ -164,7 +164,7 @@ class CognitiveEngine:
         if reread_count > 4 and hesitation_count >= 2:
             risk += 0.3
             flags.append(
-                f"duress:anxious_rereading({reread_count}x rereed + hesitation)"
+                f"duress:anxious_rereading({reread_count}x reread + hesitation)"
             )
 
         # Tab switching during transaction
@@ -176,6 +176,22 @@ class CognitiveEngine:
         if scroll_reversals > 0.5:
             risk += 0.15
             flags.append(f"duress:scroll_anxiety(reversal_rate={scroll_reversals:.2f})")
+
+        # Modifier key overlap anomaly — stressed users press shift erratically
+        modifier_overlap = f.get("modifier_overlap_mean", 0)
+        modifier_std = f.get("modifier_overlap_std", 0)
+        if modifier_overlap > 300 and modifier_std > 150:
+            risk += 0.15
+            flags.append(
+                f"duress:erratic_modifier_overlap"
+                f"(mean={modifier_overlap:.0f}ms, std={modifier_std:.0f}ms)"
+            )
+
+        # Typing speed deceleration during session = increasing anxiety
+        wpm = f.get("typing_speed_wpm", 0)
+        if wpm > 0 and wpm < 15 and hesitation_count >= 2:
+            risk += 0.2
+            flags.append(f"duress:slow_anxious_typing({wpm:.0f} WPM + {hesitation_count} hesitations)")
 
         return min(1.0, risk)
 
@@ -204,13 +220,19 @@ class CognitiveEngine:
         reread_count = f.get("reread_count", 0)
         nav_entropy = f.get("nav_focus_sequence_entropy", 1.0)
         correction_rate = f.get("correction_rate", 0.1)
+        data_familiarity = f.get("data_familiarity_signal", 0.0)
 
-        # Copy-paste of account/amount — STRONGEST indicator
+        # Dynamic scoring for data unfamiliarity
+        if data_familiarity > 0.5:
+            risk += data_familiarity * 0.4
+            flags.append(f"app_fraud:data_unfamiliarity({data_familiarity:.2f})")
+
+        # Copy-paste fatigue / coaching
         if copy_pastes >= self.APP_FRAUD_PASTE_THRESHOLD:
-            risk += 0.5
+            risk += 0.4 + (min(copy_pastes, 5) * 0.05)
             flags.append(
-                f"app_fraud:copy_paste({copy_pastes}x) — "
-                "account number likely received via external channel"
+                f"app_fraud:copy_paste_fatigue({copy_pastes}x) — "
+                "account/amount fields pasted repeatedly"
             )
         elif copy_pastes == 1:
             risk += 0.2
@@ -218,13 +240,13 @@ class CognitiveEngine:
 
         # Rapid submit + no hesitation + paste = very high confidence APP fraud
         if rapid_submit and copy_pastes >= 1 and hesitation_count == 0:
-            risk += 0.4
+            risk += 0.3
             flags.append(
                 "app_fraud:COACHED_PATTERN — rapid submit + paste + no hesitation"
             )
 
-        # Unusually fast navigation (coached: told exactly what to click)
-        if nav_dwell < 300 and nav_entropy < 0.5:
+        # Scripted / coached navigation
+        if nav_dwell < 400 and nav_entropy < 0.6:
             risk += 0.3
             flags.append(
                 f"app_fraud:scripted_navigation "
@@ -242,7 +264,7 @@ class CognitiveEngine:
         # Zero corrections on complex form = coached (told what to type)
         if correction_rate == 0.0 and nav_dwell < 500:
             risk += 0.15
-            flags.append("app_fraud:zero_corrections_fast_nav — possibly coached input")
+            flags.append("app_fraud:zero_corrections_fast_nav")
 
         return min(1.0, risk)
 
@@ -289,6 +311,12 @@ class CognitiveEngine:
                 f"(baseline={baseline_cr:.2f}, current={current_cr:.2f})"
             )
 
+        # Mouse trajectory and micro-jitters
+        traj_curvature = f.get("trajectory_curvature", 0.0)
+        if traj_curvature > 0.5:
+            risk += min(0.3, traj_curvature * 0.2)
+            flags.append(f"takeover:mouse_micro_jitters({traj_curvature:.2f})")
+
         baseline_scroll = baseline.get("scroll_velocity_mean", 1.0)
         current_scroll = f.get("scroll_velocity_mean", 1.0)
         if baseline_scroll > 0:
@@ -297,6 +325,41 @@ class CognitiveEngine:
                 risk += 0.2
                 flags.append(
                     f"takeover:scroll_pattern_mismatch({scroll_ratio:.0%} change)"
+                )
+
+        # Inter-session speed diff
+        speed_delta = f.get("inter_session_speed_delta", 0.0)
+        if speed_delta > 0.4:
+            risk += 0.25
+            flags.append(f"takeover:typing_speed_drift({speed_delta:.0%})")
+
+        # Digraph profile deviation — per-pair typing patterns are unique
+        digraph_deviations = 0
+        for key, val in f.items():
+            if key.startswith("digraph_") and key.endswith("_mean"):
+                pair = key.replace("digraph_", "").replace("_mean", "")
+                baseline_key = key
+                baseline_val = baseline.get(baseline_key, 0)
+                if baseline_val > 0:
+                    ratio = abs(val - baseline_val) / (baseline_val + 1e-6)
+                    if ratio > 1.0:  # >100% deviation on a specific digraph
+                        digraph_deviations += 1
+        if digraph_deviations >= 3:
+            risk += 0.3
+            flags.append(
+                f"takeover:digraph_profile_mismatch({digraph_deviations} pairs deviated >100%)"
+            )
+
+        # Modifier overlap baseline shift
+        current_mod = f.get("modifier_overlap_mean", 0)
+        baseline_mod = baseline.get("modifier_overlap_mean", 0)
+        if baseline_mod > 0 and current_mod > 0:
+            mod_ratio = abs(current_mod - baseline_mod) / (baseline_mod + 1e-6)
+            if mod_ratio > 1.5:
+                risk += 0.2
+                flags.append(
+                    f"takeover:modifier_overlap_shift"
+                    f"(baseline={baseline_mod:.0f}ms, current={current_mod:.0f}ms)"
                 )
 
         return min(1.0, risk)
@@ -324,6 +387,9 @@ class CognitiveEngine:
         hesitation_count = f.get("hesitation_count", 0)
         motion_count = f.get("motion_event_count", 0)
         nav_entropy = f.get("nav_focus_sequence_entropy", 1.0)
+        pointer_type = f.get("pointer_type", "mouse")
+        keystroke_count = f.get("total_keystrokes", 0)
+        is_touch_device = pointer_type == "touch"
 
         # Constant scroll speed = bot
         if (
@@ -346,6 +412,11 @@ class CognitiveEngine:
             risk += 0.3
             flags.append("bot:zero_corrections_fast_nav")
 
+        # 0% correction rate = zero human errors = bot signal
+        if correction_rate == 0.0 and keystroke_count > 20:
+            risk += 0.25
+            flags.append("bot:zero_backspaces_inhuman_perfection")
+
         # No cognitive events at all = not human
         if hesitation_count == 0 and nav_dwell < 100:
             risk += 0.2
@@ -355,6 +426,20 @@ class CognitiveEngine:
         if nav_entropy == 0.0 and nav_dwell < 500:
             risk += 0.3
             flags.append("bot:zero_nav_entropy — scripted element access pattern")
+
+        # Flight time coefficient of variation near zero = robotic rhythm
+        flight_cv = f.get("flight_time_cv", 1.0)
+        if flight_cv < 0.05 and keystroke_count > 30:
+            risk += 0.35
+            flags.append(
+                f"bot:robotic_rhythm(flight_cv={flight_cv:.3f}, keys={keystroke_count})"
+            )
+
+        # Zero modifier overlaps on extended typing = no shift usage = script
+        mod_count = f.get("modifier_overlap_count", 0)
+        if keystroke_count > 50 and mod_count == 0:
+            risk += 0.15
+            flags.append("bot:zero_modifier_overlaps — no shift/ctrl usage in 50+ keys")
 
         return min(1.0, risk)
 

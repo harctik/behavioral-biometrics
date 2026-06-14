@@ -7,6 +7,10 @@ import os
 import sys
 import uuid
 import pytest
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 # Ensure project root is on sys.path
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -24,19 +28,59 @@ _TEST_JWT_SECRET = "test-jwt-secret-for-testing-32bytes!"
 # MFA secret encryption/decryption is exercised rather than silently skipped.
 _TEST_FERNET_KEY = "A6m3vqcXQ20GUuSCGELx79Za0lz16K2qtq72KA3xQuw="
 
+# Test database - use TEST PostgreSQL DB URL or create a separate Supabase test project
+_TEST_DB_URI = os.environ.get("TEST_DATABASE_URL", "")
+
 
 @pytest.fixture
 def app():
-    """Create a fresh test application with a completely isolated in-memory DB."""
+    """Create a fresh test application with a SQLite in-memory test database."""
     os.environ["SECRET_KEY"] = _TEST_SECRET
     os.environ["JWT_SECRET_KEY"] = _TEST_JWT_SECRET
-    os.environ["DATABASE_PATH"] = ":memory:"
     os.environ["BACKUP_FERNET"] = _TEST_FERNET_KEY
+    os.environ["MAIL_BACKEND"] = "console"
+
+    # Use test database URL if provided, otherwise use SQLite memory DB
+    if _TEST_DB_URI:
+        os.environ["SQLALCHEMY_DATABASE_URI"] = _TEST_DB_URI
+    else:
+        # Force SQLite for tests to avoid connecting to production Supabase
+        os.environ["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
 
     # Flush the cached DB engine so each test app gets a pristine schema
     reset_engine()
 
     application = create_app("testing")
+    
+    # Truncate tables to ensure isolated state for tests
+    with application.app_context():
+        from app.extensions import get_db
+        db = get_db()
+        try:
+            # PostgreSQL fast truncate
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    TRUNCATE TABLE 
+                        users, sessions, behavioral_data, auth_events, model_metadata, 
+                        audit_evidence, password_reset_tokens, consent_records, otp_codes, 
+                        investments, beneficiaries, cards, notifications 
+                    CASCADE;
+                """)
+                conn.commit()
+        except Exception:
+            # SQLite fallback
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                for table in ["users", "sessions", "behavioral_data", "auth_events", "model_metadata", 
+                              "audit_evidence", "password_reset_tokens", "consent_records", "otp_codes", 
+                              "investments", "beneficiaries", "cards", "notifications"]:
+                    try:
+                        cursor.execute(f"DELETE FROM {table}")
+                    except Exception:
+                        pass
+                conn.commit()
+
     yield application
 
     # Teardown: clear cached engines so the next test starts clean
@@ -71,8 +115,10 @@ def registered_user(client):
     mfa_secret = ""
     with client.application.app_context():
         from app.extensions import get_db
+        db = get_db()
+        db.set_email_verified(data["user_id"])
 
-        user_record = get_db().get_user_for_mfa(data["user_id"])
+        user_record = db.get_user_for_mfa(data["user_id"])
         if user_record:
             mfa_secret = user_record["mfa_secret"]
 

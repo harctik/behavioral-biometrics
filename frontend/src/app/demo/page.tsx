@@ -76,7 +76,7 @@ function RiskBar({ label, value, color }: { label: string; value: number; color:
 
 export default function DemoPage() {
   const [text, setText] = useState("");
-  const [risks, setRisks] = useState(computeRiskSignals({ customer_session_id: "", session_id: "", page_context: "", window_start: Date.now(), window_end: Date.now(), sdk_timing: { sdk_load_time: 0, first_interaction_time: -1, time_to_first_keystroke: -1 }, device_fingerprint: null, keystroke_events: [], mouse_events: [], touch_events: [], scroll_events: [], navigation_events: [], motion_events: [], cognitive_events: [], extended_features: {} as any }));
+  const [risks, setRisks] = useState(computeRiskSignals({ customer_session_id: "", session_id: "", page_context: "", window_start: Date.now(), window_end: Date.now(), sdk_timing: { sdk_load_time: 0, first_interaction_time: -1, time_to_first_keystroke: -1 }, device_fingerprint: null, keystroke_events: [], mouse_events: [], touch_events: [], scroll_events: [], navigation_events: [], motion_events: [], cognitive_events: [], sequence_hash: "", clock_skew: 0, extended_features: {} as any }));
   const [decision, setDecision] = useState<"normal" | "elevated" | "critical" | null>(null);
   const [simLabel, setSimLabel] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

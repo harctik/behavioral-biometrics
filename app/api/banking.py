@@ -11,11 +11,81 @@ from app.api.helpers import (
     require_mfa,
     get_current_user_id,
     validate_session_ownership,
+    resolve_query,
 )
+import json
 
 logger = logging.getLogger(__name__)
 
 banking_ns = Namespace("banking", description="Banking-grade operations")
+
+
+@banking_ns.route("/balance")
+class AccountBalance(Resource):
+    @jwt_required()
+    @limiter.limit("30 per minute")
+    def get(self):
+        """Return the authenticated user's current account balance.
+
+        The balance is derived from transaction audit records.
+        In a real deployment, this would query the Core Banking System (CBS).
+        """
+        uid = get_current_user_id()
+        db = get_db()
+
+        # Real deployment: query the Core Banking System (CBS)
+        try:
+            from app.banking.cbs_adapters import get_cbs_adapter
+            cbs = get_cbs_adapter("finacle")
+            # CBS would fetch actual balance; here we mock it based on customer risk profile
+            profile = cbs.get_customer_risk_profile(str(uid))
+            initial_balance = profile.get("averageTransactionAmount", 50000.00) * 5.0
+        except Exception:
+            initial_balance = 50000.00  # Fallback
+
+        try:
+            with db.get_connection() as conn:
+                if is_pg:
+                    row = conn.execute(
+                        """SELECT SUM(CAST(metadata::json->>'amount' AS NUMERIC)) as total_out
+                           FROM audit_evidence
+                           WHERE user_id = %s AND action = 'transaction_assess'
+                           AND metadata::json->>'decision' = 'allow'""",
+                        (uid,),
+                    ).fetchone()
+                    total_out = float(row["total_out"] or 0.0) if row else 0.0
+                else:
+                    # SQLite fallback
+                    rows = conn.execute(
+                        """SELECT metadata FROM audit_evidence
+                           WHERE user_id = ? AND action = 'transaction_assess'""",
+                        (uid,),
+                    ).fetchall()
+                    total_out = 0.0
+                    for r in rows:
+                        meta = r["metadata"]
+                        if isinstance(meta, str):
+                            try:
+                                meta = json.loads(meta)
+                            except (json.JSONDecodeError, TypeError):
+                                continue
+                        if (
+                            meta
+                            and meta.get("decision") == "allow"
+                            and meta.get("amount") is not None
+                        ):
+                            total_out += float(meta["amount"])
+        except Exception as e:
+            logger.error("Balance query failed: %s", e)
+            total_out = 0.0
+
+        balance = max(0, initial_balance - total_out)
+        return {
+            "balance": round(balance, 2),
+            "currency": "INR",
+            "account_type": "savings",
+            "as_of": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        }, 200
 
 
 @banking_ns.route("/app-fraud-check")
@@ -47,9 +117,9 @@ class APPFraudCheck(Resource):
         except Exception:
             logger.exception("APP fraud check failed")
             result = {
-                "app_fraud_score": 0.0,
-                "is_suspicious": False,
-                "alert_level": "low",
+                "app_fraud_score": 1.0,
+                "is_suspicious": True,
+                "alert_level": "high",
             }
 
         get_db().log_audit_evidence(
@@ -101,10 +171,11 @@ class MakerChecker(Resource):
         except Exception:
             logger.exception("Maker-checker verification failed")
             result = {
-                "maker_checker_verified": True,
+                "maker_checker_verified": False,
                 "behavioral_similarity": 0.0,
-                "compliance_violation": False,
+                "compliance_violation": True,
                 "confidence": 0.0,
+                "error": "Maker-checker verification system is temporarily unavailable",
             }
 
         db.log_audit_evidence(
@@ -140,3 +211,96 @@ class CBSHealth(Resource):
             logger.exception("CBS health check failed")
             results = {"error": "CBS adapters unavailable"}
         return {"cbs_status": results}, 200
+
+@banking_ns.route("/statements")
+class AccountStatements(Resource):
+    @jwt_required()
+    @limiter.limit("20 per minute")
+    def get(self):
+        """Retrieve monthly account statements."""
+        uid = get_current_user_id()
+        db = get_db()
+        statements = []
+        from app.database_pg import PostgresDatabaseManager
+        is_pg = isinstance(db, PostgresDatabaseManager)
+        try:
+            with db.get_connection() as conn:
+                if is_pg:
+                    # Group by month (YYYY-MM) using PostgreSQL syntax
+                    rows = conn.execute(
+                        """SELECT 
+                              TO_CHAR(created_at, 'YYYY-MM') as month_str,
+                              SUM(CAST(metadata::json->>'amount' AS NUMERIC)) as total_out
+                           FROM audit_evidence
+                           WHERE user_id = %s 
+                           AND action = 'transaction_assess'
+                           AND metadata::json->>'decision' = 'allow'
+                           GROUP BY TO_CHAR(created_at, 'YYYY-MM')
+                           ORDER BY month_str DESC
+                           LIMIT 12""",
+                        (uid,)
+                    ).fetchall()
+                    rows_parsed = [{"month_str": r["month_str"], "total_out": float(r["total_out"] or 0.0)} for r in rows]
+                else:
+                    # SQLite fallback
+                    db_rows = conn.execute(
+                        """SELECT metadata, created_at FROM audit_evidence
+                           WHERE user_id = ? 
+                           AND action = 'transaction_assess'
+                           ORDER BY created_at DESC""",
+                        (uid,)
+                    ).fetchall()
+                    
+                    months_data = {}
+                    for r in db_rows:
+                        meta = r["metadata"]
+                        if isinstance(meta, str):
+                            try:
+                                meta = json.loads(meta)
+                            except (json.JSONDecodeError, TypeError):
+                                continue
+                        if (
+                            meta
+                            and meta.get("decision") == "allow"
+                            and meta.get("amount") is not None
+                        ):
+                            created_at = r["created_at"]
+                            if hasattr(created_at, "isoformat"):
+                                date_str = created_at.isoformat()
+                            else:
+                                date_str = str(created_at)
+                            month_str = date_str[:7]
+                            months_data[month_str] = months_data.get(month_str, 0.0) + float(meta["amount"])
+                            
+                    sorted_months = sorted(months_data.keys(), reverse=True)[:12]
+                    rows_parsed = [{"month_str": m, "total_out": months_data[m]} for m in sorted_months]
+                
+                import uuid
+                import datetime
+                
+                initial_balance = 50000.00
+                running_balance = initial_balance
+                for row in reversed(rows_parsed):
+                    m_out = float(row["total_out"] or 0)
+                    running_balance -= m_out
+                    
+                    month_str = row["month_str"]
+                    year, month = month_str.split('-')
+                    month_name = datetime.date(int(year), int(month), 1).strftime('%B %Y')
+                    
+                    m_in = 75000.00  # Simulated monthly salary credit
+                    running_balance += m_in
+                    
+                    statements.insert(0, {
+                        "id": str(uuid.uuid4())[:8],
+                        "month": month_name,
+                        "date": f"{month_str}-28",  # Statement generation date
+                        "amount_in": round(m_in, 2),
+                        "amount_out": round(m_out, 2),
+                        "closing_balance": round(running_balance, 2),
+                        "document_url": f"/api/v1/banking/statements/{uid}/download?month={month_str}"
+                    })
+        except Exception as e:
+            logger.error("Failed to generate statements: %s", e)
+            
+        return {"statements": statements}, 200

@@ -68,6 +68,14 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     needs: [lint, frontend-build]
+    env:
+      FLASK_ENV: testing
+      SECRET_KEY: test-secret-key-for-ci-runs-12345
+      JWT_SECRET_KEY: test-jwt-secret-key-for-ci-runs-12345
+      BACKUP_FERNET: q6_y4a2o_2o14-vR0J7w0QzQ3gE7D7_w5UfL8Z7u5Z8=
+      SQLALCHEMY_DATABASE_URI: sqlite:///:memory:
+      RATELIMIT_STORAGE_URI: memory://
+      TXN_SIGNING_KEY: test-txn-signing-key-for-ci-runs-12345
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -81,6 +89,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -e ".[dev]"
+          pip install psycopg2-binary
 
       - name: Run tests with pytest
         run: |

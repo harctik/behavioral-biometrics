@@ -37,10 +37,12 @@ Thank you for considering contributing to this project! This document provides g
 ### Prerequisites
 
 - Python 3.10, 3.11, or 3.12
+- Node.js 18+ and npm
+- Docker and Docker Compose (optional, for containerized runs)
 - pip (Python package manager)
 - Git
 
-### Installation
+### Backend Installation
 
 1. **Create virtual environment**
    ```bash
@@ -60,6 +62,7 @@ Thank you for considering contributing to this project! This document provides g
 2. **Install dependencies**
    ```bash
    pip install -e ".[dev]"
+   pip install psycopg2-binary
    ```
 
 3. **Set up environment variables**
@@ -71,9 +74,15 @@ Thank you for considering contributing to this project! This document provides g
    # Edit .env and set required variables:
    # - SECRET_KEY (required)
    # - JWT_SECRET_KEY (required)
+   # - BACKUP_FERNET (required for MFA/OTP encryption)
    ```
 
-4. **Run the application**
+4. **Initialize the Database and Run Migrations**
+   ```bash
+   alembic upgrade head
+   ```
+
+5. **Run the application**
    ```bash
    # Development mode
    flask run
@@ -81,6 +90,39 @@ Thank you for considering contributing to this project! This document provides g
    # Or using the entry point
    behavior-auth
    ```
+
+### Frontend Installation
+
+1. **Navigate to the frontend directory**
+   ```bash
+   cd frontend
+   ```
+
+2. **Install node dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Run the Next.js development server**
+   ```bash
+   npm run dev
+   ```
+   Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+
+### Containerized Setup (Docker Compose)
+
+If you prefer running the entire stack (PostgreSQL, Redis, Flask API, Celery, and Next.js) inside Docker:
+
+```bash
+# Start all services
+docker compose up --build -d
+
+# Check status
+docker compose ps
+
+# View logs
+docker compose logs -f
+```
 
 ## Code Style
 

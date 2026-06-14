@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -15,7 +16,7 @@ export default function OtpPage() {
   const router = useRouter();
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
+  
   const [info, setInfo] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(OTP_TTL);
@@ -75,13 +76,15 @@ export default function OtpPage() {
       if (res.ok) {
         setEmailSent(true);
         setInfo("OTP code sent to your registered email address.");
-        setError("");
+        ;
         startTimer(); // START timer only when email is successfully sent
       } else {
-        setError("Failed to send OTP. Please try again.");
+        toast.error("Failed to send OTP. Please try again.");
       }
     } catch {
-      setError("Network error. Please try again.");
+      toast.error("Network error. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   }, [startTimer]);
 
@@ -105,21 +108,21 @@ export default function OtpPage() {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setError("");
+    ;
 
     const normalizedOtp = normalizeOtp(otp);
     if (!isValidOtp(normalizedOtp)) {
-      setError("Enter a valid 6-digit OTP code.");
+      toast.error("Enter a valid 6-digit OTP code.");
       return;
     }
 
     if (!sessionId) {
-      setError("No active session found. Please sign in again.");
+      toast.error("No active session found. Please sign in again.");
       return;
     }
 
     if (expired) {
-      setError("This OTP has expired. Please request a new one.");
+      toast.error("This OTP has expired. Please request a new one.");
       return;
     }
 
@@ -143,9 +146,9 @@ export default function OtpPage() {
         return;
       }
 
-      setError(data.error ?? "OTP verification failed.");
+      toast.error(data.error ?? "OTP verification failed.");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "OTP verification failed.");
+      toast.error(err instanceof Error ? err.message : "OTP verification failed.");
     } finally {
       setIsLoading(false);
     }
@@ -153,11 +156,12 @@ export default function OtpPage() {
 
   const handleResend = async () => {
     setOtp("");
-    setError("");
+    ;
     setInfo("");
     setMlMetrics(null);
     if (sessionId) {
       setInfo("Sending new OTP...");
+      setIsLoading(true);
       await sendOtpEmail(sessionId);
     }
   };
@@ -169,8 +173,8 @@ export default function OtpPage() {
   return (
     <AuthShell title="Verify OTP" subtitle="A 6-digit code has been sent to your registered email. Valid for 60 seconds.">
       <form onSubmit={handleSubmit} className="space-y-5">
-        {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
-        {!error && info ? (
+        
+        {info ? (
           <div className="bg-accent-primary/10 border border-accent-primary/20 text-accent-primary px-4 py-3 rounded-xl text-xs flex items-center gap-2">
             <Mail className="w-4 h-4" />
             {info}
@@ -263,6 +267,28 @@ export default function OtpPage() {
               </span>
             )}
           </AuthButton>
+        )}
+
+        {/* Resend button for failed email send state */}
+        {!emailSent && !timerActive && (
+          <div className="flex flex-col gap-3 mt-4">
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={isLoading}
+              className="w-full bg-accent-primary text-white font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Sending...' : 'Retry Sending OTP'}
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/login")}
+              className="w-full bg-surface-2 text-fg font-medium text-sm py-3 rounded-xl hover:bg-surface-elevated transition-colors"
+            >
+              Back to Login
+            </button>
+          </div>
         )}
 
         {/* Resend button — only visible after expiry */}

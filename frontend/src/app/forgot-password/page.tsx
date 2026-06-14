@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState, useEffect } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
 import { getCollector } from "@/lib/behavioral-collector";
@@ -11,37 +12,27 @@ import { Mail, ArrowLeft } from "lucide-react";
 export default function ForgotPasswordPage() {
   const [identifier, setIdentifier] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-
-  // Initialize behavioral collection outside useEffect so it starts immediately
-  useState(() => {
+  
+  useEffect(() => {
     const collector = getCollector();
     collector.setContext("FORGOT_PASSWORD");
     collector.reset();
-    collector.start();
-  });
-
-  useEffect(() => {
-    const collector = getCollector();
-    return () => collector.stop();
   }, []);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    setError("");
-    setMessage("");
     setIsLoading(true);
 
     if (identifier.length < 3) {
-      setError("Please enter a valid username or email.");
+      toast.error("Please enter a valid username or email.");
       setIsLoading(false);
       return;
     }
 
     const isEmail = identifier.includes("@");
     if (isEmail && !identifier.includes(".")) {
-      setError("Please enter a valid email address.");
+      toast.error("Please enter a valid email address.");
       setIsLoading(false);
       return;
     }
@@ -66,11 +57,11 @@ export default function ForgotPasswordPage() {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : "Unable to process request";
       if (errMsg.toLowerCase().includes("too many") || errMsg.toLowerCase().includes("rate limit") || errMsg.includes("429")) {
-        setError("Too many attempts. Please wait a moment before trying again.");
+        toast.error("Too many attempts. Please wait a moment before trying again.");
       } else if (errMsg.toLowerCase().includes("fetch") || errMsg.toLowerCase().includes("timeout")) {
-        setError("Network error: Please check your connection.");
+        toast.error("Network error: Please check your connection.");
       } else {
-        setError(errMsg);
+        toast.error(errMsg);
       }
     } finally {
       setIsLoading(false);
@@ -102,8 +93,8 @@ export default function ForgotPasswordPage() {
         onSubmit={handleSubmit}
         className="space-y-4"
       >
-        {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
-        {message ? <AuthInlineMessage tone="success">{message}</AuthInlineMessage> : null}
+        
+        
 
         <div className="relative">
           <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />

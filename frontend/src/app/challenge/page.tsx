@@ -348,11 +348,53 @@ function ChallengeContent() {
           </div>
           <div className="text-center">
             <h3 className="text-lg font-bold text-fg mb-2">Behavioral verification inconclusive</h3>
-            <p className="text-sm text-muted mb-4">Your typing pattern could not be matched to your stored profile.</p>
+            <p className="text-sm text-muted mb-1">Your typing pattern could not be matched to your stored profile.</p>
+            <p className="text-xs text-muted-2">This can happen if you&apos;re typing on a different device, under stress, or after a long absence.</p>
           </div>
-          <AuthButton onClick={() => router.push("/otp")} className="w-full">
-            Verify with OTP instead <ArrowRight className="w-4 h-4 ml-2" />
-          </AuthButton>
+
+          <div className="space-y-3">
+            {/* Primary: OTP fallback */}
+            <AuthButton onClick={() => router.push("/otp")} className="w-full">
+              Verify with Email OTP <ArrowRight className="w-4 h-4 ml-2" />
+            </AuthButton>
+
+            {/* Secondary: Retry */}
+            <button
+              onClick={() => {
+                setFallbackMode(false);
+                setStatus("CAPTURING...");
+                setText("");
+                setConfidence(0);
+                setTimeLeft(30);
+                setTargetPhrase(PHRASES[Math.floor(Math.random() * PHRASES.length)]);
+                startTimeRef.current = Date.now();
+                setIsVerifying(false);
+                const c = getCollector();
+                c.reset();
+              }}
+              className="w-full py-3 rounded-xl text-sm font-medium bg-surface-2 border border-border text-fg hover:bg-surface-elevated transition-colors"
+            >
+              Retry Behavioral Challenge
+            </button>
+
+            {/* Tertiary: Bail out */}
+            <button
+              onClick={() => router.push("/login")}
+              className="w-full py-2.5 rounded-xl text-xs text-muted hover:text-fg transition-colors"
+            >
+              Return to Login
+            </button>
+          </div>
+
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 mt-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-muted leading-relaxed">
+                If you continue to fail verification, your account may be temporarily locked for security.
+                Contact support if you believe this is an error.
+              </p>
+            </div>
+          </div>
         </motion.div>
       )}
     </AuthShell>

@@ -8,12 +8,13 @@ import csv
 import io
 import logging
 
-from app.extensions import get_db, limiter
+from app.extensions import get_db, limiter, get_redis
 from app.api.helpers import (
     get_session_cached,
     validate_session_context,
     get_current_user_id,
     validate_session_ownership,
+    resolve_query,
 )
 from app.extended_risk_scorer import score_extended_features
 from app.models.cognitive_engine import run_cognitive_analysis
@@ -98,7 +99,7 @@ def _build_session_metrics(session_id: str):
     with db.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT features FROM behavioral_data WHERE session_id = ? AND data_type = 'keystroke'",
+            resolve_query(db, "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'keystroke'"),
             (session_id,),
         )
         keystroke_count = 0
@@ -114,7 +115,7 @@ def _build_session_metrics(session_id: str):
                 keystroke_count += 1
 
         cursor.execute(
-            "SELECT features FROM behavioral_data WHERE session_id = ? AND data_type = 'mouse'",
+            resolve_query(db, "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'mouse'"),
             (session_id,),
         )
         mouse_count = 0
@@ -128,11 +129,14 @@ def _build_session_metrics(session_id: str):
                 mouse_count += int(feats.get("event_count", 1))
             except Exception:
                 mouse_count += 1
+        from datetime import datetime as _dt, timedelta, timezone
+
+        anomaly_cutoff = (_dt.now(timezone.utc) - timedelta(days=1)).isoformat()
         cursor.execute(
-            """SELECT COUNT(*) AS anomaly_count FROM auth_events
-               WHERE user_id = ? AND event_type = 'anomaly'
-               AND timestamp > datetime('now', '-1 day')""",
-            (user_id,),
+            resolve_query(db, """SELECT COUNT(*) AS anomaly_count FROM auth_events
+               WHERE user_id = :param AND event_type = 'anomaly'
+               AND timestamp > :param"""),
+            (user_id, anomaly_cutoff),
         )
         anomaly_count = int(cursor.fetchone()["anomaly_count"])
 
@@ -183,12 +187,71 @@ def _build_session_metrics(session_id: str):
     # ── ML Ensemble (non-blocking, best-effort) ────────────────────────────
     ensemble_data = {}
     try:
-        ensemble_data = score_with_ensemble(
-            extended_features={},  # populated from stored data if available
-            user_id=user_id,
-        )
-    except Exception:
-        pass  # Ensemble is advisory; never block the main response
+        rc = get_redis()
+        if rc and session_id:
+            import json as _json
+            cached_score = rc.get(f"ensemble_score:{session_id}")
+            if cached_score:
+                ensemble_data = _json.loads(cached_score)
+            else:
+                # Load the latest stored behavioral features from Redis cache
+                stored_features = {}
+                cached_features = rc.get(f"behavioral_features:{session_id}")
+                if cached_features:
+                    stored_features = _json.loads(cached_features)
+
+                # Load user baseline from passive enrollment profile
+                user_baseline = None
+                if user_id:
+                    try:
+                        state_str = rc.get(f"passive_enrollment:{user_id}")
+                        if state_str:
+                            state = _json.loads(state_str)
+                            stats = state.get("profile", {}).get("feature_stats", {})
+                            user_baseline = {k: v.get("mean", 0.0) for k, v in stats.items()}
+                    except Exception as exc:
+                        logger.debug("Failed to load user baseline: %s", exc)
+
+                ensemble_data = score_with_ensemble(
+                    extended_features=stored_features,
+                    user_id=user_id,
+                    user_baseline=user_baseline,
+                )
+    except Exception as exc:
+        logger.debug("Ensemble scoring skipped: %s", exc)
+
+    # Fuse advanced ML ensemble risk with basic heuristics for risk_score
+    ensemble_risk = ensemble_data.get("ensemble_risk", 0.0)
+    if ensemble_risk > 0.0:
+        # Fuse: 70% weight on advanced ML ensemble risk, 30% on basic heuristics
+        risk_score = round(ensemble_risk * 0.7 + risk_score * 0.3, 2)
+        authenticity_score = round(1.0 - risk_score, 2)
+
+        # Recalculate risk level based on the fused score
+        if risk_score >= current_app.config.get("RISK_HIGH_THRESHOLD", 0.65):
+            risk_level = "high"
+        elif risk_score >= current_app.config.get("RISK_MEDIUM_THRESHOLD", 0.35):
+            risk_level = "medium"
+        else:
+            risk_level = "low"
+
+    # ── Category Scores from Feature Engine (Phase 2) ─────────────────────
+    category_scores = {}
+    feature_richness = 0.0
+    try:
+        rc2 = get_redis()
+        if rc2 and session_id:
+            import json as _json2
+            cached_feats = rc2.get(f"behavioral_features:{session_id}")
+            if cached_feats:
+                from app.behavioral_feature_engine import get_behavioral_engine
+                bfe = get_behavioral_engine()
+                raw_feats = _json2.loads(cached_feats)
+                extracted = bfe.extract({"extended_features": raw_feats})
+                category_scores = bfe.get_category_scores(extracted)
+                feature_richness = category_scores.pop("feature_richness", 0.0)
+    except Exception as exc:
+        logger.debug("Feature engine category scoring skipped: %s", exc)
 
     return (
         {
@@ -202,6 +265,8 @@ def _build_session_metrics(session_id: str):
             "risk_reasons": risk_reasons,
             "step_up_recommended": risk_score
             >= current_app.config.get("STEP_UP_RISK_SCORE_THRESHOLD", 0.6),
+            # H-3 FIX: Surface untrained model indicator explicitly to frontend
+            "is_calibrating": not session.get("calibration_complete", False),
             "ensemble": {
                 "ensemble_risk": ensemble_data.get("ensemble_risk", 0.0),
                 "ensemble_action": ensemble_data.get("ensemble_action", "allow"),
@@ -214,7 +279,11 @@ def _build_session_metrics(session_id: str):
                 "ensemble_flags": ensemble_data.get("ensemble_flags", []),
                 "cognitive_analysis": ensemble_data.get("cognitive_analysis") or {},
                 "enrollment_status": ensemble_data.get("enrollment_status") or {},
+                "drift_risk": ensemble_data.get("drift_risk", 0.0),
+                "composite_analysis": ensemble_data.get("composite_analysis") or {},
             },
+            "category_scores": category_scores,
+            "feature_richness": feature_richness,
         },
         None,
     )
@@ -231,39 +300,46 @@ def _build_trust_timeline(session_id: str, window_minutes: int, severity: str):
     if not session:
         return None, ("Invalid session", 404)
     user_id = session["user_id"]
+    from datetime import datetime as _dt, timedelta, timezone
+
+    try:
+        from app.database_pg import DatabaseManager as PostgresDatabaseManager
+        is_pg = isinstance(db, PostgresDatabaseManager)
+    except ImportError:
+        is_pg = False
+
+    cutoff_dt = _dt.now(timezone.utc) - timedelta(minutes=window_minutes)
+    cutoff = cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")
     with db.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT strftime('%Y-%m-%dT%H:%M:00Z', timestamp) AS bucket_ts,
-                      data_type,
-                      COUNT(*) AS activity
+            resolve_query(db, """SELECT timestamp, data_type, COUNT(*) AS activity
                FROM behavioral_data
-               WHERE session_id = ? AND timestamp > datetime('now', ?)
-               GROUP BY bucket_ts, data_type ORDER BY bucket_ts ASC""",
-            (session_id, f"-{window_minutes} minutes"),
+               WHERE session_id = :param AND timestamp > :param
+               GROUP BY timestamp, data_type ORDER BY timestamp ASC"""),
+            (session_id, cutoff),
         )
         rows = cursor.fetchall()
         cursor.execute(
-            """SELECT strftime('%Y-%m-%dT%H:%M:00Z', timestamp) AS bucket_ts,
-                      COUNT(*) AS anomaly_count
+            resolve_query(db, """SELECT timestamp, COUNT(*) AS anomaly_count
                FROM auth_events
-               WHERE user_id = ? AND event_type = 'anomaly'
-                 AND timestamp > datetime('now', ?)
-               GROUP BY bucket_ts ORDER BY bucket_ts ASC""",
-            (user_id, f"-{window_minutes} minutes"),
+               WHERE user_id = :param AND event_type = 'anomaly'
+                 AND timestamp > :param
+               GROUP BY timestamp ORDER BY timestamp ASC"""),
+            (user_id, cutoff),
         )
         anomaly_rows = cursor.fetchall()
 
     buckets: dict = {}
     for row in rows:
-        b = row["bucket_ts"]
+        b = str(row["timestamp"])[:16]  # Truncate to minute for bucketing
         buckets.setdefault(b, {"keystrokes": 0, "mouse_events": 0, "anomalies": 0})
         if row["data_type"] == "keystroke":
             buckets[b]["keystrokes"] = int(row["activity"])
         elif row["data_type"] == "mouse":
             buckets[b]["mouse_events"] = int(row["activity"])
     for row in anomaly_rows:
-        b = row["bucket_ts"]
+        b = str(row["timestamp"])[:16]
         buckets.setdefault(b, {"keystrokes": 0, "mouse_events": 0, "anomalies": 0})
         buckets[b]["anomalies"] = int(row["anomaly_count"])
 
@@ -348,7 +424,9 @@ class SessionMetrics(Resource):
     @limiter.limit("60 per minute")
     def get(self):
         """Get real-time behavioral metrics for a session."""
-        m, e = _build_session_metrics(request.args.get("session_id") or request.cookies.get("session_id"))
+        m, e = _build_session_metrics(
+            request.args.get("session_id") or request.cookies.get("session_id")
+        )
         return ({"error": e[0]}, e[1]) if e else (m, 200)
 
 
@@ -503,7 +581,7 @@ class CognitiveProfile(Resource):
         try:
             with db.get_connection() as conn:
                 for row in conn.execute(
-                    "SELECT features FROM behavioral_data WHERE session_id = ? AND data_type = 'extended' ORDER BY timestamp DESC LIMIT 10",
+                    resolve_query(db, "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'extended' ORDER BY timestamp DESC LIMIT 10"),
                     (sid,),
                 ).fetchall():
                     try:
@@ -574,7 +652,7 @@ class SilentChallenge(Resource):
     @jwt_required()
     @limiter.limit("30 per minute")
     def post(self):
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         payload = request.get_json() or {}
         sid = payload.get("session_id") or request.cookies.get("session_id")
@@ -587,9 +665,25 @@ class SilentChallenge(Resource):
         if err:
             return err
 
-        streak = s.get("anomaly_streak", 0)
+        # Load streak from Redis for persistence across requests
+        rc = get_redis()
+        streak = 0
+        if rc:
+            try:
+                raw = rc.get(f"anomaly_streak:{sid}")
+                streak = int(raw) if raw else 0
+            except Exception:
+                pass
+
         risk = payload.get("current_risk_score", 0.5)
         streak = streak + 1 if risk > 0.6 else max(0, streak - 1)
+
+        # Persist streak back to Redis
+        if rc:
+            try:
+                rc.setex(f"anomaly_streak:{sid}", 3600, str(streak))
+            except Exception as exc:
+                logger.debug("Failed to persist anomaly streak: %s", exc)
 
         escalation = [
             ("terminate", "Session terminated due to persistent anomalous behavior", 4),
@@ -606,13 +700,14 @@ class SilentChallenge(Resource):
         db = get_db()
         try:
             with db.get_connection() as conn:
+                query = resolve_query(db, "UPDATE sessions SET updated_at = :param WHERE session_id = :param")
                 conn.execute(
-                    "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
-                    (datetime.now(), sid),
+                    query,
+                    (datetime.now(timezone.utc).isoformat(), sid),
                 )
                 conn.commit()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to update session timestamp: %s", exc)
         db.log_audit_evidence(
             action="silent_challenge",
             status=action,

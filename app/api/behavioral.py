@@ -3,6 +3,8 @@ from flask import request, current_app
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required
 import logging
+from pydantic import BaseModel, Field, ValidationError, model_validator
+from typing import List, Optional, Any
 
 from app.extensions import get_db, limiter
 from app.error_handling import make_error_response
@@ -23,6 +25,132 @@ behavioral_ns = Namespace(
 
 # Maximum number of events accepted per array field to prevent memory pressure
 MAX_EVENTS_PER_ARRAY = 500
+
+
+# ── Pydantic Validation Schemas ──────────────────────────────────────────────
+
+class KeystrokeEventSchema(BaseModel):
+    model_config = {'extra': 'allow'}
+    key: Optional[str] = None
+    hold_time: Optional[float] = None
+    flight_time: Optional[float] = None
+    timestamp: Optional[float] = None
+    pressure: Optional[float] = None
+    dwell_time: Optional[float] = None
+    ts: Optional[float] = None
+    count: Optional[int] = None
+
+
+class MouseEventSchema(BaseModel):
+    model_config = {'extra': 'allow'}
+    type: Optional[str] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+    duration: Optional[float] = None
+    timestamp: Optional[float] = None
+    button: Optional[int] = None
+    ts: Optional[float] = None
+    count: Optional[int] = None
+
+
+class TouchEventSchema(BaseModel):
+    model_config = {'extra': 'allow'}
+    type: Optional[str] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+    pressure: Optional[float] = None
+    area: Optional[float] = None
+    timestamp: Optional[float] = None
+    ts: Optional[float] = None
+
+
+class ScrollEventSchema(BaseModel):
+    model_config = {'extra': 'allow'}
+    x: Optional[float] = None
+    y: Optional[float] = None
+    delta_x: Optional[float] = None
+    delta_y: Optional[float] = None
+    timestamp: Optional[float] = None
+    ts: Optional[float] = None
+
+
+class MotionEventSchema(BaseModel):
+    model_config = {'extra': 'allow'}
+    alpha: Optional[float] = None
+    beta: Optional[float] = None
+    gamma: Optional[float] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
+    timestamp: Optional[float] = None
+    ts: Optional[float] = None
+
+
+class CognitiveEventSchema(BaseModel):
+    model_config = {'extra': 'allow'}
+    hesitation_duration: Optional[float] = None
+    correction_count: Optional[int] = None
+    error_rate: Optional[float] = None
+    timestamp: Optional[float] = None
+    ts: Optional[float] = None
+
+
+class NavigationEventSchema(BaseModel):
+    model_config = {'extra': 'allow'}
+    path: Optional[str] = None
+    timestamp: Optional[float] = None
+    ts: Optional[float] = None
+
+
+class ExtendedFeaturesSchema(BaseModel):
+    model_config = {'extra': 'allow'}
+    touch_event_count: Optional[int] = 0
+    touch_force_mean: Optional[float] = 0.5
+    touch_area_mean: Optional[float] = 15.0
+    touch_velocity_mean: Optional[float] = 0.5
+    
+    scroll_event_count: Optional[int] = 0
+    scroll_velocity_mean: Optional[float] = 1.0
+    scroll_velocity_std: Optional[float] = 0.5
+    scroll_reversal_rate: Optional[float] = 0.2
+    
+    nav_dwell_mean: Optional[Any] = 1000.0
+    nav_field_revisit_count: Optional[int] = 0
+    nav_focus_sequence_entropy: Optional[float] = 1.0
+    
+    copy_paste_count: Optional[int] = 0
+    correction_rate: Optional[float] = 0.1
+    tab_switch_count: Optional[int] = 0
+    hesitation_count: Optional[int] = 0
+    hesitation_duration_mean: Optional[float] = 0.0
+    reread_count: Optional[int] = 0
+    rapid_submit_detected: Optional[Any] = 0
+    
+    motion_event_count: Optional[int] = 0
+    motion_acc_std: Optional[float] = 1.0
+
+
+class BehavioralPayloadSchema(BaseModel):
+    session_id: str
+    type: Optional[str] = "keystroke"
+    event_count: Optional[int] = 1
+    events: Optional[List[MouseEventSchema]] = Field(default=[])
+    extended_features: Optional[ExtendedFeaturesSchema] = Field(default_factory=ExtendedFeaturesSchema)
+    keystroke_events: Optional[List[KeystrokeEventSchema]] = Field(default=[])
+    touch_events: Optional[List[TouchEventSchema]] = Field(default=[])
+    scroll_events: Optional[List[ScrollEventSchema]] = Field(default=[])
+    cognitive_events: Optional[List[CognitiveEventSchema]] = Field(default=[])
+    motion_events: Optional[List[MotionEventSchema]] = Field(default=[])
+    navigation_events: Optional[List[NavigationEventSchema]] = Field(default=[])
+
+    @model_validator(mode="after")
+    def limit_arrays(self) -> "BehavioralPayloadSchema":
+        for attr in ["events", "keystroke_events", "touch_events", "scroll_events", "cognitive_events", "motion_events", "navigation_events"]:
+            lst = getattr(self, attr)
+            if lst and len(lst) > 500:
+                raise ValueError(f"Array '{attr}' exceeds maximum limit of 500 items")
+        return self
+
 
 # ── Swagger models ───────────────────────────────────────────────────────────
 
@@ -70,7 +198,13 @@ class BehavioralData(Resource):
     @jwt_required()
     def post(self):
         """Ingest aggregated behavioral events + extended Behavioral Biometrics-style signals."""
-        payload = request.get_json() or {}
+        try:
+            validated_payload = BehavioralPayloadSchema(**request.get_json() or {})
+            payload = validated_payload.model_dump()
+        except ValidationError as e:
+            logger.warning("Behavioral data validation failed: %s", e)
+            return make_error_response("VALIDATION_ERROR", str(e), status=400)
+
         session_id = payload.get("session_id") or request.cookies.get("session_id")
         data_type = payload.get("type", "keystroke")
         event_count = payload.get("event_count", 1)
@@ -99,7 +233,13 @@ class BehavioralData(Resource):
 
         session = get_session_cached(session_id)
         if not session:
-            return make_error_response("INVALID_SESSION", "Invalid session", status=404)
+            # Fallback to DB if Redis is unavailable
+            db = get_db()
+            db_session = db.get_session(session_id)
+            if not db_session:
+                return make_error_response("INVALID_SESSION", "Invalid session", status=404)
+            session = db_session
+
         if not validate_session_context(session):
             return make_error_response("SESSION_CONTEXT_MISMATCH", "Session context mismatch", status=403)
         err = validate_session_ownership(session)
@@ -146,11 +286,11 @@ class BehavioralData(Resource):
                 **ext_result,
             },
             raw_data={
-                "events": raw_data,
-                "keystroke_events": keystroke_events[:50],
-                "touch_events": touch_events[:20],
-                "scroll_events": scroll_events[:20],
-                "cognitive_events": cognitive_events[:20],
+                "events": raw_data[:500],
+                "keystroke_events": keystroke_events[:500],
+                "touch_events": touch_events[:500],
+                "scroll_events": scroll_events[:500],
+                "cognitive_events": cognitive_events[:500],
             },
             confidence_score=float(normalized_count),
             anomaly_score=ext_risk if ext_risk > 0 else None,
@@ -172,8 +312,7 @@ class BehavioralData(Resource):
         )
         # ── Behavioral Biometrics Feature Engine (200+ features from all 8 categories) ──
         behavioral_features: dict = {}
-        categories = payload.get("categories") or {}
-        if categories:
+        if data_type == "extended":
             try:
                 from app.behavioral_feature_engine import get_behavioral_engine
 
@@ -187,44 +326,46 @@ class BehavioralData(Resource):
         # ── ML Ensemble scoring (6 engines) ──
         ensemble_result: dict = {}
         if extended_features:
-            import threading
             import json
             from app.extensions import get_redis
-            
-            try:
-                redis_client = get_redis()
-                if redis_client:
-                    last_score_str = redis_client.get(f"ensemble_score:{session_id}")
-                    if last_score_str:
-                        ensemble_result = json.loads(last_score_str)
-            except Exception:
-                pass
+            from app.ml_ensemble import score_with_ensemble
 
-            def _run_ensemble_async(ext_feat, u_id, sess_id, ks_feat):
+            # Fetch user baseline for takeover detection & feature selection
+            baseline = None
+            if uid:
                 try:
-                    from app.ml_ensemble import score_with_ensemble
-                    res = score_with_ensemble(
-                        extended_features=ext_feat,
-                        user_id=u_id,
-                        keystroke_features=ks_feat,
-                    )
-                    if res.get("ensemble_flags"):
-                        logger.warning(
-                            "Ensemble flags user=%s session=%s: %s",
-                            u_id,
-                            sess_id,
-                            res["ensemble_flags"],
-                        )
-                    rc = get_redis()
-                    if rc:
-                        rc.setex(f"ensemble_score:{sess_id}", 3600, json.dumps(res))
-                except Exception as exc:
-                    logger.error("ML ensemble scoring failed: %s", exc)
+                    from app.models.passive_enrollment import get_enrollment_manager
+                    mgr = get_enrollment_manager()
+                    profile = mgr.get_profile_summary(int(uid))
+                    baseline = profile.get("feature_stats")
+                except Exception:
+                    pass
 
-            threading.Thread(
-                target=_run_ensemble_async,
-                args=(extended_features, int(uid) if uid else None, session_id, raw_data[0] if raw_data else None)
-            ).start()
+            try:
+                # Run synchronously to return the latest risk score immediately
+                res = score_with_ensemble(
+                    extended_features=extended_features,
+                    user_id=int(uid) if uid else None,
+                    keystroke_features={"events": keystroke_events},
+                    mouse_features={"events": raw_data},
+                    user_baseline=baseline,
+                )
+                if res.get("ensemble_flags"):
+                    logger.warning(
+                        "Ensemble flags user=%s session=%s: %s",
+                        uid,
+                        session_id,
+                        res["ensemble_flags"],
+                    )
+                ensemble_result = res
+
+                # Cache it for other endpoints (like /session/metrics)
+                rc = get_redis()
+                if rc:
+                    rc.setex(f"ensemble_score:{session_id}", 3600, json.dumps(res))
+                    rc.setex(f"behavioral_features:{session_id}", 3600, json.dumps(extended_features))
+            except Exception as exc:
+                logger.error("ML ensemble scoring failed: %s", exc)
 
         return {
             "success": True,
@@ -245,7 +386,7 @@ class BehavioralData(Resource):
                 "challenge_risk": ensemble_result.get("challenge_risk", 0.0),
                 "device_risk": ensemble_result.get("device_risk", 0.0),
             },
-            "Behavioral Biometrics": {
+            "behavioral_biometrics": {
                 "feature_count": len(behavioral_features),
                 "challenge_analysis": ensemble_result.get("challenge_analysis", {}),
                 "device_analysis": ensemble_result.get("device_analysis", {}),
@@ -276,8 +417,9 @@ class CalibrationComplete(Resource):
         err = validate_session_ownership(session)
         if err:
             return err
-        if not isinstance(keystroke_data, list) or len(keystroke_data) < 1:
-            return make_error_response("MISSING_DATA", "Missing keystroke_data", status=400)
+        min_samples = current_app.config.get("CALIBRATION_MIN_SAMPLES", 30)
+        if not isinstance(keystroke_data, list) or len(keystroke_data) < min_samples:
+            return make_error_response("INSUFFICIENT_DATA", f"Need at least {min_samples} keystrokes for calibration", status=400)
 
         db = get_db()
         uid = get_current_user_id()

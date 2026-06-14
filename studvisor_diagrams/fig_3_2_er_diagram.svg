@@ -1,0 +1,363 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 792" width="100%" height="100%">
+  <defs>
+    <style type="text/css"><![CDATA[
+      @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap');
+      
+      .title { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 26px; fill: #0F172A; text-anchor: middle; letter-spacing: 0.5px; }
+      .subtitle { font-family: 'Outfit', sans-serif; font-weight: 400; font-size: 14px; fill: #64748B; text-anchor: middle; }
+      
+      /* Table styling */
+      .table-border { fill: #FFFFFF; stroke: #CBD5E1; stroke-width: 1.5; rx: 8; filter: drop-shadow(0 4px 6px rgba(15, 23, 42, 0.05)); }
+      .table-header-users { fill: #1E3A8A; }
+      .table-header-core { fill: #334155; }
+      .table-header-academic { fill: #0F766E; }
+      .table-header-gamified { fill: #B45309; }
+      .table-header-audit { fill: #85144b; }
+      .table-header-wall { fill: #6B21A8; }
+      
+      .table-title { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 13px; fill: #FFFFFF; }
+      .column-name { font-family: 'Fira Code', monospace; font-size: 10.5px; fill: #0F172A; }
+      .column-type { font-family: 'Fira Code', monospace; font-size: 10.5px; fill: #64748B; }
+      .column-key { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 9px; fill: #EF4444; }
+      .column-fk { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 9px; fill: #3B82F6; }
+      
+      /* Connector lines */
+      .relation-line { fill: none; stroke: #64748B; stroke-width: 1.5; stroke-dasharray: none; }
+      .crow-foot { fill: none; stroke: #64748B; stroke-width: 1.5; }
+      .line-label { font-family: 'Outfit', sans-serif; font-size: 9.5px; fill: #475569; text-anchor: middle; }
+    ]]></style>
+    
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#0F172A" flood-opacity="0.05"/>
+    </filter>
+  </defs>
+
+  <rect width="1120" height="792" fill="#F8FAFC" />
+  
+  <!-- Grid -->
+  <g opacity="0.15">
+    <path d="M 0,40 L 1120,40 M 0,80 L 1120,80 M 0,120 L 1120,120 M 0,160 L 1120,160 M 0,200 L 1120,200 M 0,240 L 1120,240 M 0,280 L 1120,280 M 0,320 L 1120,320 M 0,360 L 1120,360 M 0,400 L 1120,400 M 0,440 L 1120,440 M 0,480 L 1120,480 M 0,520 L 1120,520 M 0,560 L 1120,560 M 0,600 L 1120,600 M 0,640 L 1120,640 M 0,680 L 1120,680 M 0,720 L 1120,720 M 0,760 L 1120,760" stroke="#94A3B8" stroke-width="0.5" />
+    <path d="M 40,0 L 40,792 M 80,0 L 80,792 M 120,0 L 120,792 M 160,0 L 160,792 M 200,0 L 200,792 M 240,0 L 240,792 M 280,0 L 280,792 M 320,0 L 320,792 M 360,0 L 360,792 M 400,0 L 400,792 M 440,0 L 440,792 M 480,0 L 480,792 M 520,0 L 520,792 M 560,0 L 560,792 M 600,0 L 600,792 M 640,0 L 640,792 M 680,0 L 680,792 M 720,0 L 720,792 M 760,0 L 760,792 M 800,0 L 800,792 M 840,0 L 840,792 M 880,0 L 880,792 M 920,0 L 920,792 M 960,0 L 960,792 M 1000,0 L 1000,792 M 1040,0 L 1040,792 M 1080,0 L 1080,792" stroke="#94A3B8" stroke-width="0.5" />
+  </g>
+
+  <!-- Titles -->
+  <text x="560" y="50" class="title">FIGURE 3.2: ENTITY-RELATIONSHIP DIAGRAM</text>
+  <text x="560" y="72" class="subtitle">Studvisor Database Schema - Entities, Column Definitions, Keys, and Relational Mapping</text>
+
+  <!-- ==================== RELATIONSHIP LINES (BACKGROUND) ==================== -->
+  
+  <!-- users -> students (1 to 1) -->
+  <path d="M 450,195 L 350,195" class="relation-line" />
+  <!-- Crow's foot indicators (one-to-one) -->
+  <path d="M 445,190 L 445,200 M 440,190 L 440,200" class="crow-foot" />
+  <path d="M 355,190 L 355,200 M 360,190 L 360,200" class="crow-foot" />
+  <text x="400" y="185" class="line-label">1:1 Extension</text>
+
+  <!-- users -> faculty (1 to 1) -->
+  <path d="M 670,195 L 770,195" class="relation-line" />
+  <path d="M 675,190 L 675,200 M 680,190 L 680,200" class="crow-foot" />
+  <path d="M 765,190 L 765,200 M 760,190 L 760,200" class="crow-foot" />
+  <text x="720" y="185" class="line-label">1:1 Extension</text>
+
+  <!-- students -> attendance (1 to Many) -->
+  <path d="M 240,270 L 240,320 L 140,320 L 140,360" class="relation-line" />
+  <path d="M 235,275 L 245,275 M 235,280 L 245,280" class="crow-foot" /> <!-- One side -->
+  <path d="M 130,355 L 140,345 L 150,355" class="crow-foot" /> <!-- Many side (three prong) -->
+  <text x="180" y="315" class="line-label">1:N tracks</text>
+
+  <!-- students -> marks (1 to Many) -->
+  <path d="M 260,270 L 260,320 L 410,320 L 410,360" class="relation-line" />
+  <path d="M 255,275 L 265,275 M 255,280 L 265,280" class="crow-foot" /> <!-- One side -->
+  <path d="M 400,355 L 410,345 L 420,355" class="crow-foot" /> <!-- Many side -->
+  <text x="340" y="315" class="line-label">1:N earns</text>
+
+  <!-- students -> merit_log (1 to Many) -->
+  <path d="M 200,270 L 200,590 L 290,590 L 290,620" class="relation-line" />
+  <path d="M 195,275 L 205,275 M 195,280 L 205,280" class="crow-foot" />
+  <path d="M 280,615 L 290,605 L 300,615" class="crow-foot" />
+  <text x="250" y="585" class="line-label">1:N logs</text>
+
+  <!-- faculty -> timetable (1 to Many) -->
+  <path d="M 885,270 L 885,360" class="relation-line" />
+  <path d="M 880,275 L 890,275 M 880,280 L 890,280" class="crow-foot" />
+  <path d="M 875,355 L 885,345 L 895,355" class="crow-foot" />
+  <text x="915" y="310" class="line-label">1:N teaches</text>
+
+  <!-- users -> audit_logs (1 to Many) -->
+  <path d="M 560,270 L 560,420" class="relation-line" />
+  <path d="M 555,275 L 565,275 M 555,280 L 565,280" class="crow-foot" />
+  <path d="M 550,415 L 560,405 L 570,415" class="crow-foot" />
+  <text x="590" y="340" class="line-label">1:N performs</text>
+
+
+  <!-- ==================== TABLES ==================== -->
+
+  <!-- 1. users table -->
+  <g id="table-users" transform="translate(450, 110)">
+    <rect width="220" height="160" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-users" />
+    <text x="15" y="19" class="table-title">users</text>
+    
+    <!-- Columns -->
+    <text x="15" y="45" class="column-name">user_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="62" class="column-name">username</text>
+    <text x="120" y="62" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="79" class="column-name">email</text>
+    <text x="120" y="79" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="96" class="column-name">password_hash</text>
+    <text x="120" y="96" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="113" class="column-name">role</text>
+    <text x="120" y="113" class="column-type">ENUM</text>
+    
+    <text x="15" y="130" class="column-name">department_id</text>
+    <text x="120" y="130" class="column-type">INT</text>
+    
+    <text x="15" y="147" class="column-name">is_active</text>
+    <text x="120" y="147" class="column-type">BOOLEAN</text>
+  </g>
+
+  <!-- 2. students table -->
+  <g id="table-students" transform="translate(130, 110)">
+    <rect width="220" height="160" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-core" />
+    <text x="15" y="19" class="table-title">students</text>
+    
+    <text x="15" y="45" class="column-name">student_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="65" class="column-name">user_id</text>
+    <text x="120" y="65" class="column-type">INT</text>
+    <text x="195" y="65" class="column-fk">FK</text>
+    
+    <text x="15" y="85" class="column-name">batch</text>
+    <text x="120" y="85" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="105" class="column-name">programme</text>
+    <text x="120" y="105" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="125" class="column-name">current_sem</text>
+    <text x="120" y="125" class="column-type">INT</text>
+    
+    <text x="15" y="145" class="column-name">cgpa</text>
+    <text x="120" y="145" class="column-type">FLOAT</text>
+  </g>
+
+  <!-- 3. faculty table -->
+  <g id="table-faculty" transform="translate(770, 110)">
+    <rect width="220" height="160" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-core" />
+    <text x="15" y="19" class="table-title">faculty</text>
+    
+    <text x="15" y="45" class="column-name">faculty_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="68" class="column-name">user_id</text>
+    <text x="120" y="68" class="column-type">INT</text>
+    <text x="195" y="68" class="column-fk">FK</text>
+    
+    <text x="15" y="91" class="column-name">employee_code</text>
+    <text x="120" y="91" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="114" class="column-name">department_id</text>
+    <text x="120" y="114" class="column-type">INT</text>
+    
+    <text x="15" y="137" class="column-name">designation</text>
+    <text x="120" y="137" class="column-type">VARCHAR</text>
+  </g>
+
+  <!-- 4. attendance table -->
+  <g id="table-attendance" transform="translate(30, 360)">
+    <rect width="220" height="160" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-academic" />
+    <text x="15" y="19" class="table-title">attendance</text>
+    
+    <text x="15" y="45" class="column-name">record_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="62" class="column-name">student_id</text>
+    <text x="120" y="62" class="column-type">INT</text>
+    <text x="195" y="62" class="column-fk">FK</text>
+    
+    <text x="15" y="79" class="column-name">subject_id</text>
+    <text x="120" y="79" class="column-type">INT</text>
+    
+    <text x="15" y="96" class="column-name">date</text>
+    <text x="120" y="96" class="column-type">DATE</text>
+    
+    <text x="15" y="113" class="column-name">status</text>
+    <text x="120" y="113" class="column-type">ENUM</text>
+    
+    <text x="15" y="130" class="column-name">amended_at</text>
+    <text x="120" y="130" class="column-type">TIMESTAMP</text>
+    
+    <text x="15" y="147" class="column-name">marked_by</text>
+    <text x="120" y="147" class="column-type">INT</text>
+  </g>
+
+  <!-- 5. marks table -->
+  <g id="table-marks" transform="translate(300, 360)">
+    <rect width="220" height="160" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-academic" />
+    <text x="15" y="19" class="table-title">marks</text>
+    
+    <text x="15" y="45" class="column-name">mark_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="62" class="column-name">student_id</text>
+    <text x="120" y="62" class="column-type">INT</text>
+    <text x="195" y="62" class="column-fk">FK</text>
+    
+    <text x="15" y="79" class="column-name">subject_id</text>
+    <text x="120" y="79" class="column-type">INT</text>
+    
+    <text x="15" y="96" class="column-name">component</text>
+    <text x="120" y="96" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="113" class="column-name">score</text>
+    <text x="120" y="113" class="column-type">FLOAT</text>
+    
+    <text x="15" y="130" class="column-name">max_score</text>
+    <text x="120" y="130" class="column-type">FLOAT</text>
+    
+    <text x="15" y="147" class="column-name">recorded_by</text>
+    <text x="120" y="147" class="column-type">INT</text>
+  </g>
+
+  <!-- 6. audit_logs table -->
+  <g id="table-audit" transform="translate(450, 420)">
+    <rect width="220" height="160" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-audit" />
+    <text x="15" y="19" class="table-title">audit_logs</text>
+    
+    <text x="15" y="45" class="column-name">log_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="62" class="column-name">actor_id</text>
+    <text x="120" y="62" class="column-type">INT</text>
+    <text x="195" y="62" class="column-fk">FK</text>
+    
+    <text x="15" y="79" class="column-name">action</text>
+    <text x="120" y="79" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="96" class="column-name">entity_type</text>
+    <text x="120" y="96" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="113" class="column-name">entity_id</text>
+    <text x="120" y="113" class="column-type">INT</text>
+    
+    <text x="15" y="130" class="column-name">payload</text>
+    <text x="120" y="130" class="column-type">JSON</text>
+    
+    <text x="15" y="147" class="column-name">timestamp</text>
+    <text x="120" y="147" class="column-type">TIMESTAMP</text>
+  </g>
+
+  <!-- 7. timetable table -->
+  <g id="table-timetable" transform="translate(775, 360)">
+    <rect width="220" height="160" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-academic" />
+    <text x="15" y="19" class="table-title">timetable</text>
+    
+    <text x="15" y="45" class="column-name">slot_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="62" class="column-name">subject_id</text>
+    <text x="120" y="62" class="column-type">INT</text>
+    
+    <text x="15" y="79" class="column-name">faculty_id</text>
+    <text x="120" y="79" class="column-type">INT</text>
+    <text x="195" y="79" class="column-fk">FK</text>
+    
+    <text x="15" y="96" class="column-name">room_id</text>
+    <text x="120" y="96" class="column-type">INT</text>
+    
+    <text x="15" y="113" class="column-name">group_id</text>
+    <text x="120" y="113" class="column-type">INT</text>
+    
+    <text x="15" y="130" class="column-name">day_of_week</text>
+    <text x="120" y="130" class="column-type">INT</text>
+    
+    <text x="15" y="147" class="column-name">time_slots</text>
+    <text x="120" y="147" class="column-type">VARCHAR</text>
+  </g>
+
+  <!-- 8. merit_log table -->
+  <g id="table-merit" transform="translate(180, 620)">
+    <rect width="220" height="120" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-gamified" />
+    <text x="15" y="19" class="table-title">merit_log</text>
+    
+    <text x="15" y="45" class="column-name">log_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="62" class="column-name">student_id</text>
+    <text x="120" y="62" class="column-type">INT</text>
+    <text x="195" y="62" class="column-fk">FK</text>
+    
+    <text x="15" y="79" class="column-name">event_type</text>
+    <text x="120" y="79" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="96" class="column-name">xp_delta</text>
+    <text x="120" y="96" class="column-type">INT</text>
+    
+    <text x="15" y="113" class="column-name">awarded_at</text>
+    <text x="120" y="113" class="column-type">TIMESTAMP</text>
+  </g>
+
+  <!-- 9. campus_wall_posts table -->
+  <g id="table-wall" transform="translate(720, 620)">
+    <rect width="220" height="120" class="table-border" />
+    <path d="M 0,0 L 220,0 L 220,28 L 0,28 Z" class="table-header-wall" />
+    <text x="15" y="19" class="table-title">campus_wall_posts</text>
+    
+    <text x="15" y="45" class="column-name">post_id</text>
+    <text x="120" y="45" class="column-type">INT</text>
+    <text x="195" y="45" class="column-key">PK</text>
+    
+    <text x="15" y="62" class="column-name">hmac_token</text>
+    <text x="120" y="62" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="79" class="column-name">content_text</text>
+    <text x="120" y="79" class="column-type">TEXT</text>
+    
+    <text x="15" y="96" class="column-name">sentiment</text>
+    <text x="120" y="96" class="column-type">VARCHAR</text>
+    
+    <text x="15" y="113" class="column-name">created_at</text>
+    <text x="120" y="113" class="column-type">TIMESTAMP</text>
+  </g>
+
+  <!-- ==================== DIAGRAM LEGEND ==================== -->
+  <g transform="translate(480, 630)" filter="url(#shadow)">
+    <rect x="0" y="0" width="160" height="100" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1" rx="8" />
+    <text x="15" y="20" font-family="'Outfit', sans-serif" font-weight="600" font-size="11px" fill="#0F172A">SCHEMA CATEGORIES</text>
+    
+    <rect x="15" y="32" width="12" height="12" fill="#1E3A8A" rx="2" />
+    <text x="35" y="42" font-family="'Outfit', sans-serif" font-size="10px" fill="#475569">Core RBAC Identity</text>
+    
+    <rect x="15" y="49" width="12" height="12" fill="#0F766E" rx="2" />
+    <text x="35" y="59" font-family="'Outfit', sans-serif" font-size="10px" fill="#475569">Academic Subsystem</text>
+    
+    <rect x="15" y="66" width="12" height="12" fill="#B45309" rx="2" />
+    <text x="35" y="76" font-family="'Outfit', sans-serif" font-size="10px" fill="#475569">Merit &amp; Gamification</text>
+    
+    <rect x="15" y="83" width="12" height="12" fill="#85144b" rx="2" />
+    <text x="35" y="93" font-family="'Outfit', sans-serif" font-size="10px" fill="#475569">Compliance Audit logs</text>
+  </g>
+
+  <text x="1080" y="760" font-family="'Outfit', sans-serif" font-size="10px" fill="#94A3B8" text-anchor="end">Studvisor Relational Database Architecture v2.0</text>
+</svg>

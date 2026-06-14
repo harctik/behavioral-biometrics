@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Lock, User, ShieldCheck, ArrowRight, Activity, Keyboard } from "lucide-react";
 import { motion } from "framer-motion";
 import { getCollector } from "@/lib/behavioral-collector";
+import { TypingDNA } from "@/components/behavioral/TypingDNA";
+import { BiometricScanner } from "@/components/behavioral/BiometricScanner";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,6 +21,8 @@ export default function LoginPage() {
   const [keystrokeCount, setKeystrokeCount] = useState(0);
   const [avgHoldTime, setAvgHoldTime] = useState(0);
   const [avgFlightTime, setAvgFlightTime] = useState(0);
+  const [holdTimeSeries, setHoldTimeSeries] = useState<number[]>([]);
+  const [flightTimeSeries, setFlightTimeSeries] = useState<number[]>([]);
 
   // Enrollment phase state from localStorage
   const [enrollmentState, setEnrollmentState] = useState<{completed: number, required: number} | null>(null);
@@ -52,6 +56,8 @@ export default function LoginPage() {
         const flights = ks.map(k => k.flight_time).filter(f => f > 0 && f < 5000);
         setAvgHoldTime(holds.length > 0 ? Math.round(holds.reduce((a, b) => a + b, 0) / holds.length) : 0);
         setAvgFlightTime(flights.length > 0 ? Math.round(flights.reduce((a, b) => a + b, 0) / flights.length) : 0);
+        setHoldTimeSeries(holds);
+        setFlightTimeSeries(flights);
       }
     }, 300);
     return () => clearInterval(interval);
@@ -100,6 +106,8 @@ export default function LoginPage() {
 
   return (
     <div className="flex flex-1 min-h-screen items-center justify-center relative font-sans p-6">
+      {/* Cinematic biometric scanner overlay — shown during auth */}
+      <BiometricScanner isVisible={isLoading} />
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -245,6 +253,16 @@ export default function LoginPage() {
                       <div className="mb-1">Flight: <span className="text-fg font-semibold">{avgFlightTime}ms</span></div>
                       <div className="h-1 bg-black/40 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${Math.min(100, (avgFlightTime / 600) * 100)}%` }}></div></div>
                     </div>
+                  </div>
+                )}
+                {/* ── Biometric DNA Visualization ── */}
+                {keystrokeCount > 0 && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[9px] uppercase tracking-widest text-muted font-mono">Bio-Signature</span>
+                      <span className="text-[9px] text-accent-primary font-mono">{keystrokeCount} events</span>
+                    </div>
+                    <TypingDNA holdTimes={holdTimeSeries} flightTimes={flightTimeSeries} height={36} />
                   </div>
                 )}
               </div>

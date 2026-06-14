@@ -77,7 +77,7 @@ class TestSettings:
         try:
             settings = Settings()
             assert isinstance(settings.DEBUG, bool)
-            assert settings.DATABASE_PATH == "database/auth_system.db"
+            assert settings.DATABASE_PATH == ""
             assert settings.MAX_LOGIN_ATTEMPTS == 5
             assert settings.LOCKOUT_DURATION_MINUTES == 15
             assert settings.BCRYPT_LOG_ROUNDS == 12

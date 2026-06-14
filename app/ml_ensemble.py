@@ -235,11 +235,16 @@ def score_with_ensemble(
             from app.models.passive_enrollment import get_enrollment_manager
 
             enrollment_mgr = get_enrollment_manager()
+            session_context = {
+                "is_new_device": device_risk > 0.6,
+                "is_new_ip": device_result.get("flags") and any("ip" in f.lower() for f in device_result["flags"])
+            }
             enrollment_result = enrollment_mgr.ingest_session_data(
                 user_id=int(user_id),
                 keystroke_features=keystroke_features,
                 mouse_features=mouse_features,
                 extended_features=extended_features,
+                session_context=session_context,
                 source="session",
             )
             if enrollment_result.get("action") == "anomaly":
@@ -320,24 +325,42 @@ def score_with_ensemble(
     result["replay_risk"] = replay_risk
     result["replay_analysis"] = replay_result
 
+    # ── 10b. ADWIN Concept Drift Detection ─────────────────────────────
+    drift_risk = 0.0
+    if session_history and len(session_history) > 10:
+        try:
+            from app.models.adwin_drift import get_adwin_detector
+            adwin = get_adwin_detector()
+            drift_result = adwin.detect(
+                stream=[s.get("flight_time_mean", 0) for s in session_history]
+            )
+            drift_risk = drift_result.get("drift_probability", 0.0)
+            if drift_risk > 0.5:
+                result["ensemble_flags"].append(f"adwin:concept_drift_detected({drift_risk:.2f})")
+        except Exception as exc:
+            logger.warning("ADWIN drift detection failed: %s", exc)
+
+    result["drift_risk"] = drift_risk
+
     # ── 11. Fuse ALL 10 engine signals ─────────────────────────────────
     cognitive_risk = cognitive.get("cognitive_risk", 0.0) if cognitive else 0.0
     fraud_score = composite_result.get("fraud_pattern_score", 0.0)
     social_eng = composite_result.get("social_eng_score", 0.0)
     enrollment_match = enrollment_result.get("match_score", 0.5)
 
-    # Weighted fusion — all 10 engines contribute
+    # Weighted fusion — all 11 engines contribute
     ensemble_risk = (
-        cognitive_risk * 0.15
-        + duress_score * 0.15
+        cognitive_risk * 0.14
+        + duress_score * 0.14
         + (1.0 - liveness_score) * 0.10
-        + challenge_risk * 0.10
-        + device_risk * 0.08
+        + challenge_risk * 0.09
+        + device_risk * 0.07
         + max(fraud_score, social_eng) * 0.05
         + (1.0 - enrollment_match) * 0.07  # Low match = higher risk
-        + (1.0 - weighted_match) * 0.10    # Per-user feature mismatch
+        + (1.0 - weighted_match) * 0.09    # Per-user feature mismatch
         + txn_risk * 0.10                  # Transaction anomaly
         + replay_risk * 0.10               # GAN synthetic/replay detection
+        + drift_risk * 0.05                # ADWIN concept drift
     )
     ensemble_risk = round(min(1.0, max(0.0, ensemble_risk)), 4)
     result["ensemble_risk"] = ensemble_risk

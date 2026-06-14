@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 compliance_ns = Namespace("compliance", description="Compliance and privacy")
 
 
+def serialize_dates(obj):
+    from datetime import datetime, date
+    if isinstance(obj, dict):
+        return {k: serialize_dates(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_dates(x) for x in obj]
+    elif isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    return obj
+
+
 @compliance_ns.route("/dsar")
 class ComplianceDSAR(Resource):
     @jwt_required()
@@ -64,7 +75,7 @@ class ComplianceDSAR(Resource):
             },
             retention_tag="compliance",
         )
-        return payload, 200
+        return serialize_dates(payload), 200
 
 
 @compliance_ns.route("/anonymize")

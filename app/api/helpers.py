@@ -53,8 +53,8 @@ def require_mfa(fn):
 
 
 def get_session_cached(session_id: str) -> Optional[Dict[str, Any]]:
-    """Fetch a session, checking Redis cache first then SQLite.
-
+    """Fetch a session, checking Redis cache first then database.
+    
     Transparently populates the cache on miss so subsequent lookups within
     the same request or neighbouring requests benefit.
     """
@@ -95,9 +95,9 @@ def validate_session_context(session: Dict[str, Any]) -> bool:
         )
         return False
 
-    strict = current_app.config.get("SESSION_CONTEXT_STRICT", not current_app.debug)
+    strict = current_app.config.get("SESSION_CONTEXT_STRICT", True)
 
-    # In non-strict mode (default for development), skip context binding entirely
+    # In non-strict mode (explicitly configured), skip context binding
     if not strict:
         return True
 
@@ -131,16 +131,13 @@ def _is_localhost(ip: str) -> bool:
 
 
 def _get_real_ip() -> str:
-    """Get the real client IP, respecting X-Forwarded-For headers."""
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Get the real client IP (relies on ProxyFix middleware for proxy headers)."""
     return request.remote_addr or "unknown"
 
 
 def request_context_fingerprint() -> str:
     """Build stable request context fingerprint from client IP + user-agent."""
-    raw = f"{request.remote_addr or 'unknown'}|{request.headers.get('User-Agent', '')}"
+    raw = f"{_get_real_ip()}|{request.headers.get('User-Agent', '')}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -198,3 +195,9 @@ def validate_session_ownership(session: Dict[str, Any]) -> Optional[tuple]:
     if user_id != session.get("user_id"):
         return {"error": "Token does not match session user"}, 403
     return None
+
+
+def resolve_query(db, base_query: str) -> str:
+    """Replaces :param indicators with ? for unified QueryAdapter."""
+    return base_query.replace(":param", "?")
+

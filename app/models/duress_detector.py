@@ -78,9 +78,15 @@ DURESS_FEATURES = [
     "session_duration_anomaly",  # Session length vs baseline
     "time_of_day_risk",  # Unusual access hours
     "concurrent_session_flag",  # Multiple sessions detected
+    # Advanced stress markers (5 new features)
+    "modifier_overlap_instability",  # Erratic shift-key timing
+    "digraph_rhythm_deviation",  # Per-pair timing breakdown
+    "flight_cv_spike",  # Sudden flight time variability
+    "correction_burst_density",  # Backspace clusters per minute
+    "inter_field_hesitation_ratio",  # Hesitation between form fields
 ]
 
-DURESS_FEATURE_COUNT = len(DURESS_FEATURES)  # Should be 43
+DURESS_FEATURE_COUNT = len(DURESS_FEATURES)  # Should be 48
 
 
 class DuressDetector:
@@ -281,6 +287,42 @@ class DuressDetector:
         duress["time_of_day_risk"] = self._compute_time_risk()
         duress["concurrent_session_flag"] = float(ctx.get("concurrent_sessions", 0) > 1)
 
+        # ── Advanced stress markers ─────────────────────────────────
+
+        # Modifier overlap instability (erratic shift usage under stress)
+        mod_std = keystroke_features.get("modifier_overlap_std", 0.0)
+        mod_mean = keystroke_features.get("modifier_overlap_mean", 0.0)
+        baseline_mod_std = baseline.get("modifier_overlap_std", {}).get("mean", mod_std)
+        duress["modifier_overlap_instability"] = (
+            abs(mod_std - baseline_mod_std) / (baseline_mod_std + 1e-6)
+        )
+
+        # Digraph rhythm deviation (specific key-pair timing breaks down under stress)
+        digraph_devs = []
+        for key, val in keystroke_features.items():
+            if key.startswith("digraph_") and key.endswith("_mean"):
+                bval = baseline.get(key, {}).get("mean", val)
+                if bval > 0:
+                    digraph_devs.append(abs(val - bval) / (bval + 1e-6))
+        duress["digraph_rhythm_deviation"] = (
+            float(np.mean(digraph_devs)) if digraph_devs else 0.0
+        )
+
+        # Flight time CV spike (sudden timing variability increase)
+        flight_cv = keystroke_features.get("flight_time_cv", 0.0)
+        baseline_cv = baseline.get("flight_time_cv", {}).get("mean", flight_cv)
+        duress["flight_cv_spike"] = max(0, flight_cv - baseline_cv) / (
+            baseline_cv + 1e-6
+        )
+
+        # Correction burst density (backspace clusters per minute)
+        duress["correction_burst_density"] = ctx.get("correction_burst_density", 0.0)
+
+        # Inter-field hesitation ratio
+        duress["inter_field_hesitation_ratio"] = ctx.get(
+            "inter_field_hesitation_ratio", 0.0
+        )
+
         return duress
 
     def compute_duress_score(
@@ -433,6 +475,30 @@ class DuressDetector:
         if features.get("path_efficiency_drop", 0) > 0.3:
             score += 0.07
             indicators += 1
+
+        # Modifier overlap instability (unique duress signal)
+        if features.get("modifier_overlap_instability", 0) > 2.0:
+            score += 0.12
+            indicators += 1
+
+        # Digraph rhythm breakdown under stress
+        if features.get("digraph_rhythm_deviation", 0) > 1.5:
+            score += 0.10
+            indicators += 1
+
+        # Flight time CV spike (sudden variability)
+        if features.get("flight_cv_spike", 0) > 2.0:
+            score += 0.08
+            indicators += 1
+
+        # Correction burst density (frantic backspacing)
+        if features.get("correction_burst_density", 0) > 5.0:
+            score += 0.08
+            indicators += 1
+
+        # Multi-indicator amplification: 5+ indicators = duress likely
+        if indicators >= 5:
+            score *= 1.25
 
         return min(score, 1.0)
 

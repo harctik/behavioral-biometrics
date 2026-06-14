@@ -23,7 +23,8 @@ export function SessionTimeoutWarning() {
   const pathname = usePathname();
   const [showWarning, setShowWarning] = useState(false);
   const [timeLeft, setTimeLeft] = useState(WARNING_MINUTES * 60);
-  const lastActivityRef = useRef(Date.now());
+  const lastActivityRef = useRef<number>(typeof Date !== "undefined" ? Date.now() : 0);
+  const warningStartTimeRef = useRef<number>(0);
   const [challengeText, setChallengeText] = useState("");
   const [localConfidence, setLocalConfidence] = useState(0);
 
@@ -39,7 +40,6 @@ export function SessionTimeoutWarning() {
 
   useEffect(() => {
     if (isPublicRoute) {
-      setShowWarning(false);
       return;
     }
 
@@ -52,7 +52,10 @@ export function SessionTimeoutWarning() {
         router.push("/challenge?reason=idle");
       } else if (elapsed >= TIMEOUT_MS - WARNING_MS) {
         // Show warning
-        setShowWarning(true);
+        if (!showWarning) {
+          setShowWarning(true);
+          warningStartTimeRef.current = Date.now();
+        }
         setTimeLeft(Math.max(0, Math.ceil((TIMEOUT_MS - elapsed) / 1000)));
       } else {
         setShowWarning(false);
@@ -60,64 +63,73 @@ export function SessionTimeoutWarning() {
     }, 1000);
 
     // Track activity events (update in-memory ref, not localStorage)
-    const events = ["mousedown", "keydown", "scroll", "touchstart"];
+    const events = ["mousedown", "keydown", "scroll", "touchstart", "pointermove"];
     const handleActivity = () => resetTimer();
     
     events.forEach(e => window.addEventListener(e, handleActivity, { passive: true }));
+
+    // Also track tab visibility changes — user returning to the tab is activity
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") resetTimer();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
     
     return () => {
       clearInterval(checkTimer);
       events.forEach(e => window.removeEventListener(e, handleActivity));
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [isPublicRoute, resetTimer, router]);
 
-  // Live confidence polling during warning
+  // Live confidence polling using backend assessment of isolated challenge text
   useEffect(() => {
-    if (!showWarning) {
-      setLocalConfidence(0);
-      setChallengeText("");
-      return;
-    }
-    const interval = setInterval(() => {
+    if (!showWarning) return;
+    
+    const interval = setInterval(async () => {
       const snap = getCollector().snapshot("idle_verify");
-      const recentKs = snap.keystroke_events.filter(k => k.timestamp > lastActivityRef.current);
-      const conf = Math.min(100, recentKs.length * 15); // Simple local confidence proxy
-      setLocalConfidence(conf);
-      if (conf > 60) {
-        handleStayLoggedIn();
-      }
-    }, 500);
-    return () => clearInterval(interval);
-  }, [showWarning]);
-
-  // Gap 15: Behavioral-aware session extension
-  const handleStayLoggedIn = async () => {
-    resetTimer();
-    try {
-      const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
-      const collector = getCollector();
-      const behavioralData = collector.flush("session_extend");
-
-      const res = await fetch("/api/session/extend", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRF-TOKEN": csrfToken,
-        },
-        body: JSON.stringify({ behavioral_data: behavioralData }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        // If backend requires step-up due to bad behavioral score
-        if (data.step_up_required) {
-          router.push("/challenge");
-          return;
+      // Isolate the challenge text keystrokes
+      const challengeKs = snap.keystroke_events.filter(k => 
+        k.timestamp > warningStartTimeRef.current && 
+        k.target_id === "challenge-input"
+      );
+      
+      if (challengeKs.length >= 7) {
+        try {
+          const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+          
+          // Send isolated challenge keystrokes to backend for evaluation
+          const isolatedData = { ...snap, keystroke_events: challengeKs, type: "challenge_only" };
+          
+          const res = await fetch("/api/v1/session/extend", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
+            body: JSON.stringify({ behavioral_data: isolatedData }),
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            // Backend decides confidence instead of local naive keystroke count
+            const conf = data.confidence ? data.confidence * 100 : Math.min(100, challengeKs.length * 15);
+            setLocalConfidence(conf);
+            
+            if (!data.step_up_required && conf > 60) {
+              resetTimer();
+            }
+          }
+        } catch {
+          // Fallback if backend is unavailable
+          const naiveConf = Math.min(100, challengeKs.length * 15);
+          setLocalConfidence(naiveConf);
+          if (naiveConf > 60) resetTimer();
         }
+      } else {
+        setLocalConfidence(Math.min(100, challengeKs.length * 5));
       }
-    } catch {
-      // Extension is best-effort; local timer already reset
-    }
-  };
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [showWarning, resetTimer]);
+
+
 
   const handleLogout = async () => {
     try {
@@ -152,10 +164,12 @@ export function SessionTimeoutWarning() {
           <div className="flex-1">
             <h3 className="text-white font-bold text-sm mb-1">Session Expiring Soon</h3>
             <p className="text-slate-400 text-xs leading-relaxed mb-3">
-              Move your mouse or type below to confirm you're still here.
+              Move your mouse or type below to confirm you&apos;re still here.
             </p>
             <div className="space-y-3">
               <input
+                id="challenge-input"
+                name="challenge-input"
                 type="text"
                 placeholder="Type anything naturally..."
                 value={challengeText}

@@ -70,6 +70,9 @@ ENROLLMENT_FEATURES = [
     "micro_jitter_amp",
     "dir_change_freq",
     "click_dur_mean",
+    "modifier_overlap_mean",
+    "modifier_overlap_std",
+    "modifier_overlap_count",
 ]
 
 
@@ -101,26 +104,54 @@ class PassiveEnrollmentManager:
     ):
         self.min_sessions = min_sessions
         self.min_samples = min_samples_per_session
-        # In production, these would be persisted to database
-        self._profiles: Dict[int, Dict[str, Any]] = {}
-        self._session_counts: Dict[int, int] = {}
-        self._enrollment_status: Dict[int, bool] = {}
+        self._profiles_mem: Dict[int, Dict[str, Any]] = {}
+        self._session_counts_mem: Dict[int, int] = {}
+        self._enrollment_status_mem: Dict[int, bool] = {}
+
+    def _get_redis(self):
+        try:
+            from flask import has_app_context
+            if not has_app_context():
+                return None
+            from app.extensions import get_redis
+            return get_redis()
+        except Exception:
+            return None
+
+    def _load_state(self, user_id: int):
+        rc = self._get_redis()
+        if rc:
+            import json
+            try:
+                state_str = rc.get(f"passive_enrollment:{user_id}")
+                if state_str:
+                    state = json.loads(state_str)
+                    self._profiles_mem[user_id] = state.get("profile", {})
+                    self._session_counts_mem[user_id] = state.get("sessions", 0)
+                    self._enrollment_status_mem[user_id] = state.get("enrolled", False)
+            except Exception as e:
+                logger.error("Failed to load passive enrollment state: %s", e)
+
+    def _save_state(self, user_id: int):
+        rc = self._get_redis()
+        if rc:
+            import json
+            try:
+                state = {
+                    "profile": self._profiles_mem.get(user_id, {}),
+                    "sessions": self._session_counts_mem.get(user_id, 0),
+                    "enrolled": self._enrollment_status_mem.get(user_id, False)
+                }
+                rc.set(f"passive_enrollment:{user_id}", json.dumps(state))
+            except Exception as e:
+                logger.error("Failed to save passive enrollment state: %s", e)
 
     def get_enrollment_status(self, user_id: int) -> Dict[str, Any]:
-        """Check enrollment status for a user.
-
-        Returns:
-            {
-                "enrolled": bool,
-                "sessions_completed": int,
-                "sessions_required": int,
-                "profile_confidence": float,  # 0.0–1.0
-                "enrollment_phase": str,  # "collecting"|"ready"|"active"
-            }
-        """
-        sessions = self._session_counts.get(user_id, 0)
-        enrolled = self._enrollment_status.get(user_id, False)
-        profile = self._profiles.get(user_id, {})
+        """Check enrollment status for a user."""
+        self._load_state(user_id)
+        sessions = self._session_counts_mem.get(user_id, 0)
+        enrolled = self._enrollment_status_mem.get(user_id, False)
+        profile = self._profiles_mem.get(user_id, {})
         confidence = profile.get("confidence", 0.0)
 
         if enrolled:
@@ -144,6 +175,7 @@ class PassiveEnrollmentManager:
         keystroke_features: Optional[Dict[str, float]] = None,
         mouse_features: Optional[Dict[str, float]] = None,
         extended_features: Optional[Dict[str, float]] = None,
+        session_context: Optional[Dict[str, Any]] = None,
         source: str = "session",
     ) -> Dict[str, Any]:
         """Ingest behavioral data from a session for enrollment or profile update.
@@ -182,7 +214,7 @@ class PassiveEnrollmentManager:
                 "action": "no_data",
                 "match_score": 0.0,
                 "profile_confidence": 0.0,
-                "sessions_completed": self._session_counts.get(user_id, 0),
+                "sessions_completed": self._session_counts_mem.get(user_id, 0),
                 "message": "No behavioral features provided",
             }
 
@@ -201,25 +233,29 @@ class PassiveEnrollmentManager:
                 "action": "insufficient_data",
                 "match_score": 0.0,
                 "profile_confidence": 0.0,
-                "sessions_completed": self._session_counts.get(user_id, 0),
+                "sessions_completed": self._session_counts_mem.get(user_id, 0),
                 "message": f"Only {len(filtered)} valid features (need ≥3)",
             }
 
-        enrolled = self._enrollment_status.get(user_id, False)
+        self._load_state(user_id)
+        enrolled = self._enrollment_status_mem.get(user_id, False)
 
         if not enrolled:
             # ── Enrollment phase: accumulate data ──
-            return self._process_enrollment(user_id, filtered, source)
+            result = self._process_enrollment(user_id, filtered, source)
         else:
             # ── Post-enrollment: compare + update ──
-            return self._process_authenticated(user_id, filtered, source)
+            result = self._process_authenticated(user_id, filtered, source, session_context)
+            
+        self._save_state(user_id)
+        return result
 
     def _process_enrollment(
         self, user_id: int, features: Dict[str, float], source: str
     ) -> Dict[str, Any]:
         """Process data during the enrollment phase."""
-        if user_id not in self._profiles:
-            self._profiles[user_id] = {
+        if user_id not in self._profiles_mem:
+            self._profiles_mem[user_id] = {
                 "samples": [],
                 "feature_stats": {},
                 "confidence": 0.0,
@@ -227,7 +263,7 @@ class PassiveEnrollmentManager:
                 "last_updated": datetime.now().isoformat(),
             }
 
-        profile = self._profiles[user_id]
+        profile = self._profiles_mem[user_id]
         profile["samples"].append(features)
 
         # Keep last 50 samples max
@@ -236,9 +272,9 @@ class PassiveEnrollmentManager:
 
         # Increment session count (only for session-end submissions)
         if source in ("login", "session", "registration"):
-            self._session_counts[user_id] = self._session_counts.get(user_id, 0) + 1
+            self._session_counts_mem[user_id] = self._session_counts_mem.get(user_id, 0) + 1
 
-        sessions = self._session_counts.get(user_id, 0)
+        sessions = self._session_counts_mem.get(user_id, 0)
 
         # Check if we have enough data to enroll
         if (
@@ -246,7 +282,7 @@ class PassiveEnrollmentManager:
             and len(profile["samples"]) >= self.min_sessions
         ):
             self._build_profile(user_id)
-            self._enrollment_status[user_id] = True
+            self._enrollment_status_mem[user_id] = True
             confidence = profile.get("confidence", 0.0)
 
             logger.info(
@@ -285,10 +321,10 @@ class PassiveEnrollmentManager:
         }
 
     def _process_authenticated(
-        self, user_id: int, features: Dict[str, float], source: str
+        self, user_id: int, features: Dict[str, float], source: str, session_context: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """Process data after enrollment — compare against profile."""
-        profile = self._profiles.get(user_id, {})
+        profile = self._profiles_mem.get(user_id, {})
         stats = profile.get("feature_stats", {})
 
         if not stats:
@@ -296,15 +332,24 @@ class PassiveEnrollmentManager:
                 "action": "no_profile",
                 "match_score": 0.5,
                 "profile_confidence": 0.0,
-                "sessions_completed": self._session_counts.get(user_id, 0),
+                "sessions_completed": self._session_counts_mem.get(user_id, 0),
                 "message": "Profile exists but has no statistics",
             }
 
+        # Context-aware adjustments
+        context_penalty = 0.0
+        if session_context:
+            if session_context.get("is_new_device"):
+                context_penalty += 0.2
+            if session_context.get("is_new_ip"):
+                context_penalty += 0.1
+
         # Compute match score via Mahalanobis-style distance
         match_score = self._compute_match_score(features, stats)
+        match_score = max(0.0, match_score - context_penalty)
 
         # Update profile with new data (EMA)
-        self._update_profile_ema(user_id, features)
+        self._update_profile_ema(user_id, features, context_penalty)
 
         # Determine action
         if match_score >= 0.7:
@@ -321,13 +366,13 @@ class PassiveEnrollmentManager:
             "action": action,
             "match_score": round(match_score, 4),
             "profile_confidence": profile.get("confidence", 0.0),
-            "sessions_completed": self._session_counts.get(user_id, 0),
+            "sessions_completed": self._session_counts_mem.get(user_id, 0),
             "message": message,
         }
 
     def _build_profile(self, user_id: int):
         """Build statistical profile from accumulated samples."""
-        profile = self._profiles.get(user_id, {})
+        profile = self._profiles_mem.get(user_id, {})
         samples = profile.get("samples", [])
 
         if len(samples) < 2:
@@ -415,11 +460,16 @@ class PassiveEnrollmentManager:
 
         return float(match)
 
-    def _update_profile_ema(self, user_id: int, features: Dict[str, float]):
+    def _update_profile_ema(self, user_id: int, features: Dict[str, float], context_penalty: float = 0.0):
         """Update profile statistics using exponential moving average."""
-        profile = self._profiles.get(user_id, {})
+        profile = self._profiles_mem.get(user_id, {})
         stats = profile.get("feature_stats", {})
-        alpha = self.PROFILE_UPDATE_ALPHA
+        sessions = self._session_counts_mem.get(user_id, 0)
+        
+        # Dynamic alpha: higher for early sessions, lower as profile matures.
+        # Reduce alpha if device context is new (context_penalty > 0)
+        base_alpha = max(0.1, 0.5 - (sessions * 0.05))
+        alpha = max(0.01, base_alpha - (context_penalty * 0.5))
 
         for key, value in features.items():
             if key in stats:
@@ -453,14 +503,16 @@ class PassiveEnrollmentManager:
 
     def reset_enrollment(self, user_id: int):
         """Reset enrollment for a user (e.g., after account recovery)."""
-        self._profiles.pop(user_id, None)
-        self._session_counts.pop(user_id, None)
-        self._enrollment_status.pop(user_id, None)
+        self._profiles_mem.pop(user_id, None)
+        self._session_counts_mem.pop(user_id, None)
+        self._enrollment_status_mem.pop(user_id, None)
+        self._save_state(user_id)
         logger.info("Enrollment reset for user %d", user_id)
 
     def get_profile_summary(self, user_id: int) -> Dict[str, Any]:
         """Get a summary of the user's behavioral profile."""
-        profile = self._profiles.get(user_id, {})
+        self._load_state(user_id)
+        profile = self._profiles_mem.get(user_id, {})
         stats = profile.get("feature_stats", {})
         status = self.get_enrollment_status(user_id)
 

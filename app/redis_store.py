@@ -67,7 +67,7 @@ def delete_session(client, session_id: str) -> None:
 
 FEATURE_CACHE_PREFIX = "bfc:"
 FEATURE_CACHE_MAX = 512  # Max feature vectors per user
-FEATURE_CACHE_TTL = 30  # 30-second TTL for feature cache
+FEATURE_CACHE_TTL = 300  # 5-minute TTL for feature cache (aligned with session activity)
 BLOOM_PREFIX = "bloom:"
 
 

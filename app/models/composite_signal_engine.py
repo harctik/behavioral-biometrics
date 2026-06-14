@@ -121,6 +121,12 @@ class CompositeSignalEngine:
 
     def _build_sensorimotor_signature(self, f: Dict) -> Dict:
         """Build user-specific sensorimotor control loop model."""
+        # Collect per-pair digraph data for granular motor profiling
+        digraph_profile = {}
+        for key, val in f.items():
+            if key.startswith("digraph_") and key.endswith("_mean"):
+                digraph_profile[key] = val
+
         return {
             "motor_speed": f.get("mouse_vel_mean", 0),
             "motor_precision": 1 - min(1, f.get("click_precision", 0) / 50),
@@ -132,6 +138,11 @@ class CompositeSignalEngine:
             "curvature_profile": f.get("trajectory_curvature", 0),
             "typing_rhythm": f.get("rhythm_consistency", 0),
             "hold_time_profile": f.get("key_hold_mean", 0),
+            "modifier_overlap_mean": f.get("modifier_overlap_mean", 0),
+            "modifier_overlap_std": f.get("modifier_overlap_std", 0),
+            "flight_time_cv": f.get("flight_time_cv", 0),
+            "digraph_count": len(digraph_profile),
+            "digraph_profile": digraph_profile,
         }
 
     def _compute_cognitive_hash(self, f: Dict) -> str:
@@ -173,6 +184,8 @@ class CompositeSignalEngine:
             round(f.get("micro_jitter_amp", 0) * 100),
             round(f.get("hand_dominance_score", 0.5) * 100),
             round(f.get("rhythm_consistency", 0) * 100),
+            round(f.get("modifier_overlap_mean", 0) * 10),
+            round(f.get("flight_time_cv", 0) * 1000),
         ]
         raw = ":".join(str(v) for v in core_features)
         return hashlib.md5(raw.encode()).hexdigest()[:16]
@@ -211,6 +224,24 @@ class CompositeSignalEngine:
         if vel_mean > 0 and vel_std > vel_mean * 1.5:
             score = max(score, 0.4)
             flags.append("composite:multi_user_mouse_pattern")
+
+        # Digraph profile discontinuity = different person typing
+        digraph_stds = []
+        for key, val in f.items():
+            if key.startswith("digraph_") and key.endswith("_std"):
+                digraph_stds.append(val)
+        if digraph_stds and np.mean(digraph_stds) > 80:
+            score = max(score, 0.55)
+            flags.append(
+                f"composite:multi_user_digraph_discontinuity"
+                f"(avg_std={np.mean(digraph_stds):.0f}ms)"
+            )
+
+        # Modifier overlap pattern shift within session
+        mod_std = f.get("modifier_overlap_std", 0)
+        if mod_std > 200:
+            score = max(score, 0.35)
+            flags.append(f"composite:multi_user_modifier_instability(std={mod_std:.0f}ms)")
 
         return min(1.0, score)
 
@@ -287,6 +318,26 @@ class CompositeSignalEngine:
         if f.get("click_precision", 0) < 2 and f.get("correction_time_mean", 0) > 100:
             score += 0.2
 
+        # Pattern 4: Zero modifier overlaps + fast typing = keystroke injection
+        mod_count = f.get("modifier_overlap_count", 0)
+        total_keys = f.get("total_keystrokes", 0)
+        if total_keys > 30 and mod_count == 0:
+            score += 0.25
+            flags.append("composite:fraud_pattern_4 — zero_shift_usage_scripted_input")
+
+        # Pattern 5: All digraph timings identical = replayed recording
+        digraph_means = [
+            val for key, val in f.items()
+            if key.startswith("digraph_") and key.endswith("_mean") and val > 0
+        ]
+        if len(digraph_means) >= 3:
+            cv = float(np.std(digraph_means) / (np.mean(digraph_means) + 1e-6))
+            if cv < 0.05:
+                score += 0.3
+                flags.append(
+                    f"composite:fraud_pattern_5 — identical_digraph_timing(cv={cv:.3f})"
+                )
+
         return min(1.0, score)
 
     def _compute_social_eng(self, f: Dict, flags: list) -> float:
@@ -355,6 +406,10 @@ class CompositeSignalEngine:
             "rhythm_consistency",
             "micro_jitter_amp",
             "hand_dominance_score",
+            "modifier_overlap_mean",
+            "modifier_overlap_std",
+            "flight_time_cv",
+            "correction_rate",
         ]
         for key in update_keys:
             val = f.get(key, 0)

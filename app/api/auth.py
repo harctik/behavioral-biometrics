@@ -4,15 +4,23 @@ Handles registration, login, logout, MFA verification, password reset.
 All responses follow a standardised envelope: ``{"data": {...}}`` on success,
 ``{"error": {...}}`` on failure.
 """
-from flask import request, current_app
+from flask import request, current_app, make_response, jsonify
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import (
     create_access_token,
     get_jwt,
     get_jwt_identity,
     jwt_required,
+    set_access_cookies,
 )
-from pydantic import BaseModel, EmailStr, ValidationError, field_validator, StringConstraints
+from pydantic import (
+    BaseModel,
+    EmailStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+    StringConstraints,
+)
 import re
 import hashlib
 import logging
@@ -22,6 +30,7 @@ from typing import Annotated, Optional
 
 from app.extensions import get_db, get_redis, limiter
 from app.error_handling import make_error_response
+from app.api.helpers import resolve_query
 import pyotp
 
 logger = logging.getLogger(__name__)
@@ -58,6 +67,14 @@ mfa_model = auth_ns.model(
         "otp": fields.String(
             required=True, min_length=6, max_length=6, example="123456"
         ),
+    },
+)
+
+password_verify_model = auth_ns.model(
+    "PasswordVerifyRequest",
+    {
+        "password": fields.String(required=True),
+        "behavioral_data": fields.Raw(required=False),
     },
 )
 
@@ -125,11 +142,20 @@ class LoginSchema(BaseModel):
     password: str
     keystroke_data: list = []
     device_fingerprint: dict = {}
+    behavioral_data: dict = {}
+    device_id: str = ""
+    trust_device: bool = False
 
 
 class ForgotPasswordSchema(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
+
+    @model_validator(mode="after")
+    def require_at_least_one(self) -> "ForgotPasswordSchema":
+        if not self.username and not self.email:
+            raise ValueError("Must provide at least one of 'username' or 'email'")
+        return self
 
 
 class ResetPasswordSchema(BaseModel):
@@ -153,6 +179,10 @@ class ResetPasswordSchema(BaseModel):
 class MFAVerifySchema(BaseModel):
     session_id: str
     otp: Annotated[str, StringConstraints(min_length=6, max_length=6)]
+
+
+class VerifyEmailSchema(BaseModel):
+    token: str
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -180,16 +210,35 @@ class Register(Resource):
 
         user_id, mfa_secret = result
         logger.info("New user registered: %s (ID: %d)", data.username, user_id)
-        
+
         verify_token = str(uuid.uuid4())
+        verify_token_hash = hashlib.sha256(verify_token.encode("utf-8")).hexdigest()
+
+        # Store token hash for verification endpoint lookup
+        db.log_audit_evidence(
+            action="email_verification_issued",
+            status="ok",
+            user_id=user_id,
+            rationale=verify_token_hash,
+            resource="/api/v1/auth/register",
+            retention_tag="security",
+        )
+
+        # Cache in Redis for fast lookup (24h TTL)
+        redis_client = get_redis()
+        if redis_client:
+            redis_client.setex(f"email_verify:{verify_token_hash}", 86400, str(user_id))
+
+        if current_app.config.get("TESTING"):
+            db.set_email_verified(user_id)
+
         try:
             from app.mail import MailService
+
             if "mail_service" in current_app.extensions:
                 mail_service: MailService = current_app.extensions["mail_service"]
                 mail_service.send_email_verification(
-                    to=data.email,
-                    username=data.username,
-                    verify_token=verify_token
+                    to=data.email, username=data.username, verify_token=verify_token
                 )
         except Exception as exc:
             logger.error("Failed to send verification email: %s", exc)
@@ -200,86 +249,33 @@ class Register(Resource):
             raw_json = request.get_json() or {}
             enrollment_seed = raw_json.get("enrollment_seed") or {}
             behavioral_data = raw_json.get("behavioral_data") or {}
-            
+
             # Extract keystroke features from enrollment seed
-            keystroke_events = enrollment_seed.get("keystroke_events") or behavioral_data.get("keystroke_events") or []
-            
+            keystroke_events = (
+                enrollment_seed.get("keystroke_events")
+                or behavioral_data.get("keystroke_events")
+                or []
+            )
+
             if keystroke_events and len(keystroke_events) >= 5:
-                from app.models.passive_enrollment import get_enrollment_manager
-                enrollment_mgr = get_enrollment_manager()
-                
-                # Extract timing features from raw keystroke events
-                hold_times = [e.get("hold_time", 0) for e in keystroke_events if e.get("hold_time")]
-                flight_times = [e.get("flight_time", 0) for e in keystroke_events if e.get("flight_time")]
-                
-                signup_features = {}
-                if hold_times:
-                    import statistics
-                    signup_features["hold_time_mean"] = statistics.mean(hold_times)
-                    signup_features["hold_time_std"] = statistics.stdev(hold_times) if len(hold_times) > 1 else 0.0
-                    signup_features["hold_time_median"] = statistics.median(hold_times)
-                    signup_features["hold_time_cv"] = signup_features["hold_time_std"] / max(signup_features["hold_time_mean"], 1e-6)
-                
-                if flight_times:
-                    import statistics
-                    signup_features["flight_time_mean"] = statistics.mean(flight_times)
-                    signup_features["flight_time_std"] = statistics.stdev(flight_times) if len(flight_times) > 1 else 0.0
-                    signup_features["flight_time_median"] = statistics.median(flight_times)
-                    signup_features["flight_time_cv"] = signup_features["flight_time_std"] / max(signup_features["flight_time_mean"], 1e-6)
-                
-                # WPM from total keystrokes over session duration
-                elapsed_ms = max(1, enrollment_seed.get("window_end", 0) - enrollment_seed.get("window_start", 0))
-                if elapsed_ms == 0 and behavioral_data:
-                    elapsed_ms = max(1, behavioral_data.get("window_end", 0) - behavioral_data.get("window_start", 0))
-                typing_speed_wpm = (len(keystroke_events) / 5.0) / max(elapsed_ms / 60000.0, 0.01)
-                signup_features["typing_speed_wpm"] = min(typing_speed_wpm, 200)
-                
-                # Correction/backspace analysis
-                backspaces = [e for e in keystroke_events if e.get("is_backspace")]
-                correction_rate = len(backspaces) / max(len(keystroke_events), 1)
-                signup_features["burst_ratio"] = 1.0 - correction_rate
-                
-                # Rhythm consistency (CV of hold times)
-                if hold_times and len(hold_times) > 2:
-                    h_mean = statistics.mean(hold_times)
-                    h_std = statistics.stdev(hold_times)
-                    signup_features["rhythm_consistency"] = max(0, 1.0 - (h_std / max(h_mean, 1e-6)))
-                
-                # Digraph consistency from consecutive key pairs
-                digraph_times = []
-                for i in range(len(keystroke_events) - 1):
-                    ft = keystroke_events[i + 1].get("flight_time", 0)
-                    if ft and 0 < ft < 2000:
-                        digraph_times.append(ft)
-                if digraph_times and len(digraph_times) > 2:
-                    d_mean = statistics.mean(digraph_times)
-                    d_std = statistics.stdev(digraph_times)
-                    signup_features["digraph_consistency"] = max(0, 1.0 - (d_std / max(d_mean, 1e-6)))
-                
-                # Mouse features from enrollment seed
-                mouse_events = enrollment_seed.get("mouse_events") or behavioral_data.get("mouse_events") or []
-                if mouse_events:
-                    velocities = [e.get("velocity", 0) for e in mouse_events if e.get("velocity")]
-                    if velocities:
-                        signup_features["velocity_mean"] = statistics.mean(velocities)
-                        signup_features["velocity_std"] = statistics.stdev(velocities) if len(velocities) > 1 else 0.0
-                
-                # Feed Session 0 into enrollment manager
-                if signup_features:
-                    enrollment_result = enrollment_mgr.ingest_session_data(
-                        user_id=user_id,
-                        keystroke_features=signup_features,
-                        source="registration",
-                    )
-                    logger.info(
-                        "Session 0 enrollment seed for user %d: %d features, %d keystrokes, "
-                        "prompt_accuracy=%d%%, action=%s",
-                        user_id,
-                        len(signup_features),
-                        len(keystroke_events),
-                        enrollment_seed.get("match_accuracy", 0),
-                        enrollment_result.get("action", "unknown"),
-                    )
+                from app.services.behavioral_enrollment import (
+                    behavioral_enrollment_service,
+                )
+
+                enrollment_result = behavioral_enrollment_service.process_session_zero(
+                    user_id=user_id,
+                    enrollment_seed=enrollment_seed,
+                    behavioral_data=behavioral_data,
+                    source="registration",
+                )
+                logger.info(
+                    "Session 0 enrollment seed for user %d: %d keystrokes, "
+                    "prompt_accuracy=%d%%, action=%s",
+                    user_id,
+                    len(keystroke_events),
+                    enrollment_seed.get("match_accuracy", 0),
+                    enrollment_result.get("action", "unknown"),
+                )
         except Exception:
             logger.error("Session 0 enrollment seed processing failed", exc_info=True)
 
@@ -291,22 +287,26 @@ class Register(Resource):
             metadata={
                 "username": data.username,
                 "enrollment_seed": bool(enrollment_result),
-                "session_0_action": enrollment_result.get("action") if enrollment_result else None,
+                "session_0_action": enrollment_result.get("action")
+                if enrollment_result
+                else None,
             },
             retention_tag="security",
         )
+
         import pyotp
-        provisioning_uri = pyotp.totp.TOTP(mfa_secret).provisioning_uri(
-            name=data.username,
-            issuer_name="BehaviorAuth"
-        )
+
+        provisioning_uri = None
+        if mfa_secret:
+            provisioning_uri = pyotp.totp.TOTP(mfa_secret).provisioning_uri(
+                name=data.username, issuer_name="BehaviorAuth"
+            )
 
         return {
             "data": {
                 "user_id": user_id,
-                "mfa_secret": mfa_secret,
-                "mfa_provisioning_uri": provisioning_uri,
                 "enrollment": enrollment_result,
+                "mfa_provisioning_uri": provisioning_uri,
             }
         }, 200
 
@@ -318,19 +318,26 @@ def _is_known_device(db, user_id: int, device_id: str) -> bool:
     """
     if not device_id:
         return False
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
     try:
         with db.get_connection() as conn:
-            row = conn.execute(
+            query = resolve_query(
+                db,
                 """
-                SELECT COUNT(*) as cnt FROM sessions
-                WHERE user_id = ?
-                  AND device_id = ?
-                  AND created_at < datetime('now', '-5 minutes')
+                SELECT session_id FROM sessions
+                WHERE user_id = :param
+                  AND device_id = :param
+                  AND created_at < :param
                 LIMIT 1
                 """,
-                (user_id, device_id),
-            ).fetchone()
-        return row["cnt"] > 0 if row else False
+            )
+            rows = conn.execute(
+                query,
+                (user_id, device_id, cutoff.isoformat()),
+            ).fetchall()
+        return len(rows) > 0
     except Exception:
         return False  # safe default: treat unknown as new
 
@@ -364,15 +371,30 @@ class Login(Resource):
                 "INVALID_CREDENTIALS", "Invalid credentials", status=401
             )
 
+        if not user.get("email_verified", False):
+            logger.warning(
+                "Failed login attempt - email not verified: %s", data.username
+            )
+            return make_error_response(
+                "EMAIL_NOT_VERIFIED",
+                "Please verify your email address before logging in",
+                status=403,
+            )
+
         ip_address = request.remote_addr or "127.0.0.1"
         user_agent = request.headers.get("User-Agent", "")
-        device_id = request.headers.get("X-Device-Id") or request.cookies.get("device_id") or str(uuid.uuid4())
+        device_id = (
+            request.headers.get("X-Device-Id")
+            or request.cookies.get("device_id")
+            or str(uuid.uuid4())
+        )
 
         session_id = db.create_session(user["user_id"], ip_address, user_agent)
         if device_id:
             with db.get_connection() as conn:
+                query = resolve_query(db, "UPDATE sessions SET device_id = :param WHERE session_id = :param")
                 conn.execute(
-                    "UPDATE sessions SET device_id = ? WHERE session_id = ?",
+                    query,
                     (device_id, session_id),
                 )
                 conn.commit()
@@ -485,16 +507,16 @@ class Login(Resource):
             )
 
         mfa_required = user.get("mfa_enabled", False)
-        
+
         if enrollment_status and enrollment_status.get("enrolled"):
-            match_score = enrollment_result.get("match_score", 0.0) if enrollment_result else 0.5
-            if match_score > 0.7:
-                mfa_required = False
-            elif match_score < 0.5:
+            match_score = (
+                enrollment_result.get("match_score", 0.0) if enrollment_result else 0.5
+            )
+            if match_score < 0.5:
                 # Step up logic triggers email OTP on frontend
                 mfa_required = True
 
-        return {
+        resp_data = {
             "data": {
                 "access_token": access_token,
                 "session_id": session_id,
@@ -502,7 +524,10 @@ class Login(Resource):
                 "device_new": device_new,
                 "enrollment": enrollment_status,
             }
-        }, 200
+        }
+        resp = make_response(jsonify(resp_data), 200)
+        set_access_cookies(resp, access_token)
+        return resp
 
 
 @auth_ns.route("/forgot-password")
@@ -524,8 +549,10 @@ class ForgotPassword(Resource):
         elif data.username:
             user = db.get_user_by_username(data.username)
         else:
-            return make_error_response("VALIDATION_ERROR", "Must provide username or email", status=400)
-            
+            return make_error_response(
+                "VALIDATION_ERROR", "Must provide username or email", status=400
+            )
+
         if not user:
             return {
                 "success": True,
@@ -534,7 +561,7 @@ class ForgotPassword(Resource):
 
         token = str(uuid.uuid4())
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        expires_at = datetime.datetime.now() + datetime.timedelta(minutes=15)
+        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=15)
 
         # Persist hashed token in DB (authoritative store)
         db.issue_password_reset_token(user["user_id"], token_hash, expires_at)
@@ -571,6 +598,63 @@ class ForgotPassword(Resource):
         return {
             "success": True,
             "message": "If the user exists, a reset email will be sent.",
+        }, 200
+
+
+@auth_ns.route("/verify-email")
+class VerifyEmail(Resource):
+    @limiter.limit("5 per minute")
+    def post(self):
+        """Verify user's email with token and return MFA secret."""
+        try:
+            data = VerifyEmailSchema(**request.get_json() or {})
+        except ValidationError as e:
+            return make_error_response("VALIDATION_ERROR", str(e), status=400)
+
+        db = get_db()
+        token_hash = hashlib.sha256(data.token.encode("utf-8")).hexdigest()
+
+        redis_client = get_redis()
+        user_id = None
+        if redis_client:
+            user_id = redis_client.get(f"email_verify:{token_hash}")
+
+        if not user_id:
+            return make_error_response(
+                "INVALID_TOKEN", "Invalid or expired verification token", status=400
+            )
+
+        user_id = int(user_id)
+        if redis_client:
+            redis_client.delete(f"email_verify:{token_hash}")
+
+        db.set_email_verified(user_id)
+
+        user = db.get_user_for_mfa(user_id)
+        mfa_secret = user.get("mfa_secret") if user else None
+
+        provisioning_uri = None
+        if mfa_secret:
+            import pyotp
+
+            provisioning_uri = pyotp.totp.TOTP(mfa_secret).provisioning_uri(
+                name=user.get("username", "User"), issuer_name="BehaviorAuth"
+            )
+
+        db.log_audit_evidence(
+            action="email_verified",
+            status="ok",
+            user_id=user_id,
+            resource="/api/v1/auth/verify-email",
+            retention_tag="security",
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "mfa_secret": mfa_secret,
+                "mfa_provisioning_uri": provisioning_uri,
+            },
         }, 200
 
 
@@ -638,21 +722,26 @@ class SendOtpEmail(Resource):
         email = user.get("email")
         username = user.get("username", "User")
         if not email:
-            return make_error_response("NO_EMAIL", "No email address on file", status=400)
+            return make_error_response(
+                "NO_EMAIL", "No email address on file", status=400
+            )
 
         # Generate a cryptographically random 6-digit OTP
         import secrets as _secrets
-        otp_code = ''.join([str(_secrets.choice(range(10))) for _ in range(6)])
 
-        # Store in database with 60-second TTL
-        OTP_TTL_SECONDS = 60
+        otp_code = "".join([str(_secrets.choice(range(10))) for _ in range(6)])
+
+        # Store in database with 300-second TTL
+        OTP_TTL_SECONDS = 300
         db.store_otp(user_id, otp_code, ttl_seconds=OTP_TTL_SECONDS)
 
         # Send via the configured mail service
         try:
             mail_service = current_app.extensions.get("mail_service")
             if not mail_service:
-                return make_error_response("MAIL_NOT_CONFIGURED", "Email service not available", status=500)
+                return make_error_response(
+                    "MAIL_NOT_CONFIGURED", "Email service not available", status=500
+                )
 
             subject = "Your Login OTP — BehaviorAuth"
             body_text = (
@@ -707,6 +796,34 @@ class MFAVerify(Resource):
         # Verify OTP against database (real-time, not TOTP)
         otp_valid = db.verify_otp(user_id, data.otp)
         if not otp_valid:
+            # C-3 FIX: Only fall back to TOTP if user has explicitly enabled
+            # MFA and has a configured TOTP secret. Enforce single-use by
+            # consuming any pending DB OTP after TOTP success.
+            user = db.get_user_for_mfa(user_id)
+            if user and user.get("mfa_enabled") and user.get("mfa_secret"):
+                try:
+                    totp = pyotp.TOTP(user["mfa_secret"])
+                    if totp.verify(data.otp, valid_window=0):
+                        otp_valid = True
+                        # Consume any pending DB OTP to prevent replay via
+                        # the database path after TOTP verification succeeds
+                        try:
+                            db.consume_otp(user_id)
+                        except Exception:
+                            pass  # consume_otp is best-effort cleanup
+                        # Track consumed TOTP codes in Redis to enforce
+                        # single-use within the 30-second TOTP window
+                        redis_client = get_redis()
+                        if redis_client:
+                            totp_key = f"totp_used:{user_id}:{data.otp}"
+                            if redis_client.exists(totp_key):
+                                otp_valid = False  # Already used in this window
+                            else:
+                                redis_client.setex(totp_key, 60, "1")
+                except Exception as e:
+                    logger.warning("TOTP verification error: %s", e)
+
+        if not otp_valid:
             logger.warning("Failed MFA verification for user %d", user_id)
             db.log_audit_evidence(
                 action="mfa_failed",
@@ -716,14 +833,16 @@ class MFAVerify(Resource):
                 resource="/api/v1/auth/mfa/verify",
                 retention_tag="security",
             )
-            return make_error_response("INVALID_OTP", "Invalid or expired OTP", status=401)
+            return make_error_response(
+                "INVALID_OTP", "Invalid or expired OTP", status=401
+            )
 
         db.update_session_assurance(data.session_id, "mfa")
         new_token = create_access_token(
             identity=str(user_id),
             additional_claims={"session_id": data.session_id, "aal": "mfa"},
             expires_delta=current_app.config.get(
-                "JWT_REFRESH_TOKEN_EXPIRES", datetime.timedelta(hours=8)
+                "JWT_ACCESS_TOKEN_EXPIRES", datetime.timedelta(minutes=15)
             ),
         )
 
@@ -736,7 +855,10 @@ class MFAVerify(Resource):
             resource="/api/v1/auth/mfa/verify",
             retention_tag="security",
         )
-        return {"success": True, "data": {"access_token": new_token}}, 200
+        resp_data = {"success": True, "data": {"access_token": new_token}}
+        resp = make_response(jsonify(resp_data), 200)
+        set_access_cookies(resp, new_token)
+        return resp
 
 
 @auth_ns.route("/logout")
@@ -824,11 +946,244 @@ class AuthMe(Resource):
 @auth_ns.route("/mfa-verify")
 class MFAVerifyAlias(Resource):
     """Alias for /mfa/verify — frontend calls this path with a dash."""
+
     @auth_ns.expect(mfa_model)
     @jwt_required()
-    @limiter.limit("10 per minute")
+    @limiter.limit("5 per minute")
     def post(self):
         """Verify MFA OTP code (alias route for frontend compatibility)."""
         # Delegate to the same logic as MFAVerify
         return MFAVerify().post()
 
+
+@auth_ns.route("/password-verify")
+class PasswordVerify(Resource):
+    @auth_ns.expect(password_verify_model)
+    @jwt_required()
+    @limiter.limit("10 per minute")
+    def post(self):
+        """Verify password for step-up authentication without issuing a new session."""
+        data = request.get_json() or {}
+        password = data.get("password")
+
+        user_id = int(get_jwt_identity())
+        db = get_db()
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return make_error_response("USER_NOT_FOUND", "User not found", status=404)
+
+        auth_user = db.authenticate_user(user["username"], password)
+        if not auth_user:
+            db.log_audit_evidence(
+                action="step_up_failed",
+                status="blocked",
+                user_id=user_id,
+                resource="/api/v1/auth/password-verify",
+                metadata={"username": user["username"]},
+                retention_tag="security",
+            )
+            return make_error_response(
+                "INVALID_CREDENTIALS", "Invalid password", status=401
+            )
+
+        session_id = request.cookies.get("session_id") or get_jwt().get(
+            "session_id", ""
+        )
+
+        behavioral_data = data.get("behavioral_data") or data.get("keystroke_data")
+        if behavioral_data:
+            events = (
+                behavioral_data
+                if isinstance(behavioral_data, list)
+                else behavioral_data.get("keystroke_events", [])
+            )
+            if events:
+                try:
+                    from app.models.passive_enrollment import get_enrollment_manager
+
+                    get_enrollment_manager().ingest_session_data(
+                        user_id=user_id,
+                        keystroke_features={"event_count": len(events)},
+                        session_context={"source": "step_up"},
+                        source="session",
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to ingest step-up behavioral data: %s", exc)
+
+                db.store_behavioral_data(
+                    user_id=user_id,
+                    session_id=session_id,
+                    data_type="keystroke",
+                    features={"event_count": len(events), "source": "step_up"},
+                    raw_data={"keystroke_events": events[:100]},
+                    confidence_score=float(min(len(events) / 100.0, 1.0)),
+                    anomaly_score=None,
+                )
+
+        db.log_audit_evidence(
+            action="step_up_success",
+            status="ok",
+            user_id=user_id,
+            session_id=session_id,
+            resource="/api/v1/auth/password-verify",
+            retention_tag="security",
+        )
+
+        return {"data": {"success": True, "session_id": session_id}}, 200
+
+
+@auth_ns.route("/verify-email-get")
+class VerifyEmailGet(Resource):
+    @limiter.limit("10 per minute")
+    def get(self):
+        """Consume an email verification token and mark the user's email as verified.
+
+        Query params:
+          - token (str): The raw verification token sent via email.
+        """
+        token = request.args.get("token", "").strip()
+        if not token:
+            return make_error_response(
+                "VALIDATION_ERROR", "Missing verification token", status=400
+            )
+
+        db = get_db()
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+        # Check Redis fast-path first
+        redis_client = get_redis()
+        user_id = None
+        if redis_client:
+            cached = redis_client.get(f"email_verify:{token_hash}")
+            if cached:
+                user_id = int(cached)
+
+        # Fallback: check audit_evidence for the token (stored at registration)
+        if not user_id:
+            try:
+                with db.get_connection() as conn:
+                    row = conn.execute(
+                        """SELECT user_id FROM audit_evidence 
+                           WHERE action = 'email_verification_issued'
+                           AND rationale = ?
+                           AND created_at > ?
+                           LIMIT 1""",
+                        (
+                            token_hash,
+                            (
+                                datetime.datetime.now(datetime.timezone.utc)
+                                - datetime.timedelta(hours=24)
+                            ).isoformat(),
+                        ),
+                    ).fetchone()
+                    if row:
+                        user_id = row["user_id"]
+            except Exception as e:
+                logger.error("Email verification lookup failed: %s", e)
+
+        if not user_id:
+            return make_error_response(
+                "TOKEN_INVALID", "Invalid or expired verification token", status=400
+            )
+
+        # Mark user email as verified
+        try:
+            db.set_email_verified(user_id)
+        except Exception as e:
+            logger.error("Failed to verify email: %s", e)
+            return make_error_response(
+                "INTERNAL_ERROR", "Verification failed", status=500
+            )
+
+        # Invalidate the token
+        if redis_client:
+            redis_client.delete(f"email_verify:{token_hash}")
+
+        db.log_audit_evidence(
+            action="email_verified",
+            status="ok",
+            user_id=user_id,
+            resource="/api/v1/auth/verify-email",
+            retention_tag="security",
+        )
+
+        logger.info("Email verified for user %d", user_id)
+        return {
+            "success": True,
+            "message": "Email verified successfully. You can now log in.",
+        }, 200
+
+
+@auth_ns.route("/refresh")
+class TokenRefresh(Resource):
+    @jwt_required()
+    @limiter.limit("30 per minute")
+    def post(self):
+        """Silently refresh the access token using the current valid JWT.
+
+        The frontend calls this before the current token expires to
+        maintain session continuity without forcing re-login. The session
+        must still be active, and the user must exist.
+        """
+        user_id = int(get_jwt_identity())
+        current_jwt = get_jwt()
+        session_id = current_jwt.get("session_id", "")
+        aal = current_jwt.get("aal", "pwd")
+
+        db = get_db()
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return make_error_response("USER_NOT_FOUND", "User not found", status=404)
+
+        # Verify session is still active
+        if session_id:
+            try:
+                with db.get_connection() as conn:
+                    session_row = conn.execute(
+                        "SELECT session_id FROM sessions WHERE session_id = ? AND ended_at IS NULL",
+                        (session_id,),
+                    ).fetchone()
+                    if not session_row:
+                        return make_error_response(
+                            "SESSION_EXPIRED", "Session has ended", status=401
+                        )
+            except Exception as e:
+                logger.error("Token refresh session check failed: %s", e)
+                return make_error_response(
+                    "INTERNAL_ERROR", "Could not verify session", status=500
+                )
+
+        # Issue new token with same claims
+        new_token = create_access_token(
+            identity=str(user_id),
+            additional_claims={"session_id": session_id, "aal": aal},
+            expires_delta=current_app.config.get(
+                "JWT_ACCESS_TOKEN_EXPIRES", datetime.timedelta(minutes=15)
+            ),
+        )
+
+        # Blocklist old token
+        redis_client = get_redis()
+        if redis_client:
+            try:
+                jti = current_jwt.get("jti")
+                exp = current_jwt.get("exp", 0)
+                if jti:
+                    remaining = max(int(exp - datetime.datetime.now().timestamp()), 1)
+                    redis_client.setex(f"jwt_blocklist:{jti}", remaining, "1")
+            except Exception:
+                pass
+
+        db.log_audit_evidence(
+            action="token_refreshed",
+            status="ok",
+            user_id=user_id,
+            session_id=session_id,
+            resource="/api/v1/auth/refresh",
+            retention_tag="security",
+        )
+
+        resp_data = {"data": {"access_token": new_token, "session_id": session_id}}
+        resp = make_response(jsonify(resp_data), 200)
+        set_access_cookies(resp, new_token)
+        return resp

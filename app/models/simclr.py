@@ -114,34 +114,51 @@ class SimCLRDataset(Dataset):
 
 
 class SimCLRModel(nn.Module):
-    """SimCLR encoder for fast enrollment"""
+    """SimCLR encoder for fast enrollment (upgraded: deeper + residual + GELU)"""
 
     def __init__(
-        self, input_dim: int = 20, hidden_dim: int = 64, projection_dim: int = 32
+        self, input_dim: int = 20, hidden_dim: int = 128, projection_dim: int = 64
     ):
         super().__init__()
 
-        # Encoder
-        self.encoder = nn.Sequential(
+        # Encoder (deeper with residual connection)
+        self.input_proj = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
         )
 
-        # Projection head
+        self.res_block = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+        )
+
+        self.encoder_out = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+        )
+
+        # Projection head (Chen et al. 2020 — 2-layer MLP with BN)
         self.projection = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.GELU(),
             nn.Linear(hidden_dim, projection_dim),
-            nn.ReLU(),
-            nn.Linear(projection_dim, projection_dim),
         )
 
+        self.hidden_dim = hidden_dim
         self.feature_names = None
 
     def forward(self, x):
-        # Encode
-        h = self.encoder(x)
+        # Encode with residual
+        h = self.input_proj(x)
+        h = h + self.res_block(h)
+        h = self.encoder_out(h)
         # Project
         z = self.projection(h)
         return z
@@ -150,52 +167,79 @@ class SimCLRModel(nn.Module):
         """Get embeddings without projection"""
         with torch.no_grad():
             x = torch.FloatTensor(x)
-            h = self.encoder(x)
+            h = self.input_proj(x)
+            h = h + self.res_block(h)
+            h = self.encoder_out(h)
             return h.numpy()
 
     def train_simclr(
         self,
         features: List[Dict],
-        temperature: float = 0.5,
-        epochs: int = 100,
+        temperature: float = 0.07,  # Lower temp = sharper discrimination
+        epochs: int = 200,
         batch_size: int = 32,
     ):
-        """Train SimCLR model"""
-        logger.info("Starting SimCLR training...")
+        """Train SimCLR model with NT-Xent loss (upgraded: cosine LR + AdamW)"""
+        logger.info("Starting SimCLR training (v2 — cosine LR, lower τ=%.2f)...", temperature)
 
         # Prepare dataset
         transform = AugmentationTransform()
         dataset = SimCLRDataset(features, transform)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
 
-        # Optimizer
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        # Optimizer with weight decay + cosine annealing
+        optimizer = torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-4)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
         # Training loop
         self.train()
+        best_loss = float("inf")
+
         for epoch in range(epochs):
             total_loss = 0
             for x1, x2 in dataloader:
                 optimizer.zero_grad()
 
-                # Get projections
-                z1 = self(x1)
-                z2 = self(x2)
+                # Get L2-normalized projections
+                z1 = F.normalize(self(x1), dim=-1)
+                z2 = F.normalize(self(x2), dim=-1)
 
-                # InfoNCE loss
-                batch_size = z1.shape[0]
-                similarity_matrix = torch.mm(z1, z2.T) / temperature
+                # NT-Xent loss with symmetric formulation
+                B = z1.shape[0]
+                sim_11 = torch.mm(z1, z1.T) / temperature
+                sim_22 = torch.mm(z2, z2.T) / temperature
+                sim_12 = torch.mm(z1, z2.T) / temperature
 
-                # Positive pairs
-                labels = torch.arange(batch_size)
-                loss = F.cross_entropy(similarity_matrix, labels)
+                # Mask self-similarity
+                mask = torch.eye(B, dtype=torch.bool)
+                sim_11.masked_fill_(mask, -9e15)
+                sim_22.masked_fill_(mask, -9e15)
+
+                labels = torch.arange(B)
+                loss_12 = F.cross_entropy(
+                    torch.cat([sim_12, sim_11], dim=1), labels
+                )
+                loss_21 = F.cross_entropy(
+                    torch.cat([sim_12.T, sim_22], dim=1), labels
+                )
+                loss = (loss_12 + loss_21) / 2
 
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
                 optimizer.step()
                 total_loss += loss.item()
 
-            if epoch % 20 == 0:
-                logger.info(f"Epoch {epoch}, Loss: {total_loss/len(dataloader):.4f}")
+            scheduler.step()
+            avg_loss = total_loss / max(len(dataloader), 1)
+
+            if avg_loss < best_loss:
+                best_loss = avg_loss
+
+            if epoch % 40 == 0:
+                logger.info(
+                    f"Epoch {epoch}, Loss: {avg_loss:.4f}, "
+                    f"LR: {scheduler.get_last_lr()[0]:.6f}"
+                )
 
         # Get final embeddings
         self.eval()
@@ -207,7 +251,7 @@ class SimCLRModel(nn.Module):
 
             embeddings = self.encode(np.array(all_features))
 
-        logger.info("SimCLR training completed")
+        logger.info("SimCLR training completed (best_loss=%.4f)", best_loss)
         return embeddings
 
     def save(self, path: str):

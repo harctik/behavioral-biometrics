@@ -2,30 +2,34 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { behavioral_snapshot, confidence_score } = body;
-    
-    // Mock backend scoring for faculty demo:
-    // Simply check if there's enough data and the local confidence is high enough
-    const ksCount = behavioral_snapshot?.keystroke_events?.length || 0;
-    const msCount = behavioral_snapshot?.mouse_events?.length || 0;
-    
-    if (confidence_score >= 75 || (ksCount > 15 || msCount > 50)) {
-      return NextResponse.json({
-        verified: true,
-        confidence: (confidence_score / 100) || 0.87,
-        method: "behavioral",
-        signals_used: ["keystroke_rhythm", "typing_speed", "mouse_dynamics"]
-      });
-    } else {
-      return NextResponse.json({
-        verified: false,
-        confidence: (confidence_score / 100) || 0.41,
-        reason: "keystroke_rhythm_mismatch",
-        fallback: "otp"
-      });
+    const payload = await req.json();
+
+    // Fix: correct cookie name is "access_token_cookie", not "access_token"
+    const tokenCookie = req.headers.get("cookie")?.split(";")
+      .find(c => c.trim().startsWith("access_token_cookie="));
+
+    if (!tokenCookie) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const token = tokenCookie.split("=").slice(1).join("="); // handle '=' in JWT
+    
+    // Fix: use BACKEND_URL consistently (same as all other routes)
+    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:5000";
+    const flaskRes = await fetch(`${backendUrl}/api/v1/session/verify-behavior`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const flaskData = await flaskRes.json();
+    return NextResponse.json(flaskData, { status: flaskRes.status });
+
   } catch (error) {
-    return NextResponse.json({ error: "Verification failed" }, { status: 500 });
+    console.error("Behavioral verify error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

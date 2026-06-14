@@ -43,9 +43,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: errorMsg }, { status: res.status });
     }
 
-    // MFA succeeded — update the access token to the new MFA-elevated one
     const newToken = data.data?.access_token;
     const response = NextResponse.json({ success: true }, { status: 200 });
+
+    // Clear the pending_mfa flag since MFA succeeded
+    response.cookies.delete('pending_mfa');
 
     if (newToken) {
       response.cookies.set({
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 8 * 3600, // MFA token lives longer (8h)
+        maxAge: 15 * 60, // Must match JWT TTL, not session TTL
       });
 
       // Re-generate CSRF token for the new JWT

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState, useEffect, Suspense } from "react";
+import { toast } from "sonner";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
@@ -14,8 +15,8 @@ function ResetPasswordForm() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  
+  
 
   useEffect(() => {
     const collector = getCollector();
@@ -26,16 +27,16 @@ function ResetPasswordForm() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError("");
-    setMessage("");
+    ;
+    ;
 
     if (newPassword !== confirmPassword) {
-      setError("Passwords do not match.");
+      toast.error("Passwords do not match.");
       return;
     }
 
     if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
+      toast.error("Password must be at least 8 characters.");
       return;
     }
 
@@ -45,7 +46,7 @@ function ResetPasswordForm() {
     const hasDigit = /\d/.test(newPassword);
     const hasSpecial = /[@$!%*?&]/.test(newPassword);
     if (!hasUpper || !hasLower || !hasDigit || !hasSpecial) {
-      setError("Password must contain uppercase, lowercase, digit, and special character (@$!%*?&).");
+      toast.error("Password must contain uppercase, lowercase, digit, and special character (@$!%*?&).");
       return;
     }
 
@@ -55,9 +56,9 @@ function ResetPasswordForm() {
         method: "POST",
         body: JSON.stringify({ token, new_password: newPassword }),
       });
-      setMessage("Password updated. You can sign in now.");
+      toast.success("Password updated. You can sign in now.");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Reset failed");
+      toast.error(err instanceof Error ? err.message : "Reset failed");
     } finally {
       setIsLoading(false);
     }
@@ -67,8 +68,8 @@ function ResetPasswordForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
-      {message ? <AuthInlineMessage tone="success">{message}</AuthInlineMessage> : null}
+      
+      
       <div>
         <AuthInput
           type="password"

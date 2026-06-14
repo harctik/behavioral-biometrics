@@ -45,21 +45,6 @@ logger = logging.getLogger(__name__)
 class FeatureConsistencyMixin:
     """Mixin class to handle feature consistency across models"""
 
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        """Ensure all feature dictionaries have the same keys"""
-        if not features:
-            return features
-
-        if self.feature_names is None:
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-
-        consistent_features = []
-        for f in features:
-            consistent_f = {name: f.get(name, 0.0) for name in self.feature_names}
-            consistent_features.append(consistent_f)
-
-        return consistent_features
-
     def _prepare_data(
         self, features: List[Dict], scaler: Any = None, fit: bool = True
     ) -> np.ndarray:
@@ -82,7 +67,7 @@ class FeatureConsistencyMixin:
         return data_matrix
 
 
-class GRUSequenceModel:
+class GRUSequenceModel(FeatureConsistencyMixin):
     """GRU model for sequential behavioral data analysis"""
 
     def __init__(
@@ -119,23 +104,6 @@ class GRUSequenceModel:
 
         self.model = model
         return model
-
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        """Ensure all feature dictionaries have the same keys"""
-        if not features:
-            return features
-
-        if self.feature_names is None:
-            # First time - establish feature names
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-
-        # Ensure all features have the same keys, filling missing with 0
-        consistent_features = []
-        for f in features:
-            consistent_f = {name: f.get(name, 0.0) for name in self.feature_names}
-            consistent_features.append(consistent_f)
-
-        return consistent_features
 
     def prepare_sequences(self, features: List[Dict]) -> np.ndarray:
         """Convert feature dictionaries to sequences"""
@@ -292,7 +260,7 @@ class GRUSequenceModel:
             return False
 
 
-class AutoencoderAnomalyDetector:
+class AutoencoderAnomalyDetector(FeatureConsistencyMixin):
     """Autoencoder for detecting behavioral anomalies"""
 
     def __init__(self, feature_dim: int = 20, encoding_dim: int = 8):
@@ -325,23 +293,6 @@ class AutoencoderAnomalyDetector:
 
         self.model = autoencoder
         return autoencoder
-
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        """Ensure all feature dictionaries have the same keys"""
-        if not features:
-            return features
-
-        if self.feature_names is None:
-            # First time - establish feature names
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-
-        # Ensure all features have the same keys, filling missing with 0
-        consistent_features = []
-        for f in features:
-            consistent_f = {name: f.get(name, 0.0) for name in self.feature_names}
-            consistent_features.append(consistent_f)
-
-        return consistent_features
 
     def prepare_data(self, features: List[Dict]) -> np.ndarray:
         """Convert feature dictionaries to matrix"""
@@ -457,7 +408,7 @@ class AutoencoderAnomalyDetector:
             return False
 
 
-class OneClassSVMDetector:
+class OneClassSVMDetector(FeatureConsistencyMixin):
     """One-Class SVM for outlier detection"""
 
     def __init__(self, nu: float = 0.1, gamma: str = "scale"):
@@ -465,23 +416,6 @@ class OneClassSVMDetector:
         self.scaler = StandardScaler()
         self.is_trained = False
         self.feature_names = None
-
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        """Ensure all feature dictionaries have the same keys"""
-        if not features:
-            return features
-
-        if self.feature_names is None:
-            # First time - establish feature names
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-
-        # Ensure all features have the same keys, filling missing with 0
-        consistent_features = []
-        for f in features:
-            consistent_f = {name: f.get(name, 0.0) for name in self.feature_names}
-            consistent_features.append(consistent_f)
-
-        return consistent_features
 
     def prepare_data(self, features: List[Dict]) -> np.ndarray:
         """Convert feature dictionaries to matrix"""
@@ -566,7 +500,7 @@ class OneClassSVMDetector:
             return False
 
 
-class IncrementalKNNClassifier:
+class IncrementalKNNClassifier(FeatureConsistencyMixin):
     """Incremental k-NN with sliding window for adaptive learning"""
 
     def __init__(self, k: int = 5, window_size: int = 1000):
@@ -577,32 +511,6 @@ class IncrementalKNNClassifier:
         self.scaler = StandardScaler()
         self.is_trained = False
         self.feature_names = None
-
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        """Ensure all feature dictionaries have the same keys"""
-        if not features:
-            return features
-
-        if self.feature_names is None:
-            # First time - establish feature names from all available features
-            if isinstance(features, list):
-                self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-            else:
-                self.feature_names = sorted(features.keys())
-                features = [features]
-
-        # Ensure all features have the same keys, filling missing with 0
-        consistent_features = []
-        feature_list = features if isinstance(features, list) else [features]
-        for f in feature_list:
-            consistent_f = {name: f.get(name, 0.0) for name in self.feature_names}
-            consistent_features.append(consistent_f)
-
-        return (
-            consistent_features
-            if isinstance(features, list)
-            else consistent_features[0]
-        )
 
     def prepare_data(self, features: List[Dict]) -> np.ndarray:
         """Convert feature dictionaries to matrix"""
@@ -714,7 +622,7 @@ class IncrementalKNNClassifier:
             return False
 
 
-class PassiveAggressiveDetector:
+class PassiveAggressiveDetector(FeatureConsistencyMixin):
     """Passive-Aggressive classifier for online learning"""
 
     def __init__(self, C: float = 1.0):
@@ -723,23 +631,6 @@ class PassiveAggressiveDetector:
         self.is_trained = False
         self.sample_count = 0
         self.feature_names = None
-
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        """Ensure all feature dictionaries have the same keys"""
-        if not features:
-            return features
-
-        if self.feature_names is None:
-            # First time - establish feature names
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-
-        # Ensure all features have the same keys, filling missing with 0
-        consistent_features = []
-        for f in features:
-            consistent_f = {name: f.get(name, 0.0) for name in self.feature_names}
-            consistent_features.append(consistent_f)
-
-        return consistent_features
 
     def prepare_data(self, features: List[Dict]) -> np.ndarray:
         """Convert feature dictionaries to matrix"""
@@ -837,7 +728,7 @@ class PassiveAggressiveDetector:
             return False
 
 
-class IsolationForestDetector:
+class IsolationForestDetector(FeatureConsistencyMixin):
     """Isolation Forest for anomaly detection"""
 
     def __init__(self, contamination: float = 0.1, n_estimators: int = 100):
@@ -847,23 +738,6 @@ class IsolationForestDetector:
         self.scaler = StandardScaler()
         self.is_trained = False
         self.feature_names = None
-
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        """Ensure all feature dictionaries have the same keys"""
-        if not features:
-            return features
-
-        if self.feature_names is None:
-            # First time - establish feature names
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-
-        # Ensure all features have the same keys, filling missing with 0
-        consistent_features = []
-        for f in features:
-            consistent_f = {name: f.get(name, 0.0) for name in self.feature_names}
-            consistent_features.append(consistent_f)
-
-        return consistent_features
 
     def prepare_data(self, features: List[Dict]) -> np.ndarray:
         """Convert feature dictionaries to matrix"""
@@ -950,7 +824,7 @@ class IsolationForestDetector:
             return False
 
 
-class LSTMSequenceModel:
+class LSTMSequenceModel(FeatureConsistencyMixin):
     """LSTM model for sequential behavioral data analysis"""
 
     def __init__(
@@ -986,15 +860,6 @@ class LSTMSequenceModel:
 
         self.model = model
         return model
-
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        if not features:
-            return features
-        if self.feature_names is None:
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-        return [
-            {name: f.get(name, 0.0) for name in self.feature_names} for f in features
-        ]
 
     def prepare_sequences(self, features: List[Dict]) -> np.ndarray:
         if not features:
@@ -1096,7 +961,7 @@ class LSTMSequenceModel:
             return False
 
 
-class VariationalAutoencoder:
+class VariationalAutoencoder(FeatureConsistencyMixin):
     """Variational Autoencoder for enhanced anomaly detection"""
 
     def __init__(self, feature_dim: int = 20, latent_dim: int = 8):
@@ -1147,15 +1012,6 @@ class VariationalAutoencoder:
         self.autoencoder.compile(optimizer=Adam(learning_rate=0.001), loss="mse")
 
         return self.autoencoder
-
-    def _ensure_feature_consistency(self, features: List[Dict]) -> List[Dict]:
-        if not features:
-            return features
-        if self.feature_names is None:
-            self.feature_names = sorted(set().union(*(f.keys() for f in features)))
-        return [
-            {name: f.get(name, 0.0) for name in self.feature_names} for f in features
-        ]
 
     def prepare_data(self, features: List[Dict]) -> np.ndarray:
         if not features:
@@ -1736,10 +1592,13 @@ class EnsembleBehavioralClassifier:
         """Initialize BehavioralTransformerEncoder (lazy — tolerates import failures)."""
         try:
             from app.models.transformer_model import BehavioralTransformerEncoder
+            from app.behavioral_feature_engine import BehavioralFeatureEngine
+
+            feature_dim = BehavioralFeatureEngine.FEATURE_COUNT  # Dynamic — matches actual engine
 
             self.transformer_model = BehavioralTransformerEncoder(
                 sequence_length=50,   # Match GRU's default for feature dicts
-                feature_dim=38,       # Full behavioral feature vector
+                feature_dim=feature_dim,
                 d_model=64,
                 nhead=4,
                 num_layers=2,
@@ -1747,7 +1606,7 @@ class EnsembleBehavioralClassifier:
                 dropout=0.1,
                 embedding_dim=128,
             )
-            logger.info("BehavioralTransformerEncoder initialized (d=64, h=4, L=2)")
+            logger.info("BehavioralTransformerEncoder initialized (d=64, h=4, L=2, features=%d)", feature_dim)
         except Exception:
             logger.warning("BehavioralTransformerEncoder not available — falling back to GRU-only")
             self.transformer_model = None
@@ -2064,9 +1923,8 @@ class EnsembleBehavioralClassifier:
 
     def save_all_models(self):
         """Save all trained models"""
-        import sklearn
-
-        base_path = os.path.join(self.models_path, f"model_v{sklearn.__version__}")
+        MODEL_SCHEMA_VERSION = "2.0.0"
+        base_path = os.path.join(self.models_path, f"model_v{MODEL_SCHEMA_VERSION}")
 
         self.gru_model.save(base_path)
         self.autoencoder.save(base_path)
@@ -2083,9 +1941,8 @@ class EnsembleBehavioralClassifier:
 
     def load_all_models(self):
         """Load all saved models"""
-        import sklearn
-
-        base_path = os.path.join(self.models_path, f"model_v{sklearn.__version__}")
+        MODEL_SCHEMA_VERSION = "2.0.0"
+        base_path = os.path.join(self.models_path, f"model_v{MODEL_SCHEMA_VERSION}")
 
         results = {
             "gru": self.gru_model.load(base_path),

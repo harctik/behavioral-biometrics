@@ -9,14 +9,7 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 
-const SESSIONS_DATA = [
-  { id: "usr_8f9x", risk: 0.02, keystroke: 0.98, pointer: 0.99, status: "Verified", time: "14:22:01", ip: "192.168.1.12", device: "MacBook Pro" },
-  { id: "usr_4v2m", risk: 0.15, keystroke: 0.85, pointer: 0.92, status: "Monitoring", time: "14:21:45", ip: "203.0.113.45", device: "iPhone 14" },
-  { id: "usr_9k1l", risk: 0.89, keystroke: 0.42, pointer: 0.31, status: "Step-Up MFA", time: "14:21:12", ip: "198.51.100.2", device: "Unknown Windows" },
-  { id: "usr_2p5n", risk: 0.04, keystroke: 0.97, pointer: 0.96, status: "Verified", time: "14:20:05", ip: "192.168.1.18", device: "iPad Pro" },
-  { id: "usr_7t3b", risk: 0.95, keystroke: 0.21, pointer: 0.15, status: "Blocked", time: "14:18:55", ip: "185.199.108.8", device: "Linux Desktop" },
-  { id: "usr_1x8c", risk: 0.01, keystroke: 0.99, pointer: 0.99, status: "Verified", time: "14:15:33", ip: "203.0.113.88", device: "MacBook Air" },
-];
+
 
 const StatCard = ({ title, value, sub, icon: Icon }: { title: string, value: string | number, sub: string, icon: any }) => (
   <div className="glass-panel p-5 rounded-xl flex flex-col justify-between">
@@ -62,25 +55,27 @@ export default function AdminPage() {
   const [liveAlerts, setLiveAlerts] = useState<{time: string, id: string, context: string, risk: number, status: string}[]>([]);
   const [deviceIntel, setDeviceIntel] = useState<any>(null);
 
-  const csrfToken = typeof document !== 'undefined' ? document.cookie?.match(/csrf_access_token=([^;]+)/)?.[1] || "" : "";
+  const [roleStatus, setRoleStatus] = useState<"" | "updating" | "success" | "failed">("");
+
+  const getCsrf = () => typeof document !== 'undefined' ? document.cookie?.match(/csrf_access_token=([^;]+)/)?.[1] || "" : "";
 
   const fetchAuditEvidence = useCallback(async () => {
     try {
       const sid = document.cookie?.match(/session_id=([^;]+)/)?.[1];
       if (!sid) return;
       const res = await fetch(`/api/v1/admin/audit-evidence?session_id=${sid}`, {
-        headers: { "X-CSRF-TOKEN": csrfToken }
+        headers: { "X-CSRF-TOKEN": getCsrf() }
       });
       if (res.ok) { const d = await res.json(); setAuditEvidence(d.evidence || []); }
     } catch {}
-  }, [csrfToken]);
+  }, []);
 
   const verifyAuditChain = async () => {
     try {
       const sid = document.cookie?.match(/session_id=([^;]+)/)?.[1];
       if (!sid) return;
       const res = await fetch(`/api/v1/admin/audit-evidence/verify?session_id=${sid}`, {
-        headers: { "X-CSRF-TOKEN": csrfToken }
+        headers: { "X-CSRF-TOKEN": getCsrf() }
       });
       if (res.ok) {
         const d = await res.json();
@@ -93,7 +88,7 @@ export default function AdminPage() {
   const runDuressCheck = async (targetSessionId: string) => {
     try {
       const res = await fetch(`/api/v1/admin/duress-check?session_id=${targetSessionId}`, {
-        headers: { "X-CSRF-TOKEN": csrfToken }
+        headers: { "X-CSRF-TOKEN": getCsrf() }
       });
       if (res.ok) { setDuressResult(await res.json()); }
     } catch {}
@@ -101,30 +96,29 @@ export default function AdminPage() {
 
   const setUserRole = async () => {
     if (!roleTarget) return;
-    const btn = document.getElementById('role-btn');
-    if (btn) btn.innerText = "Updating...";
+    setRoleStatus("updating");
     try {
       const res = await fetch("/api/v1/admin/users/role", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrf() },
         body: JSON.stringify({ user_id: parseInt(roleTarget), role: roleValue })
       });
       if (res.ok) {
-        if (btn) btn.innerText = "Updated ✓";
+        setRoleStatus("success");
         setRoleTarget("");
       } else {
-        if (btn) btn.innerText = "Failed";
+        setRoleStatus("failed");
       }
     } catch {
-      if (btn) btn.innerText = "Failed";
+      setRoleStatus("failed");
     }
-    setTimeout(() => { if (btn) btn.innerText = "Update Role"; }, 3000);
+    setTimeout(() => setRoleStatus(""), 3000);
   };
 
   const fetchCBSHealth = async () => {
     try {
       const res = await fetch("/api/v1/banking/cbs-health", {
-        headers: { "X-CSRF-TOKEN": csrfToken }
+        headers: { "X-CSRF-TOKEN": getCsrf() }
       });
       if (res.ok) { const d = await res.json(); setCbsHealth(d.cbs_status || null); }
     } catch {}
@@ -133,7 +127,7 @@ export default function AdminPage() {
   const exportTrustTimelineCsv = async () => {
     try {
       const res = await fetch("/api/v1/session/trust-timeline.csv", {
-        headers: { "X-CSRF-TOKEN": csrfToken }
+        headers: { "X-CSRF-TOKEN": getCsrf() }
       });
       if (res.ok) {
         const text = await res.text();
@@ -149,7 +143,7 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/v1/banking/maker-checker", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrf() },
         body: JSON.stringify({ maker_session_id: makerSid, checker_session_id: checkerSid })
       });
       if (res.ok) return await res.json();
@@ -161,7 +155,7 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/v1/banking/app-fraud-check", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrf() },
         body: JSON.stringify({ session_id: targetSessionId })
       });
       if (res.ok) return await res.json();
@@ -194,7 +188,7 @@ export default function AdminPage() {
       try {
         const csrf = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
         let res = await fetch("/api/v1/admin/live-sessions", { headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf } });
-        let data = res.ok ? await res.json() : null;
+        const data = res.ok ? await res.json() : null;
         
         if (!data?.sessions || data.sessions.length === 0) {
           // Fallback to trust timeline
@@ -210,7 +204,11 @@ export default function AdminPage() {
                 time: new Date(t.timestamp).toLocaleTimeString(),
                 ip: "127.0.0.1"
               })));
+            } else {
+              setLiveSessions([]);
             }
+          } else {
+            setLiveSessions([]);
           }
         } else {
           setLiveSessions(data.sessions);
@@ -252,7 +250,9 @@ export default function AdminPage() {
     // Get device intel
     if (typeof window !== "undefined") {
       import("@/lib/behavioral-collector").then(({ getCollector }) => {
-        setDeviceIntel(getCollector().deviceFingerprint);
+        const collector = getCollector();
+        collector.setContext("ADMIN");
+        setDeviceIntel(collector.deviceFingerprint);
       });
     }
 
@@ -608,7 +608,9 @@ export default function AdminPage() {
                   <option value="admin">Admin</option>
                 </select>
               </div>
-              <button id="role-btn" onClick={setUserRole} className="px-6 py-2 bg-accent-primary text-white rounded-lg text-sm hover:bg-blue-600">Update Role</button>
+              <button id="role-btn" onClick={setUserRole} className="px-6 py-2 bg-accent-primary text-white rounded-lg text-sm hover:bg-blue-600">
+                {roleStatus === "updating" ? "Updating..." : roleStatus === "success" ? "Updated ✓" : roleStatus === "failed" ? "Failed" : "Update Role"}
+              </button>
             </div>
           </div>
         )}
