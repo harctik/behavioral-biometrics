@@ -7,7 +7,7 @@ import {
   BrainCircuit, Search, Bell, ShieldBan, MoreHorizontal, Terminal, Download,
   CheckCircle2, XCircle, FileCheck, UserCog, Wifi, HeartPulse
 } from "lucide-react";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, getCsrfToken } from "@/lib/api-client";
 
 
 
@@ -57,14 +57,12 @@ export default function AdminPage() {
 
   const [roleStatus, setRoleStatus] = useState<"" | "updating" | "success" | "failed">("");
 
-  const getCsrf = () => typeof document !== 'undefined' ? document.cookie?.match(/csrf_access_token=([^;]+)/)?.[1] || "" : "";
-
   const fetchAuditEvidence = useCallback(async () => {
     try {
       const sid = document.cookie?.match(/session_id=([^;]+)/)?.[1];
       if (!sid) return;
       const res = await fetch(`/api/v1/admin/audit-evidence?session_id=${sid}`, {
-        headers: { "X-CSRF-TOKEN": getCsrf() }
+        headers: { "X-CSRF-TOKEN": getCsrfToken() }
       });
       if (res.ok) { const d = await res.json(); setAuditEvidence(d.evidence || []); }
     } catch {}
@@ -75,7 +73,7 @@ export default function AdminPage() {
       const sid = document.cookie?.match(/session_id=([^;]+)/)?.[1];
       if (!sid) return;
       const res = await fetch(`/api/v1/admin/audit-evidence/verify?session_id=${sid}`, {
-        headers: { "X-CSRF-TOKEN": getCsrf() }
+        headers: { "X-CSRF-TOKEN": getCsrfToken() }
       });
       if (res.ok) {
         const d = await res.json();
@@ -88,7 +86,7 @@ export default function AdminPage() {
   const runDuressCheck = async (targetSessionId: string) => {
     try {
       const res = await fetch(`/api/v1/admin/duress-check?session_id=${targetSessionId}`, {
-        headers: { "X-CSRF-TOKEN": getCsrf() }
+        headers: { "X-CSRF-TOKEN": getCsrfToken() }
       });
       if (res.ok) { setDuressResult(await res.json()); }
     } catch {}
@@ -100,7 +98,7 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/v1/admin/users/role", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrf() },
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         body: JSON.stringify({ user_id: parseInt(roleTarget), role: roleValue })
       });
       if (res.ok) {
@@ -118,7 +116,7 @@ export default function AdminPage() {
   const fetchCBSHealth = async () => {
     try {
       const res = await fetch("/api/v1/banking/cbs-health", {
-        headers: { "X-CSRF-TOKEN": getCsrf() }
+        headers: { "X-CSRF-TOKEN": getCsrfToken() }
       });
       if (res.ok) { const d = await res.json(); setCbsHealth(d.cbs_status || null); }
     } catch {}
@@ -127,7 +125,7 @@ export default function AdminPage() {
   const exportTrustTimelineCsv = async () => {
     try {
       const res = await fetch("/api/v1/session/trust-timeline.csv", {
-        headers: { "X-CSRF-TOKEN": getCsrf() }
+        headers: { "X-CSRF-TOKEN": getCsrfToken() }
       });
       if (res.ok) {
         const text = await res.text();
@@ -143,7 +141,7 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/v1/banking/maker-checker", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrf() },
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         body: JSON.stringify({ maker_session_id: makerSid, checker_session_id: checkerSid })
       });
       if (res.ok) return await res.json();
@@ -155,7 +153,7 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/v1/banking/app-fraud-check", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrf() },
+        headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         body: JSON.stringify({ session_id: targetSessionId })
       });
       if (res.ok) return await res.json();
@@ -249,7 +247,7 @@ export default function AdminPage() {
 
     // Get device intel
     if (typeof window !== "undefined") {
-      import("@/lib/behavioral-collector").then(({ getCollector }) => {
+      import("@/lib/behavioral-collector").then(async ({ getCollector }) => {
         const collector = getCollector();
         collector.setContext("ADMIN");
         setDeviceIntel(collector.deviceFingerprint);

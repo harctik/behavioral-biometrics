@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const payload = await req.json();
+    const rawBody = await req.text();
+    if (rawBody.length > 500 * 1024) { // 500KB limit
+      return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+    }
+    const payload = JSON.parse(rawBody);
 
     // Fix: correct cookie name is "access_token_cookie", not "access_token"
     const tokenCookie = req.headers.get("cookie")?.split(";")
@@ -16,14 +20,20 @@ export async function POST(req: Request) {
     
     // Fix: use BACKEND_URL consistently (same as all other routes)
     const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:5000";
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
     const flaskRes = await fetch(`${backendUrl}/api/v1/session/verify-behavior`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`
       },
-      body: JSON.stringify(payload)
+      body: rawBody,
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
     const flaskData = await flaskRes.json();
     return NextResponse.json(flaskData, { status: flaskRes.status });

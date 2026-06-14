@@ -56,7 +56,11 @@ def create_app(env: str = "development"):
             "JWT_TOKEN_LOCATION": ["headers", "cookies"],
             "JWT_COOKIE_SECURE": not settings.DEBUG,
             "JWT_COOKIE_CSRF_PROTECT": True,
-            "JWT_COOKIE_SAMESITE": "Strict",
+            # Cross-origin deployment (Vercel frontend ↔ Render backend)
+            # requires SameSite=None + Secure. Strict only works same-origin.
+            "JWT_COOKIE_SAMESITE": "None" if not settings.DEBUG else "Lax",
+            "JWT_ACCESS_COOKIE_PATH": "/",
+            "JWT_COOKIE_DOMAIN": "",
             "DATABASE_PATH": settings.DATABASE_PATH,
             "SQLALCHEMY_DATABASE_URI": settings.SQLALCHEMY_DATABASE_URI,
             "CSRF_ENABLED": settings.CSRF_ENABLED,
@@ -314,6 +318,11 @@ def create_app(env: str = "development"):
                 ).split(",")
                 if o.strip()
             }
+            # Always allow localhost for local development
+            allowed_set.update({
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+            })
             if origin in allowed_set:
                 response.headers["Access-Control-Allow-Origin"] = origin
                 response.headers.add("Vary", "Origin")
@@ -331,6 +340,8 @@ def create_app(env: str = "development"):
             "Access-Control-Expose-Headers"
         ] = "X-Request-ID, X-Response-Time"
         response.headers["Access-Control-Max-Age"] = "600"
+        # Required for cross-origin cookies (JWT tokens)
+        response.headers["Access-Control-Allow-Credentials"] = "true"
         return response
 
     # ── Security Headers ────────────────────────────────────────────────────
@@ -417,27 +428,38 @@ def create_app(env: str = "development"):
             "Falling back to SQLite which is NOT recommended for production."
         )
 
-    try:
-        db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
-        if not db_uri:
-            db_uri = "sqlite:///database/auth_system.db"
-            app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
+    db_uri = (app.config.get("SQLALCHEMY_DATABASE_URI") or "").strip()
+    if not db_uri:
+        db_uri = "sqlite:///database/auth_system.db"
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
 
-        from app.database import get_engine
-        db = get_engine(db_uri)
-            
-        # Test connection immediately
-        with db.get_connection() as conn:
-            conn.execute("SELECT 1")
-    except Exception as pg_err:
-        logger.error("Database connection failed: %s", pg_err)
-        logger.warning(
-            "Falling back to SQLite. This is NOT recommended for production."
-        )
-        fallback_uri = "sqlite:///database/auth_system.db"
-        app.config["SQLALCHEMY_DATABASE_URI"] = fallback_uri
-        from app.database import get_engine
-        db = get_engine(fallback_uri)
+    from app.database import get_engine
+    db = None
+    # Retry with exponential backoff (handles Supabase pooler cold-starts)
+    import time as _time
+    _max_retries = 3
+    for _attempt in range(1, _max_retries + 1):
+        try:
+            db = get_engine(db_uri)
+            with db.get_connection() as conn:
+                conn.execute("SELECT 1")
+            break  # Connected successfully
+        except Exception as pg_err:
+            if _attempt < _max_retries:
+                wait = 2 ** _attempt  # 2s, 4s
+                logger.warning(
+                    "Database connection attempt %d/%d failed: %s — retrying in %ds",
+                    _attempt, _max_retries, pg_err, wait,
+                )
+                _time.sleep(wait)
+            else:
+                logger.error("Database connection failed after %d attempts: %s", _max_retries, pg_err)
+                logger.warning(
+                    "Falling back to SQLite. This is NOT recommended for production."
+                )
+                fallback_uri = "sqlite:///database/auth_system.db"
+                app.config["SQLALCHEMY_DATABASE_URI"] = fallback_uri
+                db = get_engine(fallback_uri)
 
     redis_client = (
         get_redis_client(app.config.get("REDIS_URL") or "")
@@ -479,6 +501,12 @@ def create_app(env: str = "development"):
     # The Next.js proxy rewrites /api/* → Flask backend.
 
     # ── Health / Readiness ──────────────────────────────────────────────────
+    @app.route("/")
+    @limiter.exempt
+    def root_health():
+        """Root route — used by Render health checks and avoids 404."""
+        return {"service": "AetherAuth Behavioral Biometrics API", "status": "ok"}, 200
+
     @app.route("/healthz")
     @limiter.limit("30 per minute")
     def healthz():

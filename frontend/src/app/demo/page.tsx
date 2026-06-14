@@ -91,9 +91,9 @@ export default function DemoPage() {
 
   // Poll live risks
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       const collector = getCollector();
-      const snap = collector.snapshot("demo_live");
+      const snap = await collector.snapshot("demo_live");
       const r = computeRiskSignals(snap);
       setRisks(r);
       // Determine decision
@@ -113,7 +113,7 @@ export default function DemoPage() {
     // Inject perfectly uniform keystrokes (zero variance = bot signature)
     const phrase = "transfer $10000 to account 9876543210";
     let i = 0;
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       if (i >= phrase.length) { clearInterval(interval); return; }
       setText(prev => prev + phrase[i]);
       // Simulate via direct keystroke injection won't work — instead we'll programmatically type
@@ -141,9 +141,9 @@ export default function DemoPage() {
     setSimLabel("APP Fraud (Coerced)");
     setText("");
     // Simulate: long hesitation then paste
-    setTimeout(() => {
+    setTimeout(async () => {
       // Inject a hesitation cognitive event
-      const snap = collector.snapshot("fraud_sim");
+      const snap = await collector.snapshot("fraud_sim");
       // Simulate paste via clipboard event
       const pasteEvent = new Event("paste", { bubbles: true });
       document.dispatchEvent(pasteEvent);

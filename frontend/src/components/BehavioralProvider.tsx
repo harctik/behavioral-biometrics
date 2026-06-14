@@ -8,7 +8,7 @@ export async function flushBehavioralDataNow() {
   if (typeof document === "undefined" || !document.cookie.includes("csrf_access_token=")) return;
   const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
   const collector = getCollector();
-  const payload = collector.flush("session");
+  const payload = await collector.flush("session");
   const hasData = payload.keystroke_events.length > 0 || payload.mouse_events.length > 0 || payload.touch_events.length > 0;
   if (!hasData) return;
 
@@ -69,7 +69,7 @@ export function BehavioralProvider() {
         } catch {}
       }
 
-      const payload = collector.flush("session");
+      const payload = await collector.flush("session");
       const hasData = payload.keystroke_events.length > 0 || payload.mouse_events.length > 0 || payload.touch_events.length > 0;
 
       if (!hasData) {

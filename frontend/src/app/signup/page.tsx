@@ -85,8 +85,8 @@ export default function SignUpPage() {
     collector.start();
 
     // Poll for live stats
-    const interval = setInterval(() => {
-      const snap = collector.snapshot("signup_live");
+    const interval = setInterval(async () => {
+      const snap = await collector.snapshot("signup_live");
       const ks = snap.keystroke_events;
       const ms = snap.mouse_events;
       const cog = snap.cognitive_events;
@@ -203,7 +203,7 @@ export default function SignUpPage() {
     }
 
     const collector = getCollector();
-    const preCheck = collector.snapshot("signup_quality_check");
+    const preCheck = await collector.snapshot("signup_quality_check");
     if (preCheck.keystroke_events.length < 20) {
       setError("Please complete the typing verification below to proceed.");
       typingRef.current?.focus();
@@ -219,7 +219,7 @@ export default function SignUpPage() {
 
     setIsLoading(true);
 
-    const enrollmentSeed = collector.flush("NEW_ACCOUNT_ENROLLMENT");
+    const enrollmentSeed = await collector.flush("NEW_ACCOUNT_ENROLLMENT");
 
     try {
       const result = await apiClient<{

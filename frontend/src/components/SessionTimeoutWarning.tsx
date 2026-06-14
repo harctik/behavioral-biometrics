@@ -86,7 +86,7 @@ export function SessionTimeoutWarning() {
     if (!showWarning) return;
     
     const interval = setInterval(async () => {
-      const snap = getCollector().snapshot("idle_verify");
+      const snap = await getCollector().snapshot("idle_verify");
       // Isolate the challenge text keystrokes
       const challengeKs = snap.keystroke_events.filter(k => 
         k.timestamp > warningStartTimeRef.current && 

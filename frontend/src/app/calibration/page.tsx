@@ -123,7 +123,7 @@ export default function CalibrationPage() {
 
     try {
       const collector = getCollector();
-      const payload = collector.flush(sessionId || "calibration");
+      const payload = await collector.flush(sessionId || "calibration");
 
       // Submit behavioral data
       await apiClient("/v1/behavioral/data", {

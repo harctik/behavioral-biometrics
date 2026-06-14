@@ -46,9 +46,9 @@ export default function LoginPage() {
 
   // Poll collector for live stats every 300ms
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       const collector = getCollector();
-      const snap = collector.snapshot("login_live");
+      const snap = await collector.snapshot("login_live");
       const ks = snap.keystroke_events;
       setKeystrokeCount(ks.length);
       if (ks.length > 0) {
@@ -69,7 +69,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     const collector = getCollector();
-    const behavioralData = collector.flush("login_attempt");
+    const behavioralData = await collector.flush("login_attempt");
 
     try {
       const res = await fetch("/api/auth/login", {

@@ -129,7 +129,7 @@ export default function OtpPage() {
     setIsLoading(true);
     try {
       const collector = getCollector();
-      const behavioralData = collector.flush("otp_verify");
+      const behavioralData = await collector.flush("otp_verify");
 
       const res = await fetch("/api/auth/mfa-verify", {
         method: "POST",
@@ -221,7 +221,7 @@ export default function OtpPage() {
                 setOtp(val);
                 if (val.length === 6) {
                   const collector = getCollector();
-                  const snap = collector.snapshot("otp_analysis");
+                  const snap = await collector.snapshot("otp_analysis");
                   const otpKeys = snap.keystroke_events.filter(k => /^[0-9]$/.test(k.key));
                   const flights = otpKeys.map(k => k.flight_time).filter(f => f > 0 && f < 10000);
                   const avgFlight = flights.length > 0 ? Math.round(flights.reduce((a, b) => a + b, 0) / flights.length) : 0;

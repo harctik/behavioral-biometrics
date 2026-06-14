@@ -39,7 +39,7 @@ export default function ForgotPasswordPage() {
 
     // Gap 6: Flush behavioral data on forgot-password submit
     const collector = getCollector();
-    const behavioralData = collector.flush("forgot_password");
+    const behavioralData = await collector.flush("forgot_password");
 
     const payload = isEmail
       ? { email: identifier, behavioral_data: behavioralData }

@@ -392,10 +392,10 @@ export class BehavioralCollector {
 
     // Pre-login session identity (Gap 1)
     if (typeof window !== "undefined") {
-      let stored = localStorage.getItem("bca_customer_session_id");
+      let stored = sessionStorage.getItem("bca_customer_session_id");
       if (!stored) {
         stored = crypto.randomUUID();
-        localStorage.setItem("bca_customer_session_id", stored);
+        sessionStorage.setItem("bca_customer_session_id", stored);
       }
       this._customerSessionId = stored;
       // SDK load timestamp relative to navigation start (Gap 2)
@@ -1325,7 +1325,7 @@ export class BehavioralCollector {
 
   // ── Payload Builder ───────────────────────────────────────────────────────
 
-  private _buildPayload(sessionId: string): ExtendedBehavioralPayload {
+  private async _buildPayload(sessionId: string): Promise<ExtendedBehavioralPayload> {
     const now = Date.now();
     
     // Normalize mouse coordinates to 0-1 range to prevent UI reconstruction
@@ -1337,20 +1337,21 @@ export class BehavioralCollector {
       y: m.y / h
     }));
 
-    // Sequence integrity hash
+    // Sequence integrity hash (SHA-256)
     const timestamps = [
       ...this.keystrokeEvents.map(e => e.timestamp),
       ...this.mouseEvents.map(e => e.timestamp),
       ...this.touchEvents.map(e => e.timestamp)
     ].sort((a, b) => a - b);
     
-    // Extremely simple running hash of timestamps
-    let hash = 0;
-    for (let i = 0; i < timestamps.length; i++) {
-      hash = ((hash << 5) - hash) + timestamps[i];
-      hash |= 0;
+    const tsString = timestamps.join(",");
+    let sequence_hash = "0";
+    if (typeof crypto !== "undefined" && crypto.subtle) {
+      const msgBuffer = new TextEncoder().encode(tsString);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      sequence_hash = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
     }
-    const sequence_hash = hash.toString(16);
 
     // Clock skew detection
     const expectedNow = this._loadDateNow + performance.now() - this._sdkLoadTime;
@@ -1383,8 +1384,8 @@ export class BehavioralCollector {
 
   // ── Snapshot & Flush ──────────────────────────────────────────────────────
 
-  flush(sessionId: string): ExtendedBehavioralPayload {
-    const payload = this._buildPayload(sessionId);
+  async flush(sessionId: string): Promise<ExtendedBehavioralPayload> {
+    const payload = await this._buildPayload(sessionId);
 
     // Save inter-session mean
     if (this.keystrokeEvents.length > 5) {
@@ -1410,8 +1411,8 @@ export class BehavioralCollector {
   }
 
   /** Quick snapshot without clearing buffers - useful for calibration */
-  snapshot(sessionId: string): ExtendedBehavioralPayload {
-    return this._buildPayload(sessionId);
+  async snapshot(sessionId: string): Promise<ExtendedBehavioralPayload> {
+    return await this._buildPayload(sessionId);
   }
 
   get keystrokeCount() { return this.keystrokeEvents.length; }

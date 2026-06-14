@@ -94,7 +94,7 @@ export default function TransfersPage() {
     setSending(true);
     
     const collector = getCollector();
-    const behavioralData = collector.flush("transaction_assess");
+    const behavioralData = await collector.flush("transaction_assess");
     const ben = beneficiaries.find(b => b.id === selectedBeneficiary);
     const sessionId = document.cookie.match(/session_id=([^;]+)/)?.[1] || "";
 

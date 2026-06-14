@@ -96,36 +96,52 @@ class DatabaseManager:
         self.init_database()
 
     def init_database(self):
-        """Initialize database with required tables."""
+        """Initialize database with required tables.
+
+        Produces PostgreSQL-compatible DDL when ``self.is_pg`` is True and
+        SQLite DDL otherwise.  The two dialects differ on auto-increment
+        primary keys (``SERIAL`` vs ``INTEGER PRIMARY KEY AUTOINCREMENT``)
+        and boolean literal defaults.
+        """
         if not self.is_pg and self.db_path != "sqlite:///:memory:":
             dir_path = os.path.dirname(self.db_path.replace("sqlite:///", ""))
             if dir_path:
                 os.makedirs(dir_path, exist_ok=True)
 
+        # Dialect helpers
+        if self.is_pg:
+            _auto_pk = "SERIAL PRIMARY KEY"
+            _bool_true = "TRUE"
+            _bool_false = "FALSE"
+        else:
+            _auto_pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
+            _bool_true = "1"
+            _bool_false = "0"
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            
+
             if not self.is_pg:
                 cursor.execute("PRAGMA journal_mode=WAL;")
                 cursor.execute("PRAGMA synchronous=NORMAL;")
 
             # ── Users ───────────────────────────────────────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS users (
-                    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id {_auto_pk},
                     username TEXT UNIQUE NOT NULL,
                     email TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
                     mfa_secret TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP,
-                    is_active BOOLEAN DEFAULT 1,
+                    is_active BOOLEAN DEFAULT {_bool_true},
                     failed_attempts INTEGER DEFAULT 0,
                     locked_until TIMESTAMP,
-                    calibration_complete BOOLEAN DEFAULT 0,
-                    email_verified BOOLEAN DEFAULT 0,
-                    mfa_enabled BOOLEAN DEFAULT 0,
+                    calibration_complete BOOLEAN DEFAULT {_bool_false},
+                    email_verified BOOLEAN DEFAULT {_bool_false},
+                    mfa_enabled BOOLEAN DEFAULT {_bool_false},
                     role TEXT DEFAULT 'user'
                 )
             """
@@ -164,7 +180,7 @@ class DatabaseManager:
                 )
             """
             )
-            
+
             try:
                 cursor.execute(
                     "ALTER TABLE sessions ADD COLUMN ended_at TIMESTAMP"
@@ -174,9 +190,9 @@ class DatabaseManager:
 
             # ── Behavioral data ─────────────────────────────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS behavioral_data (
-                    data_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    data_id {_auto_pk},
                     user_id INTEGER NOT NULL,
                     session_id TEXT NOT NULL,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -193,9 +209,9 @@ class DatabaseManager:
 
             # ── Authentication events ────────────────────────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS auth_events (
-                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id {_auto_pk},
                     user_id INTEGER,
                     session_id TEXT,
                     event_type TEXT NOT NULL,
@@ -210,14 +226,14 @@ class DatabaseManager:
 
             # ── Model metadata ───────────────────────────────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS model_metadata (
                     user_id INTEGER PRIMARY KEY,
                     model_version INTEGER DEFAULT 1,
                     last_trained TIMESTAMP,
                     training_samples INTEGER DEFAULT 0,
                     model_accuracy REAL,
-                    drift_detected BOOLEAN DEFAULT 0,
+                    drift_detected BOOLEAN DEFAULT {_bool_false},
                     drift_timestamp TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
@@ -226,9 +242,9 @@ class DatabaseManager:
 
             # ── Compliance audit evidence ────────────────────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS audit_evidence (
-                    evidence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    evidence_id {_auto_pk},
                     user_id INTEGER,
                     session_id TEXT,
                     action TEXT NOT NULL,
@@ -246,9 +262,9 @@ class DatabaseManager:
 
             # ── Password reset tokens ────────────────────────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS password_reset_tokens (
-                    token_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    token_id {_auto_pk},
                     user_id INTEGER NOT NULL,
                     token_hash TEXT NOT NULL,
                     issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -261,9 +277,9 @@ class DatabaseManager:
 
             # ── Consent records (DPDP Act 2023) ──────────────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS consent_records (
-                    consent_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    consent_id {_auto_pk},
                     user_id INTEGER NOT NULL,
                     purposes TEXT NOT NULL,
                     version TEXT NOT NULL DEFAULT '1.0',
@@ -278,9 +294,9 @@ class DatabaseManager:
 
             # ── OTP codes (real-time, database-backed) ───────────────────────
             cursor.execute(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS otp_codes (
-                    otp_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    otp_id {_auto_pk},
                     user_id INTEGER NOT NULL,
                     otp_code TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -420,7 +436,7 @@ class DatabaseManager:
             cursor.execute(
                 "SELECT otp_id FROM otp_codes "
                 "WHERE user_id = ? AND otp_code = ? "
-                "AND used_at IS NULL AND expires_at > datetime('now') "
+                "AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP "
                 "ORDER BY created_at DESC LIMIT 1",
                 (user_id, otp_code),
             )
@@ -454,6 +470,9 @@ class DatabaseManager:
             # Generate salt and hash password
             salt = bcrypt.gensalt()
             password_hash = bcrypt.hashpw(password.encode("utf-8"), salt)
+            # bcrypt returns bytes — decode to str for PostgreSQL TEXT column
+            if isinstance(password_hash, bytes):
+                password_hash = password_hash.decode("utf-8")
 
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -517,8 +536,11 @@ class DatabaseManager:
                 if cursor.fetchone():
                     return None
 
-            # Verify password
-            if bcrypt.checkpw(password.encode("utf-8"), user["password_hash"]):
+            # Verify password — handle both bytes (SQLite) and str (PostgreSQL)
+            stored_hash = user["password_hash"]
+            if isinstance(stored_hash, str):
+                stored_hash = stored_hash.encode("utf-8")
+            if bcrypt.checkpw(password.encode("utf-8"), stored_hash):
                 # Reset failed attempts and update last login
                 cursor.execute(
                     """

@@ -71,10 +71,10 @@ export default function DashboardPage() {
   useEffect(() => {
     let prevKs = 0;
     let prevMs = 0;
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       try {
         const collector = getCollector();
-        const snap = collector.snapshot("dashboard_live");
+        const snap = await collector.snapshot("dashboard_live");
         const ks = snap.keystroke_events;
         const ms = snap.mouse_events;
         const holds = ks.map(k => k.hold_time).filter(h => h > 0 && h < 2000);
@@ -301,7 +301,7 @@ export default function DashboardPage() {
       const collector = getCollector();
       collector.setContext("MAKE_PAYMENT");
       setCurrentContext("MAKE_PAYMENT");
-      const transferBehavior = collector.flush("MAKE_PAYMENT");
+      const transferBehavior = await collector.flush("MAKE_PAYMENT");
 
       // Pre-transaction duress check (supplementary — never blocks on network error)
       const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";

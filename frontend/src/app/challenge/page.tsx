@@ -84,7 +84,7 @@ function ChallengeContent() {
     if (fallbackMode || status === "VERIFIED ✓" || isVerifying) return;
 
     const interval = setInterval(async () => {
-      const snap = getCollector().snapshot("challenge_live");
+      const snap = await getCollector().snapshot("challenge_live");
       const ks = snap.keystroke_events;
       const ms = snap.mouse_events;
 

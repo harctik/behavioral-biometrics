@@ -239,6 +239,13 @@ class Settings(BaseSettings):
     @field_validator("SQLALCHEMY_DATABASE_URI", mode="before")
     @classmethod
     def enforce_postgres(cls, v, info):
+        if v and isinstance(v, str):
+            # Strip trailing whitespace/newlines — common when pasting into
+            # Render/Vercel/Heroku dashboards.
+            v = v.strip()
+            # Normalise legacy postgres:// scheme to postgresql:// for SQLAlchemy 2.x
+            if v.startswith("postgres://"):
+                v = "postgresql://" + v[len("postgres://"):]
         return v
 
     def init_app(self, app):

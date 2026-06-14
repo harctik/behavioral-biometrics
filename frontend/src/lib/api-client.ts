@@ -39,14 +39,20 @@ function getRefreshPromise(): Promise<boolean> {
   return refreshPromise;
 }
 
+export function getCsrfToken(): string {
+  if (typeof document === "undefined") return "";
+  const match = document.cookie.match(/csrf_access_token=([^;]+)/);
+  return match ? match[1] : "";
+}
+
 export async function apiClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   
   if (typeof window !== "undefined") {
     // Read Flask-JWT-Extended CSRF token from cookie
-    const match = document.cookie.match(/csrf_access_token=([^;]+)/);
-    if (match && match[1] && !headers.has("X-CSRF-TOKEN")) {
-      headers.set("X-CSRF-TOKEN", match[1]);
+    const token = getCsrfToken();
+    if (token && !headers.has("X-CSRF-TOKEN")) {
+      headers.set("X-CSRF-TOKEN", token);
     }
   }
   
