@@ -24,6 +24,22 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Configurable ensemble weights — sum to 1.0.
+# Override at runtime via ``ENSEMBLE_WEIGHTS.update(...)`` for auto-calibration.
+ENSEMBLE_WEIGHTS: Dict[str, float] = {
+    "cognitive":           0.14,
+    "duress":              0.14,
+    "liveness":            0.10,
+    "invisible_challenge": 0.09,
+    "device_intelligence": 0.07,
+    "composite_fraud":     0.05,
+    "passive_enrollment":  0.07,
+    "feature_selection":   0.09,
+    "transaction":         0.10,
+    "replay_detection":    0.10,
+    "concept_drift":       0.05,
+}
+
 # Lazy singletons — avoids import-time cost for numpy/scipy
 _cognitive_engine = None
 _duress_detector = None
@@ -342,28 +358,50 @@ def score_with_ensemble(
 
     result["drift_risk"] = drift_risk
 
-    # ── 11. Fuse ALL 10 engine signals ─────────────────────────────────
+    # ── 11. Fuse ALL 11 engine signals with explainability ────────────────
     cognitive_risk = cognitive.get("cognitive_risk", 0.0) if cognitive else 0.0
     fraud_score = composite_result.get("fraud_pattern_score", 0.0)
     social_eng = composite_result.get("social_eng_score", 0.0)
     enrollment_match = enrollment_result.get("match_score", 0.5)
 
-    # Weighted fusion — all 11 engines contribute
-    ensemble_risk = (
-        cognitive_risk * 0.14
-        + duress_score * 0.14
-        + (1.0 - liveness_score) * 0.10
-        + challenge_risk * 0.09
-        + device_risk * 0.07
-        + max(fraud_score, social_eng) * 0.05
-        + (1.0 - enrollment_match) * 0.07  # Low match = higher risk
-        + (1.0 - weighted_match) * 0.09    # Per-user feature mismatch
-        + txn_risk * 0.10                  # Transaction anomaly
-        + replay_risk * 0.10               # GAN synthetic/replay detection
-        + drift_risk * 0.05                # ADWIN concept drift
-    )
+    # Named engine signals for attribution
+    engine_signals = {
+        "cognitive":         cognitive_risk,
+        "duress":            duress_score,
+        "liveness":          1.0 - liveness_score,   # Inverted: low liveness = high risk
+        "invisible_challenge": challenge_risk,
+        "device_intelligence": device_risk,
+        "composite_fraud":   max(fraud_score, social_eng),
+        "passive_enrollment": 1.0 - enrollment_match,  # Inverted: low match = high risk
+        "feature_selection":  1.0 - weighted_match,     # Inverted: mismatch = risk
+        "transaction":       txn_risk,
+        "replay_detection":  replay_risk,
+        "concept_drift":     drift_risk,
+    }
+
+    # Configurable weights — keys must match engine_signals
+    weights = ENSEMBLE_WEIGHTS.copy()
+
+    # Weighted fusion with per-engine attribution (SHAP-like)
+    risk_attribution = {}
+    ensemble_risk = 0.0
+    for engine_name, signal in engine_signals.items():
+        w = weights.get(engine_name, 0.0)
+        contribution = signal * w
+        risk_attribution[engine_name] = round(contribution, 4)
+        ensemble_risk += contribution
+
     ensemble_risk = round(min(1.0, max(0.0, ensemble_risk)), 4)
     result["ensemble_risk"] = ensemble_risk
+    result["risk_attribution"] = risk_attribution
+
+    # Top risk drivers (for explainability UI)
+    sorted_drivers = sorted(risk_attribution.items(), key=lambda x: x[1], reverse=True)
+    result["top_risk_drivers"] = [
+        {"engine": name, "contribution": val}
+        for name, val in sorted_drivers[:3]
+        if val > 0.001
+    ]
 
     # Collect flags from cognitive
     if cognitive and cognitive.get("cognitive_flags"):
@@ -377,6 +415,8 @@ def score_with_ensemble(
     elif device_risk >= 0.8:
         result["ensemble_action"] = "block"
     elif txn_risk >= 0.8:
+        result["ensemble_action"] = "block"
+    elif replay_risk >= 0.7:
         result["ensemble_action"] = "block"
     elif ensemble_risk >= 0.6:
         result["ensemble_action"] = "step_up"
