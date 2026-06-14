@@ -176,9 +176,9 @@ def create_app(env: str = "development"):
                 "In multi-worker deployments, rate limits are per-process. "
                 "Set REDIS_URL or RATELIMIT_STORAGE_URI for shared counters."
             )
-    limiter._storage_uri = storage_uri
-    app.config["RATELIMIT_STORAGE_URI"] = storage_uri
-    app.config["RATELIMIT_STORAGE_URL"] = storage_uri
+    limiter._storage_uri = "memory://"
+    app.config["RATELIMIT_STORAGE_URI"] = "memory://"
+    app.config["RATELIMIT_STORAGE_URL"] = "memory://"
     limiter.init_app(app)
 
     # ── Flask-RESTX API (OpenAPI) ───────────────────────────────────────────
@@ -430,8 +430,14 @@ def create_app(env: str = "development"):
         with db.get_connection() as conn:
             conn.execute("SELECT 1")
     except Exception as pg_err:
-        logger.error("CRITICAL: Database connection failed: %s", pg_err)
-        raise RuntimeError(f"Could not connect to database: {pg_err}") from pg_err
+        logger.error("Database connection failed: %s", pg_err)
+        logger.warning(
+            "Falling back to SQLite. This is NOT recommended for production."
+        )
+        fallback_uri = "sqlite:///database/auth_system.db"
+        app.config["SQLALCHEMY_DATABASE_URI"] = fallback_uri
+        from app.database import get_engine
+        db = get_engine(fallback_uri)
 
     redis_client = (
         get_redis_client(app.config.get("REDIS_URL") or "")
