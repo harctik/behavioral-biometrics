@@ -33,6 +33,7 @@ class LoginSchema(BaseModel):
     keystroke_data: list = []
     device_fingerprint: dict = {}
     behavioral_data: dict = {}
+    keystroke_profile: dict = {}
     device_id: str = ""
     trust_device: bool = False
 

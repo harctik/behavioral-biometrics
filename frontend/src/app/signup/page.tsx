@@ -220,6 +220,8 @@ export default function SignUpPage() {
     setIsLoading(true);
 
     const enrollmentSeed = await collector.flush("NEW_ACCOUNT_ENROLLMENT");
+    // Extract per-key/digraph profile for Bayesian enrollment (Session 0)
+    const keystrokeProfile = collector.getKeystrokeProfile();
 
     try {
       const result = await apiClient<{
@@ -242,6 +244,7 @@ export default function SignUpPage() {
             context: "NEW_ACCOUNT_ENROLLMENT",
             total_keystrokes: enrollmentSeed.keystroke_events.length,
             total_mouse: enrollmentSeed.mouse_events.length,
+            keystroke_profile: keystrokeProfile,
           },
         }),
       });

@@ -4,15 +4,15 @@ import { getBackendUrl } from '@/lib/backend-url';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { username, password, behavioral_data, device_id, trust_device } = body;
+    const { username, password, behavioral_data, keystroke_profile, device_id, trust_device } = body;
 
     const backendUrl = getBackendUrl();
     
     // Support both username and email login
     const isEmail = username.includes('@');
     const loginPayload = isEmail 
-      ? { username, email: username, password, behavioral_data, device_id, trust_device }
-      : { username, password, behavioral_data, device_id, trust_device };
+      ? { username, email: username, password, behavioral_data, keystroke_profile, device_id, trust_device }
+      : { username, password, behavioral_data, keystroke_profile, device_id, trust_device };
     
     // Call the Flask API
     const res = await fetch(`${backendUrl}/api/v1/auth/login`, {

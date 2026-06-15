@@ -257,7 +257,77 @@ export interface ExtendedFeatures {
   [key: string]: number; // Allow dynamic digraph keys
 }
 
+// ─── Per-Key/Digraph Profile Types ────────────────────────────────────────────
+
+export interface KeystrokeProfileStats {
+  mean: number;
+  std: number;
+  count: number;
+  min: number;
+  max: number;
+}
+
+export interface KeystrokeProfileMeta {
+  total_keys: number;
+  unique_keys: number;
+  unique_digraphs: number;
+  total_duration_ms: number;
+  source: string;
+  coverage_score: number;
+}
+
+export interface KeystrokeProfile {
+  per_key_hold: Record<string, KeystrokeProfileStats>;
+  per_digraph_flight: Record<string, KeystrokeProfileStats>;
+  aggregate: Record<string, number>;
+  meta: KeystrokeProfileMeta;
+}
+
+/**
+ * Map a raw key identifier to a privacy-safe category.
+ * Matches the backend DigraphProfileExtractor._categorize_key().
+ */
+function categorizeKey(key: string): string | null {
+  if (!key || key.length === 0) return null;
+  const k = key.toLowerCase();
+
+  // Single alpha
+  if (k.length === 1 && /^[a-z]$/.test(k)) return `alpha_${k}`;
+  // Single digit
+  if (k.length === 1 && /^[0-9]$/.test(k)) return `digit_${k}`;
+
+  // Special chars
+  const specials: Record<string, string> = {
+    "@": "special_at", ".": "special_dot", "-": "special_dash",
+    "_": "special_underscore", "!": "special_exclaim", "#": "special_hash",
+    "$": "special_dollar", "%": "special_percent", "&": "special_ampersand",
+    "*": "special_star", "+": "special_plus", "=": "special_equals",
+    "/": "special_slash", "'": "special_apostrophe", ",": "special_comma",
+    ";": "special_semicolon", ":": "special_colon", "?": "special_question",
+    "~": "special_tilde", "`": "special_backtick",
+  };
+  if (k.length === 1 && specials[k]) return specials[k];
+
+  // Named keys
+  const named: Record<string, string | null> = {
+    " ": "key_space", "space": "key_space",
+    "backspace": "key_backspace", "delete": "key_delete",
+    "tab": "key_tab", "enter": "key_enter",
+    "capslock": "key_capslock",
+    "shift": null, "control": null, "alt": null, "meta": null,
+    "arrowleft": "key_arrow", "arrowright": "key_arrow",
+    "arrowup": "key_arrow", "arrowdown": "key_arrow",
+  };
+  if (k in named) return named[k];
+
+  // Fallback for other single printable chars
+  if (k.length === 1) return `other_${k.charCodeAt(0)}`;
+
+  return null;
+}
+
 // ─── Device Fingerprint Collection ────────────────────────────────────────────
+
 
 function collectDeviceFingerprint(): DeviceFingerprint | null {
   if (typeof window === "undefined") return null;
@@ -1324,7 +1394,180 @@ export class BehavioralCollector {
     };
   }
 
+  // ── Per-Key/Digraph Profile Builder ──────────────────────────────────────
+
+  /**
+   * Build a per-key hold time + per-digraph flight time profile from
+   * the current keystroke buffer. Used for Bayesian active learning.
+   *
+   * Returns a profile structure matching the backend DigraphProfileExtractor
+   * format, enabling direct ingestion into the Bayesian enrollment system.
+   *
+   * Privacy: password-field keys are stored as "MASKED" (no per-key data),
+   * but their hold_time and flight_time still contribute to aggregate stats.
+   */
+  getKeystrokeProfile(): KeystrokeProfile {
+    const events = this.keystrokeEvents;
+
+    if (events.length < 3) {
+      return {
+        per_key_hold: {},
+        per_digraph_flight: {},
+        aggregate: {},
+        meta: {
+          total_keys: events.length,
+          unique_keys: 0,
+          unique_digraphs: 0,
+          total_duration_ms: 0,
+          source: "client",
+          coverage_score: 0,
+        },
+      };
+    }
+
+    // ── Per-key hold time distributions ────────────────────────────────
+    const perKeyHold: Record<string, number[]> = {};
+    const allHoldTimes: number[] = [];
+    const allFlightTimes: number[] = [];
+    let backspaces = 0;
+
+    for (const evt of events) {
+      const key = evt.key;
+      const hold = evt.hold_time;
+      const flight = evt.flight_time;
+
+      if (evt.is_backspace) backspaces++;
+
+      // Validate hold time (10ms – 1500ms)
+      if (hold >= 10 && hold <= 1500 && key && key !== "MASKED") {
+        const cat = categorizeKey(key);
+        if (cat) {
+          if (!perKeyHold[cat]) perKeyHold[cat] = [];
+          perKeyHold[cat].push(hold);
+        }
+        allHoldTimes.push(hold);
+      } else if (hold >= 10 && hold <= 1500) {
+        // MASKED keys still contribute to aggregate hold times
+        allHoldTimes.push(hold);
+      }
+
+      // Collect flight times (5ms – 2000ms)
+      if (flight >= 5 && flight <= 2000) {
+        allFlightTimes.push(flight);
+      }
+    }
+
+    // ── Per-digraph flight time distributions ─────────────────────────
+    const perDigraphFlight: Record<string, number[]> = {};
+
+    for (let i = 0; i < events.length - 1; i++) {
+      const a = events[i];
+      const b = events[i + 1];
+      const flight = b.flight_time;
+
+      if (
+        flight >= 5 &&
+        flight <= 2000 &&
+        a.key &&
+        b.key &&
+        a.key !== "MASKED" &&
+        b.key !== "MASKED"
+      ) {
+        const catA = categorizeKey(a.key);
+        const catB = categorizeKey(b.key);
+        if (catA && catB) {
+          const digraphKey = `${catA}__${catB}`;
+          if (!perDigraphFlight[digraphKey]) perDigraphFlight[digraphKey] = [];
+          perDigraphFlight[digraphKey].push(flight);
+        }
+      }
+    }
+
+    // ── Build statistics ──────────────────────────────────────────────
+    const buildStats = (data: Record<string, number[]>) => {
+      const result: Record<string, { mean: number; std: number; count: number; min: number; max: number }> = {};
+      for (const [key, values] of Object.entries(data)) {
+        if (values.length >= 1) {
+          const mean = values.reduce((a, b) => a + b, 0) / values.length;
+          let std = mean * 0.3; // default 30% of mean
+          if (values.length >= 2) {
+            const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+            std = Math.sqrt(variance);
+          }
+          result[key] = {
+            mean: Math.round(mean * 100) / 100,
+            std: Math.round(Math.max(std, 1) * 100) / 100,
+            count: values.length,
+            min: Math.round(Math.min(...values) * 100) / 100,
+            max: Math.round(Math.max(...values) * 100) / 100,
+          };
+        }
+      }
+      return result;
+    };
+
+    // ── Aggregates ────────────────────────────────────────────────────
+    const aggregate: Record<string, number> = {};
+    if (allHoldTimes.length > 0) {
+      aggregate.hold_time_mean = Math.round(allHoldTimes.reduce((a, b) => a + b, 0) / allHoldTimes.length * 100) / 100;
+      if (allHoldTimes.length >= 2) {
+        const hVar = allHoldTimes.reduce((s, v) => s + (v - aggregate.hold_time_mean) ** 2, 0) / allHoldTimes.length;
+        aggregate.hold_time_std = Math.round(Math.sqrt(hVar) * 100) / 100;
+      }
+    }
+    if (allFlightTimes.length > 0) {
+      aggregate.flight_time_mean = Math.round(allFlightTimes.reduce((a, b) => a + b, 0) / allFlightTimes.length * 100) / 100;
+      if (allFlightTimes.length >= 2) {
+        const fVar = allFlightTimes.reduce((s, v) => s + (v - aggregate.flight_time_mean) ** 2, 0) / allFlightTimes.length;
+        aggregate.flight_time_std = Math.round(Math.sqrt(fVar) * 100) / 100;
+      }
+    }
+
+    // WPM estimate
+    const timestamps = events.filter(e => e.timestamp).map(e => e.timestamp);
+    if (timestamps.length >= 2) {
+      const elapsedMin = Math.max(0.01, (Math.max(...timestamps) - Math.min(...timestamps)) / 60000);
+      aggregate.typing_speed_wpm = Math.round(Math.min(200, (events.length / 5) / elapsedMin) * 10) / 10;
+    }
+
+    aggregate.correction_rate = Math.round(backspaces / Math.max(events.length, 1) * 10000) / 10000;
+
+    // Rhythm entropy
+    if (allFlightTimes.length >= 5) {
+      const ftMean = allFlightTimes.reduce((a, b) => a + b, 0) / allFlightTimes.length;
+      const ftStd = Math.sqrt(allFlightTimes.reduce((s, v) => s + (v - ftMean) ** 2, 0) / allFlightTimes.length);
+      aggregate.rhythm_entropy = Math.round(ftStd / Math.max(ftMean, 1) * 10000) / 10000;
+    }
+
+    // ── Meta ──────────────────────────────────────────────────────────
+    const perKeyStats = buildStats(perKeyHold);
+    const perDigraphStats = buildStats(perDigraphFlight);
+
+    const alphaKeys = Object.keys(perKeyStats).filter(k => k.startsWith("alpha_")).length;
+    const digitKeys = Object.keys(perKeyStats).filter(k => k.startsWith("digit_")).length;
+    const coverage = Math.min(1, (alphaKeys + digitKeys) / 20);
+
+    const totalDuration = timestamps.length >= 2
+      ? Math.max(...timestamps) - Math.min(...timestamps)
+      : 0;
+
+    return {
+      per_key_hold: perKeyStats,
+      per_digraph_flight: perDigraphStats,
+      aggregate,
+      meta: {
+        total_keys: events.length,
+        unique_keys: Object.keys(perKeyStats).length,
+        unique_digraphs: Object.keys(perDigraphStats).length,
+        total_duration_ms: totalDuration,
+        source: "client",
+        coverage_score: Math.round(coverage * 10000) / 10000,
+      },
+    };
+  }
+
   // ── Payload Builder ───────────────────────────────────────────────────────
+
 
   private async _buildPayload(sessionId: string): Promise<ExtendedBehavioralPayload> {
     const now = Date.now();

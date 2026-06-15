@@ -80,13 +80,21 @@ class BehavioralEnrollmentService:
         behavioral_data: Dict[str, Any],
         source: str = "registration"
     ) -> Dict[str, Any]:
-        """Extract features from initial session data and ingest into passive enrollment."""
+        """Extract features from initial session data and ingest into passive enrollment.
+        
+        This handles two parallel profile systems:
+        1. Aggregate features → PassiveEnrollmentManager (existing EMA system)
+        2. Per-key/digraph profiles → Bayesian conjugate update system (new)
+        """
         keystroke_events = enrollment_seed.get("keystroke_events") or behavioral_data.get("keystroke_events") or []
         mouse_events = enrollment_seed.get("mouse_events") or behavioral_data.get("mouse_events") or []
         
         window_end = enrollment_seed.get("window_end", 0) or behavioral_data.get("window_end", 0)
         window_start = enrollment_seed.get("window_start", 0) or behavioral_data.get("window_start", 0)
         
+        result = {"action": "no_data"}
+        
+        # ── 1. Aggregate feature extraction (existing system) ─────────────
         features = BehavioralEnrollmentService.extract_features_from_raw(
             keystroke_events, mouse_events, window_start, window_end
         )
@@ -95,15 +103,50 @@ class BehavioralEnrollmentService:
             try:
                 from app.models.passive_enrollment import get_enrollment_manager
                 enrollment_mgr = get_enrollment_manager()
-                return enrollment_mgr.ingest_session_data(
+                result = enrollment_mgr.ingest_session_data(
                     user_id=user_id,
                     keystroke_features=features,
                     source=source,
                 )
             except Exception as exc:
-                logger.error("Failed to ingest Session 0 behavioral data: %s", exc)
-                return {"error": str(exc)}
+                logger.error("Failed to ingest Session 0 aggregate data: %s", exc)
+                result = {"error": str(exc)}
+        
+        # ── 2. Per-key/digraph profile extraction (new Bayesian system) ───
+        if keystroke_events and len(keystroke_events) >= 5:
+            try:
+                from app.models.digraph_profile import get_digraph_extractor
+                from app.models.passive_enrollment import get_enrollment_manager
                 
-        return {"action": "no_data"}
+                extractor = get_digraph_extractor()
+                digraph_profile = extractor.extract_profile(
+                    keystroke_events, source="signup"
+                )
+                
+                if digraph_profile.get("meta", {}).get("unique_keys", 0) >= 3:
+                    enrollment_mgr = get_enrollment_manager()
+                    digraph_result = enrollment_mgr.ingest_digraph_profile(
+                        user_id=user_id,
+                        digraph_profile=digraph_profile,
+                        source="signup",
+                    )
+                    
+                    # Merge digraph result into the main result
+                    result["digraph_action"] = digraph_result.get("action")
+                    result["digraph_keys"] = digraph_result.get("per_key_count", 0)
+                    result["digraph_pairs"] = digraph_result.get("per_digraph_count", 0)
+                    result["digraph_confidence"] = digraph_result.get("confidence", 0.0)
+                    
+                    logger.info(
+                        "Session 0 digraph profile for user %d: %d keys, %d digraphs",
+                        user_id,
+                        digraph_result.get("per_key_count", 0),
+                        digraph_result.get("per_digraph_count", 0),
+                    )
+            except Exception as exc:
+                logger.error("Failed to extract Session 0 digraph profile: %s", exc)
+        
+        return result
 
 behavioral_enrollment_service = BehavioralEnrollmentService()
+

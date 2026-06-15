@@ -381,6 +381,7 @@ class Login(Resource):
         # ── Passive Enrollment: feed login keystrokes into profile ──────────
         enrollment_status = None
         enrollment_result = None
+        digraph_result = None
         try:
             from app.models.passive_enrollment import get_enrollment_manager
 
@@ -434,6 +435,41 @@ class Login(Resource):
                 enrollment_status = enrollment_mgr.get_enrollment_status(
                     user["user_id"]
                 )
+
+            # ── Per-key/digraph Bayesian profile update ────────────────────
+            # Prefer client-sent profile (richer — includes username field data)
+            # Fall back to server-side extraction from keystroke_data
+            digraph_profile = None
+            if data.keystroke_profile and data.keystroke_profile.get("per_key_hold"):
+                digraph_profile = data.keystroke_profile
+            elif data.keystroke_data and len(data.keystroke_data) >= 3:
+                try:
+                    from app.models.digraph_profile import get_digraph_extractor
+                    extractor = get_digraph_extractor()
+                    digraph_profile = extractor.extract_profile(
+                        data.keystroke_data, source="login"
+                    )
+                except Exception:
+                    pass
+
+            if digraph_profile and digraph_profile.get("meta", {}).get("unique_keys", 0) >= 2:
+                try:
+                    digraph_result = enrollment_mgr.ingest_digraph_profile(
+                        user_id=user["user_id"],
+                        digraph_profile=digraph_profile,
+                        source="login",
+                    )
+                    logger.info(
+                        "Login digraph update for user %s: action=%s score=%.3f keys=%d digraphs=%d",
+                        data.username,
+                        digraph_result.get("action"),
+                        digraph_result.get("match_score", 0),
+                        digraph_result.get("per_key_count", 0),
+                        digraph_result.get("per_digraph_count", 0),
+                    )
+                except Exception:
+                    logger.error("Digraph profile update at login failed", exc_info=True)
+
         except Exception as exc:
             logger.error("Passive enrollment update at login failed", exc_info=True)
 
@@ -469,6 +505,7 @@ class Login(Resource):
                 "mfa_required": mfa_required,
                 "device_new": device_new,
                 "enrollment": enrollment_status,
+                "digraph_enrollment": digraph_result,
             }
         }
         resp = make_response(jsonify(resp_data), 200)

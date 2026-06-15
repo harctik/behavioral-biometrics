@@ -119,6 +119,8 @@ export default function LoginPage() {
 
     const collector = getCollector();
     const behavioralData = await collector.flush("login_attempt");
+    // Extract per-key/digraph profile for Bayesian update
+    const keystrokeProfile = collector.getKeystrokeProfile();
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -127,7 +129,8 @@ export default function LoginPage() {
         body: JSON.stringify({ 
           username, 
           password,
-          behavioral_data: behavioralData
+          behavioral_data: behavioralData,
+          keystroke_profile: keystrokeProfile,
         }),
       });
       const data = await res.json();

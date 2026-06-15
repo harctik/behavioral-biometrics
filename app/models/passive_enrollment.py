@@ -539,6 +539,320 @@ class PassiveEnrollmentManager:
             ],
         }
 
+    # ── Bayesian Per-Key/Digraph Profile System ───────────────────────────────
+
+    def _load_digraph_state(self, user_id: int) -> Dict[str, Any]:
+        """Load the per-key/digraph Bayesian profile from Redis or memory."""
+        if not hasattr(self, "_digraph_profiles_mem"):
+            self._digraph_profiles_mem: Dict[int, Dict[str, Any]] = {}
+
+        rc = self._get_redis()
+        if rc:
+            import json
+            try:
+                state_str = rc.get(f"digraph_profile:{user_id}")
+                if state_str:
+                    self._digraph_profiles_mem[user_id] = json.loads(state_str)
+            except Exception as e:
+                logger.error("Failed to load digraph profile: %s", e)
+
+        return self._digraph_profiles_mem.get(user_id, {})
+
+    def _save_digraph_state(self, user_id: int, profile: Dict[str, Any]):
+        """Persist the per-key/digraph Bayesian profile."""
+        if not hasattr(self, "_digraph_profiles_mem"):
+            self._digraph_profiles_mem = {}
+
+        self._digraph_profiles_mem[user_id] = profile
+
+        rc = self._get_redis()
+        if rc:
+            import json
+            try:
+                rc.set(f"digraph_profile:{user_id}", json.dumps(profile))
+            except Exception as e:
+                logger.error("Failed to save digraph profile: %s", e)
+
+    @staticmethod
+    def _bayesian_update(
+        prior_mean: float,
+        prior_std: float,
+        observed_value: float,
+        observation_noise: float,
+    ) -> tuple:
+        """Normal-Normal conjugate Bayesian update.
+
+        Given a prior N(prior_mean, prior_std²) and an observation from
+        N(observed_value, observation_noise²), compute the posterior.
+
+        The posterior precision is the sum of prior and likelihood precisions:
+            τ_post = τ_prior + τ_obs
+            μ_post = (μ_prior · τ_prior + x · τ_obs) / τ_post
+            σ_post = 1 / √τ_post
+
+        This naturally handles:
+          - Wide priors (signup): fast learning, σ shrinks quickly
+          - Narrow posteriors (many logins): stable, resistant to noise
+          - Single outlier sessions don't corrupt the profile
+        """
+        prior_var = max(prior_std ** 2, 1e-6)
+        obs_var = max(observation_noise ** 2, 1e-6)
+
+        prior_precision = 1.0 / prior_var
+        obs_precision = 1.0 / obs_var
+
+        post_precision = prior_precision + obs_precision
+        post_mean = (prior_mean * prior_precision + observed_value * obs_precision) / post_precision
+        post_std = math.sqrt(1.0 / post_precision)
+
+        # Floor the std to prevent collapse to zero
+        post_std = max(post_std, 1.0)
+
+        return round(post_mean, 3), round(post_std, 3)
+
+    def ingest_digraph_profile(
+        self,
+        user_id: int,
+        digraph_profile: Dict[str, Any],
+        source: str = "login",
+    ) -> Dict[str, Any]:
+        """Ingest a per-key/digraph profile and update via Bayesian posterior.
+
+        During enrollment (first login): initializes the prior from the data.
+        After enrollment: performs conjugate Normal-Normal updates.
+
+        Args:
+            user_id: The user to update.
+            digraph_profile: Output of DigraphProfileExtractor.extract_profile().
+            source: "signup" for Session 0, "login" for subsequent logins.
+
+        Returns:
+            {
+                "action": "initialized"|"updated"|"matched"|"anomaly",
+                "match_score": float (0-1),
+                "per_key_count": int,
+                "per_digraph_count": int,
+                "confidence": float (0-1),
+                "updates_count": int,
+            }
+        """
+        stored = self._load_digraph_state(user_id)
+        incoming_keys = digraph_profile.get("per_key_hold", {})
+        incoming_digraphs = digraph_profile.get("per_digraph_flight", {})
+        incoming_aggregate = digraph_profile.get("aggregate", {})
+
+        if not incoming_keys and not incoming_digraphs:
+            return {
+                "action": "no_data",
+                "match_score": 0.0,
+                "per_key_count": 0,
+                "per_digraph_count": 0,
+                "confidence": 0.0,
+                "updates_count": stored.get("updates_count", 0),
+            }
+
+        if not stored or not stored.get("per_key_hold"):
+            # ── First time: initialize prior ──────────────────────────────
+            # Use wide priors (std = 50% of mean) to express high uncertainty
+            initialized = {
+                "per_key_hold": {},
+                "per_digraph_flight": {},
+                "aggregate": {},
+                "updates_count": 1,
+                "created_at": datetime.now().isoformat(),
+                "last_updated": datetime.now().isoformat(),
+            }
+
+            for key, stats in incoming_keys.items():
+                mean = stats["mean"]
+                # Wide prior: std is 50% of mean (high uncertainty)
+                std = max(stats.get("std", mean * 0.5), mean * 0.3)
+                initialized["per_key_hold"][key] = {
+                    "mean": round(mean, 3),
+                    "std": round(max(std, 5.0), 3),  # Floor at 5ms
+                    "count": stats.get("count", 1),
+                }
+
+            for key, stats in incoming_digraphs.items():
+                mean = stats["mean"]
+                std = max(stats.get("std", mean * 0.5), mean * 0.3)
+                initialized["per_digraph_flight"][key] = {
+                    "mean": round(mean, 3),
+                    "std": round(max(std, 5.0), 3),
+                    "count": stats.get("count", 1),
+                }
+
+            # Store aggregate features
+            initialized["aggregate"] = incoming_aggregate
+
+            self._save_digraph_state(user_id, initialized)
+
+            logger.info(
+                "Digraph profile initialized for user %d: %d keys, %d digraphs (source=%s)",
+                user_id,
+                len(initialized["per_key_hold"]),
+                len(initialized["per_digraph_flight"]),
+                source,
+            )
+
+            return {
+                "action": "initialized",
+                "match_score": 1.0,
+                "per_key_count": len(initialized["per_key_hold"]),
+                "per_digraph_count": len(initialized["per_digraph_flight"]),
+                "confidence": 0.2,  # Low confidence — only one session
+                "updates_count": 1,
+            }
+
+        # ── Subsequent sessions: Bayesian update + match scoring ──────────
+        match_score = self._compute_digraph_match_score(stored, digraph_profile)
+
+        # Observation noise: use the incoming session's std, floored
+        # If the user is typing consistently this session, noise is low
+        # If they're typing erratically, noise is high (less weight)
+        updates_count = stored.get("updates_count", 1) + 1
+
+        # Update per-key hold times
+        for key, stats in incoming_keys.items():
+            obs_mean = stats["mean"]
+            obs_noise = max(stats.get("std", 20.0), 5.0)
+
+            if key in stored["per_key_hold"]:
+                prior = stored["per_key_hold"][key]
+                new_mean, new_std = self._bayesian_update(
+                    prior["mean"], prior["std"], obs_mean, obs_noise
+                )
+                stored["per_key_hold"][key] = {
+                    "mean": new_mean,
+                    "std": new_std,
+                    "count": prior.get("count", 1) + stats.get("count", 1),
+                }
+            else:
+                # New key not seen before — add with wide prior
+                stored["per_key_hold"][key] = {
+                    "mean": round(obs_mean, 3),
+                    "std": round(max(obs_noise, obs_mean * 0.3, 5.0), 3),
+                    "count": stats.get("count", 1),
+                }
+
+        # Update per-digraph flight times
+        for key, stats in incoming_digraphs.items():
+            obs_mean = stats["mean"]
+            obs_noise = max(stats.get("std", 30.0), 5.0)
+
+            if key in stored["per_digraph_flight"]:
+                prior = stored["per_digraph_flight"][key]
+                new_mean, new_std = self._bayesian_update(
+                    prior["mean"], prior["std"], obs_mean, obs_noise
+                )
+                stored["per_digraph_flight"][key] = {
+                    "mean": new_mean,
+                    "std": new_std,
+                    "count": prior.get("count", 1) + stats.get("count", 1),
+                }
+            else:
+                stored["per_digraph_flight"][key] = {
+                    "mean": round(obs_mean, 3),
+                    "std": round(max(obs_noise, obs_mean * 0.3, 5.0), 3),
+                    "count": stats.get("count", 1),
+                }
+
+        # Update aggregate features via EMA
+        if incoming_aggregate:
+            old_agg = stored.get("aggregate", {})
+            alpha = max(0.1, 0.5 / math.sqrt(updates_count))
+            for key, value in incoming_aggregate.items():
+                if isinstance(value, (int, float)) and not math.isnan(value):
+                    old_val = old_agg.get(key, value)
+                    old_agg[key] = round(old_val * (1 - alpha) + value * alpha, 4)
+            stored["aggregate"] = old_agg
+
+        stored["updates_count"] = updates_count
+        stored["last_updated"] = datetime.now().isoformat()
+        self._save_digraph_state(user_id, stored)
+
+        # Confidence grows with more updates and more keys
+        n_keys = len(stored["per_key_hold"])
+        n_digraphs = len(stored["per_digraph_flight"])
+        confidence = min(1.0, (updates_count / 5.0) * 0.5 + (n_keys / 20.0) * 0.3 + (n_digraphs / 30.0) * 0.2)
+
+        # Determine action based on match score
+        if match_score >= 0.7:
+            action = "matched"
+        elif match_score >= 0.4:
+            action = "weak_match"
+        else:
+            action = "anomaly"
+
+        logger.info(
+            "Digraph profile updated for user %d: score=%.3f, keys=%d, "
+            "digraphs=%d, updates=%d, confidence=%.3f (source=%s)",
+            user_id, match_score, n_keys, n_digraphs, updates_count, confidence, source,
+        )
+
+        return {
+            "action": action,
+            "match_score": round(match_score, 4),
+            "per_key_count": n_keys,
+            "per_digraph_count": n_digraphs,
+            "confidence": round(confidence, 4),
+            "updates_count": updates_count,
+        }
+
+    def _compute_digraph_match_score(
+        self,
+        stored: Dict[str, Any],
+        incoming: Dict[str, Any],
+    ) -> float:
+        """Compute match score between stored profile and incoming keystrokes.
+
+        Uses z-score distance: how many standard deviations is the incoming
+        value from the stored mean? Lower z = better match.
+
+        Weights per-key hold (40%) and per-digraph flight (60%) since
+        digraph transitions are more discriminative (Killourhy & Maxion, 2009).
+        """
+        key_z_scores: List[float] = []
+        digraph_z_scores: List[float] = []
+
+        # Per-key hold time comparison
+        for key, stats in incoming.get("per_key_hold", {}).items():
+            if key in stored.get("per_key_hold", {}):
+                prior = stored["per_key_hold"][key]
+                z = abs(stats["mean"] - prior["mean"]) / max(prior["std"], 1.0)
+                key_z_scores.append(z)
+
+        # Per-digraph flight time comparison
+        for key, stats in incoming.get("per_digraph_flight", {}).items():
+            if key in stored.get("per_digraph_flight", {}):
+                prior = stored["per_digraph_flight"][key]
+                z = abs(stats["mean"] - prior["mean"]) / max(prior["std"], 1.0)
+                digraph_z_scores.append(z)
+
+        if not key_z_scores and not digraph_z_scores:
+            return 0.5  # No overlap — can't determine match
+
+        # Weighted combination (digraphs are more discriminative)
+        key_score = 0.5
+        if key_z_scores:
+            mean_z_key = np.mean(key_z_scores)
+            key_score = float(1.0 / (1.0 + (mean_z_key / 2.0) ** 2))
+
+        digraph_score = 0.5
+        if digraph_z_scores:
+            mean_z_digraph = np.mean(digraph_z_scores)
+            digraph_score = float(1.0 / (1.0 + (mean_z_digraph / 2.0) ** 2))
+
+        # Weighted average: 40% key hold, 60% digraph flight
+        if key_z_scores and digraph_z_scores:
+            score = 0.4 * key_score + 0.6 * digraph_score
+        elif digraph_z_scores:
+            score = digraph_score
+        else:
+            score = key_score
+
+        return float(score)
+
 
 # ── Singleton ──────────────────────────────────────────────────────────────────
 _enrollment_manager: PassiveEnrollmentManager | None = None
@@ -549,3 +863,4 @@ def get_enrollment_manager() -> PassiveEnrollmentManager:
     if _enrollment_manager is None:
         _enrollment_manager = PassiveEnrollmentManager()
     return _enrollment_manager
+
