@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/v1/:path*",
-      "destination": "https://<YOUR_RENDER_BACKEND_URL>/api/v1/:path*"
+      "destination": "https://behavioral-biometrics-cp5l.onrender.com/api/v1/:path*"
     }
   ]
 }
