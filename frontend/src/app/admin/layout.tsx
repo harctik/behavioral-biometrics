@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { getBackendUrl } from "@/lib/backend-url";
 
 export default async function AdminLayout({
   children,
@@ -7,7 +8,7 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const cookieStore = await cookies();
-  const accessToken = cookieStore.get("access_token")?.value;
+  const accessToken = cookieStore.get("access_token_cookie")?.value;
   const sessionId = cookieStore.get("session_id")?.value;
 
   if (!accessToken || !sessionId) {
@@ -16,7 +17,7 @@ export default async function AdminLayout({
 
   // Verify role with backend
   try {
-    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:5000";
+    const backendUrl = getBackendUrl();
     const res = await fetch(`${backendUrl}/api/v1/session/metrics?session_id=${sessionId}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getBackendUrl } from "@/lib/backend-url";
 
 export async function POST(req: Request) {
   try {
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     const token = tokenCookie.split("=").slice(1).join("="); // handle '=' in JWT
     
     // Fix: use BACKEND_URL consistently (same as all other routes)
-    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:5000";
+    const backendUrl = getBackendUrl();
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);

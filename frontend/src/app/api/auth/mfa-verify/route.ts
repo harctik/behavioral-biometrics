@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { getBackendUrl } from '@/lib/backend-url';
 
 /**
  * Proxy route for MFA verification.
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+    const backendUrl = getBackendUrl();
 
     const res = await fetch(`${backendUrl}/api/v1/auth/mfa/verify`, {
       method: 'POST',

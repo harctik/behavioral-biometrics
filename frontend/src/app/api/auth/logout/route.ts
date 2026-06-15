@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { getBackendUrl } from '@/lib/backend-url';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
       session_id = request.cookies.get('session_id')?.value;
     }
 
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+    const backendUrl = getBackendUrl();
 
     try {
       await fetch(`${backendUrl}/api/v1/auth/logout`, {

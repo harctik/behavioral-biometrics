@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { getBackendUrl } from '@/lib/backend-url';
 
 export async function POST(request: Request) {
   try {
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+    const backendUrl = getBackendUrl();
 
     const res = await fetch(`${backendUrl}/api/v1/auth/send-otp-email`, {
       method: 'POST',

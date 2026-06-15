@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { getBackendUrl } from "@/lib/backend-url";
 
 export async function POST(req: Request) {
   try {
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:5000";
+    const backendUrl = getBackendUrl();
 
     // Forward behavioral data to the backend for re-evaluation
     const flaskRes = await fetch(`${backendUrl}/api/v1/session/extend`, {

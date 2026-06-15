@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { getBackendUrl } from '@/lib/backend-url';
 
 export async function POST(request: Request) {
   try {
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Session expired. Please log in again.' }, { status: 401 });
     }
 
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+    const backendUrl = getBackendUrl();
     
     // We treat the challenge as a step-up authentication within the SAME session
     const res = await fetch(`${backendUrl}/api/v1/auth/password-verify`, {

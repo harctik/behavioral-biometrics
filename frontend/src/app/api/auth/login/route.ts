@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import { getBackendUrl } from '@/lib/backend-url';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { username, password, behavioral_data, device_id, trust_device } = body;
 
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:5000';
+    const backendUrl = getBackendUrl();
     
     // Support both username and email login
     const isEmail = username.includes('@');
