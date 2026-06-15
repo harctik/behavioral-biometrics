@@ -46,6 +46,7 @@ export default function InvestmentsPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const savedNotes = localStorage.getItem("bba_holding_notes");
     if (savedNotes) {
       try {

@@ -35,6 +35,7 @@ export default function LoginPage() {
   const [enrollmentState, setEnrollmentState] = useState<{completed: number, required: number} | null>(null);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const completed = localStorage.getItem("bba_enrollment_completed");
     const required = localStorage.getItem("bba_enrollment_required");
     if (completed && required && parseInt(completed) < parseInt(required)) {
