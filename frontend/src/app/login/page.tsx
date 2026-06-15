@@ -156,17 +156,18 @@ export default function LoginPage() {
         throw new Error(data.error?.message || data.error || data.message || "Invalid credentials.");
       }
 
-      // Success — transition to Phase 2
+      // Success — unwrap the backend's { data: { ... } } envelope
+      const payload = data.data || data;
       setRemainingAttempts(null);
       setLockoutUntil(null);
 
       setChallengeData({
-        challenge_token: data.challenge_token,
-        typing_prompt: data.typing_prompt,
-        enrollment_phase: data.enrollment_phase,
-        sessions_completed: data.sessions_completed,
-        sessions_required: data.sessions_required,
-        username: data.username,
+        challenge_token: payload.challenge_token,
+        typing_prompt: payload.typing_prompt,
+        enrollment_phase: payload.enrollment_phase,
+        sessions_completed: payload.sessions_completed,
+        sessions_required: payload.sessions_required,
+        username: payload.username,
       });
 
       // Reset collector for Phase 2 typing
@@ -215,30 +216,34 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.code === "BEHAVIORAL_BLOCKED" || res.status === 403) {
+        const errCode = data.error?.code || data.code;
+        if (errCode === "BEHAVIORAL_BLOCKED" || res.status === 403) {
           setPhase("blocked");
           return;
         }
-        if (data.code === "CHALLENGE_EXPIRED" || res.status === 401) {
+        if (errCode === "CHALLENGE_EXPIRED" || res.status === 401) {
           setError("Challenge expired. Please start again.");
           setPhase("credentials");
           return;
         }
-        throw new Error(data.error || "Verification failed.");
+        throw new Error(data.error?.message || data.error || "Verification failed.");
       }
 
+      // Unwrap the backend's { data: { ... } } envelope
+      const payload = data.data || data;
+
       // Store enrollment info
-      if (data.enrollment) {
-        const e = data.enrollment;
+      if (payload.enrollment) {
+        const e = payload.enrollment;
         if (e.sessions_completed !== undefined) localStorage.setItem("bba_enrollment_completed", String(e.sessions_completed));
         if (e.sessions_required !== undefined) localStorage.setItem("bba_enrollment_required", String(e.sessions_required));
       }
 
-      if (data.session_id) {
-        document.cookie = `session_id=${data.session_id}; path=/; SameSite=Lax; max-age=86400`;
+      if (payload.session_id) {
+        document.cookie = `session_id=${payload.session_id}; path=/; SameSite=Lax; max-age=86400`;
       }
 
-      if (data.mfa_required) {
+      if (payload.mfa_required) {
         router.push("/otp");
       } else {
         router.push("/dashboard");

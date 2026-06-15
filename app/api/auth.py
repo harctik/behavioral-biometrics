@@ -128,7 +128,12 @@ class Register(Resource):
     def post(self):
         """Register a new user account with MFA secret generation."""
         try:
-            data = RegisterSchema(*        db = get_db()
+            data = RegisterSchema(**request.get_json() or {})
+        except ValidationError as e:
+            logger.warning("Registration validation failed")
+            return make_error_response("VALIDATION_ERROR", str(e), status=400)
+
+        db = get_db()
 
         # ── Pre-check for existing user ──────────────────────────────────────────
         existing = db.get_user_by_username(data.username)
@@ -202,10 +207,6 @@ class Register(Resource):
             resource="/api/v1/auth/register",
             retention_tag="security",
         )
-                context={"username": data.username, "verify_token": verify_token}
-            )
-        except Exception as exc:
-            logger.error("Failed to enqueue verification email task: %s", exc)
 
         # ── Session 0: Initialize behavioral profile from signup ─────────
         enrollment_result = None
