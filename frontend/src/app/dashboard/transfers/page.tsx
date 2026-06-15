@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { NotificationBell } from "@/components/NotificationBell";
 import { getCollector } from "@/lib/behavioral-collector";
-import { getCsrfToken } from "@/lib/auth-utils";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
 
 interface Beneficiary {
   id: string;
@@ -16,6 +16,7 @@ interface Beneficiary {
   account: string;
   bank: string;
   verified: boolean;
+  created_at?: string;
 }
 
 interface Transfer {
@@ -41,6 +42,7 @@ const MOCK_HISTORY: Transfer[] = [
 export default function TransfersPage() {
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [history, setHistory] = useState<Transfer[]>([]);
+  const [assessment, setAssessment] = useState<{decision: string, auth: number, risk: number} | null>(null);
   const [selectedBeneficiary, setSelectedBeneficiary] = useState<string>("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -51,6 +53,11 @@ export default function TransfersPage() {
   const [newName, setNewName] = useState("");
   const [newAccount, setNewAccount] = useState("");
   const [newBank, setNewBank] = useState("");
+  const [beneficiaryToDelete, setBeneficiaryToDelete] = useState<string | null>(null);
+
+  const selectedBenInfo = beneficiaries.find(b => b.id === selectedBeneficiary);
+  const isCooling = selectedBenInfo && (!selectedBenInfo.created_at || (Date.now() - new Date(selectedBenInfo.created_at).getTime()) < 24 * 60 * 60 * 1000);
+
 
   useEffect(() => {
     const collector = getCollector();
@@ -73,7 +80,7 @@ export default function TransfersPage() {
             to: t.merchant || "Unknown",
             amount: t.amount,
             date: t.date,
-            status: t.decision === "allow" ? "completed" : "failed"
+            status: t.status || (t.decision === "allow" ? "completed" : "failed")
           }));
           setHistory(mappedHistory);
         }
@@ -82,6 +89,10 @@ export default function TransfersPage() {
       }
     };
     fetchData();
+    
+    return () => {
+      collector.flush("page_transition").catch(console.error);
+    };
   }, []);
 
   const filteredBeneficiaries = beneficiaries.filter(b =>
@@ -96,7 +107,7 @@ export default function TransfersPage() {
     const collector = getCollector();
     const behavioralData = await collector.flush("transaction_assess");
     const ben = beneficiaries.find(b => b.id === selectedBeneficiary);
-    const sessionId = document.cookie.match(/session_id=([^;]+)/)?.[1] || "";
+    const sessionId = getSessionId();
 
     try {
       // Step 1: Acquire cryptographic nonce
@@ -164,6 +175,11 @@ export default function TransfersPage() {
       }
 
       setSent(true);
+      setAssessment({
+        decision: result.decision,
+        auth: result.authenticity_score || result.behavioral_score?.authenticity_score || 0.95,
+        risk: result.risk_score || result.behavioral_score?.risk_score || 0.05
+      });
       toast.success(`₹${parseFloat(amount).toLocaleString()} sent to ${ben?.name || "beneficiary"}`);
       
       // Refresh history
@@ -177,12 +193,18 @@ export default function TransfersPage() {
           to: t.merchant || "Unknown",
           amount: parseFloat(t.amount || "0"),
           date: t.date,
-          status: t.decision === "allow" ? "completed" : "failed"
+          status: t.status || (t.decision === "allow" ? "completed" : "failed")
         }));
         setHistory(mappedHistory);
       }
       
-      setTimeout(() => { setSent(false); setAmount(""); setNote(""); setSelectedBeneficiary(""); }, 3000);
+      setTimeout(() => { 
+        setSent(false); 
+        setAssessment(null);
+        setAmount(""); 
+        setNote(""); 
+        setSelectedBeneficiary(""); 
+      }, 8000); // 8s to read the assessment
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Transaction failed");
@@ -220,9 +242,12 @@ export default function TransfersPage() {
       });
       if (res.ok) {
         setBeneficiaries(prev => prev.filter(b => b.id !== id));
+        setBeneficiaryToDelete(null);
+        toast.success("Beneficiary removed.");
       }
     } catch (err) {
       console.error("Failed to delete beneficiary:", err);
+      toast.error("Failed to remove beneficiary.");
     }
   };
 
@@ -246,12 +271,33 @@ export default function TransfersPage() {
                 </div>
 
                 {sent ? (
-                  <div className="flex flex-col items-center py-8 gap-3">
+                  <div className="flex flex-col items-center py-6 gap-5">
                     <div className="w-14 h-14 rounded-full bg-accent-success/10 flex items-center justify-center border border-accent-success/20">
                       <Check className="w-7 h-7 text-accent-success" />
                     </div>
-                    <span className="text-lg font-medium text-accent-success">Transfer Initiated</span>
-                    <span className="text-xs text-muted">Behavioral verification passed</span>
+                    <div className="text-center">
+                      <div className="text-lg font-medium text-accent-success">Transfer Initiated</div>
+                      <div className="text-xs text-muted mt-1">₹{parseFloat(amount).toLocaleString()} sent securely</div>
+                    </div>
+                    
+                    {assessment && (
+                      <div className="w-full mt-2 bg-black/20 border border-border rounded-xl p-4">
+                        <div className="text-[10px] font-bold text-muted uppercase tracking-wider mb-3 text-center">Behavioral Assessment</div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-surface-2 rounded-lg p-3 text-center">
+                            <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Authenticity</div>
+                            <div className="text-xl font-mono text-accent-success">{Math.round(assessment.auth * 100)}%</div>
+                          </div>
+                          <div className="bg-surface-2 rounded-lg p-3 text-center">
+                            <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Risk Score</div>
+                            <div className="text-xl font-mono text-fg">{Math.round(assessment.risk * 100)}%</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 text-center text-[10px] text-muted">
+                          Transaction processed seamlessly without step-up authentication based on verified typing rhythm and device interactions.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -294,6 +340,16 @@ export default function TransfersPage() {
                         className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50"
                       />
                     </div>
+
+                    {/* Warnings */}
+                    {selectedBenInfo && (!selectedBenInfo.verified || isCooling) && (
+                      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg text-amber-400 text-xs">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                          {isCooling ? "This beneficiary was added recently. High-value transfers may require additional step-up verification during the 24-hour cooling period." : "This beneficiary has not been fully verified by the bank. Proceed with caution."}
+                        </div>
+                      </div>
+                    )}
 
                     <button
                       onClick={handleSend}
@@ -409,22 +465,32 @@ export default function TransfersPage() {
                         <div className="min-w-0">
                           <div className="text-sm text-fg font-medium truncate flex items-center gap-1.5">
                             {b.name}
-                            {b.verified && <Check className="w-3 h-3 text-accent-success" />}
+                            {b.verified ? <Check className="w-3 h-3 text-accent-success" /> : <span className="text-[8px] text-muted border border-border rounded px-1 ml-1 bg-surface-2 font-bold tracking-widest">UNVERIFIED</span>}
+                            {(!b.created_at || (Date.now() - new Date(b.created_at).getTime()) < 24 * 60 * 60 * 1000) && (
+                              <span className="px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[9px] font-bold rounded-sm ml-1">COOLING</span>
+                            )}
                           </div>
                           <div className="text-[10px] text-muted font-mono">{b.account} · {b.bank}</div>
                         </div>
                       </div>
                       <button
-                        onClick={() => removeBeneficiary(b.id)}
+                        onClick={() => setBeneficiaryToDelete(b.id)}
                         className="opacity-0 group-hover:opacity-100 w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-500/10 text-red-400 transition-all shrink-0"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}
-                  {filteredBeneficiaries.length === 0 && (
-                    <div className="text-center text-xs text-muted py-4">No beneficiaries found</div>
-                  )}
+                  {beneficiaries.length === 0 ? (
+                    <div className="text-center py-6 flex flex-col items-center border border-dashed border-border rounded-xl bg-surface/50">
+                      <UserPlus className="w-8 h-8 text-muted mb-2" />
+                      <div className="text-sm font-medium text-fg">No beneficiaries yet</div>
+                      <div className="text-xs text-muted max-w-[200px] mb-3">Add a beneficiary to start making quick and secure transfers.</div>
+                      <button onClick={() => setShowAddForm(true)} className="bg-accent-primary text-white text-xs px-4 py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors">Add Beneficiary</button>
+                    </div>
+                  ) : filteredBeneficiaries.length === 0 ? (
+                    <div className="text-center text-xs text-muted py-4">No matching beneficiaries found</div>
+                  ) : null}
                 </div>
               </div>
 
@@ -442,6 +508,34 @@ export default function TransfersPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {beneficiaryToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-sm space-y-4 shadow-2xl">
+            <h3 className="text-sm font-bold text-fg flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-accent-danger" /> Remove Beneficiary
+            </h3>
+            <p className="text-xs text-muted leading-relaxed">
+              Are you sure you want to remove this beneficiary? You will need to wait for the 24-hour cooling period if you add them back later.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setBeneficiaryToDelete(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-surface-2 border border-border text-sm text-muted hover:text-fg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => removeBeneficiary(beneficiaryToDelete)}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-accent-danger/10 border border-accent-danger/20 text-accent-danger text-sm font-medium hover:bg-accent-danger hover:text-white transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

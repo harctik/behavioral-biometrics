@@ -16,6 +16,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null); // epoch ms
+  const [lockoutCountdown, setLockoutCountdown] = useState<string>("");
+  
+  // CAPTCHA State
+  const [captchaInput, setCaptchaInput] = useState("");
+  const [captchaCode, setCaptchaCode] = useState({ a: 0, b: 0 });
 
   // ── Live keystroke telemetry state ──────────────────────────────────────
   const [keystrokeCount, setKeystrokeCount] = useState(0);
@@ -35,12 +42,18 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Start passive keystroke collection
   useEffect(() => {
     const collector = getCollector();
     collector.setContext("LOGIN");
     collector.reset();
     collector.start();
+    
+    // Initialize CAPTCHA
+    setCaptchaCode({
+      a: Math.floor(Math.random() * 10) + 1,
+      b: Math.floor(Math.random() * 10) + 1
+    });
+    
     return () => collector.stop();
   }, []);
 
@@ -63,8 +76,43 @@ export default function LoginPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // ── Lockout countdown timer ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!lockoutUntil) { setLockoutCountdown(""); return; }
+    const tick = () => {
+      const remaining = lockoutUntil - Date.now();
+      if (remaining <= 0) {
+        setLockoutUntil(null);
+        setLockoutCountdown("");
+        setError("");
+        return;
+      }
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+      setLockoutCountdown(`${mins}:${secs.toString().padStart(2, "0")}`);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (lockoutUntil && lockoutUntil > Date.now()) {
+      setError("Account is temporarily locked. Please wait.");
+      return;
+    }
+    
+    if (parseInt(captchaInput) !== (captchaCode.a + captchaCode.b)) {
+      setError("Invalid CAPTCHA code. Please try again.");
+      setCaptchaCode({
+        a: Math.floor(Math.random() * 10) + 1,
+        b: Math.floor(Math.random() * 10) + 1
+      });
+      setCaptchaInput("");
+      return;
+    }
+    
     setError("");
     setIsLoading(true);
 
@@ -84,9 +132,27 @@ export default function LoginPage() {
       const data = await res.json();
       
       if (!res.ok) {
-        throw new Error(data.error || (res.status === 401 ? "Invalid credentials." : "An unexpected error occurred."));
+        // Parse lockout metadata from server response (it might be in error.details)
+        const details = data.error?.details || data.details || data;
+        
+        if (details.remaining_attempts !== undefined) {
+          setRemainingAttempts(details.remaining_attempts);
+        }
+        if (details.lockout_until) {
+          // If the backend returns ISO string, convert to epoch. If already epoch, use it.
+          const isNum = typeof details.lockout_until === 'number';
+          setLockoutUntil(isNum ? details.lockout_until * 1000 : new Date(details.lockout_until).getTime());
+        } else if (res.status === 429 || res.status === 423) {
+          // Assume 5-minute lockout for rate-limited responses
+          setLockoutUntil(Date.now() + 5 * 60 * 1000);
+        }
+        throw new Error(data.error?.message || data.error || data.message || (res.status === 401 ? "Invalid credentials." : "An unexpected error occurred."));
       }
       
+      // Reset lockout state on success
+      setRemainingAttempts(null);
+      setLockoutUntil(null);
+
       if (data.mfa_required) {
         router.push("/otp");
       } else {
@@ -164,9 +230,17 @@ export default function LoginPage() {
           <div className="max-w-sm w-full mx-auto">
 
 
-            <div className="mb-8">
-              <h2 className="text-2xl font-bold text-fg tracking-tight mb-2">Sign in to Console</h2>
-              <p className="text-sm text-muted">Enter your administrative credentials.</p>
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-fg tracking-tight mb-2">Netbanking Login</h2>
+              <p className="text-sm text-muted">Enter your User ID and Password.</p>
+            </div>
+            
+            {/* Phishing Banner */}
+            <div className="mb-6 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-blue-100/80 leading-relaxed">
+                <span className="font-semibold text-blue-300">Security Advisory:</span> AetherAuth Bank will never ask for your Password, PIN, or OTP over phone, email, or SMS. Do not share your credentials with anyone.
+              </div>
             </div>
 
             {error && (
@@ -177,6 +251,43 @@ export default function LoginPage() {
               >
                 <div className="w-1.5 h-1.5 rounded-full bg-accent-danger"></div>
                 {error}
+              </motion.div>
+            )}
+
+            {/* Lockout countdown */}
+            {lockoutCountdown && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-4 py-3 rounded-xl mb-6 text-xs"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Lock className="w-3.5 h-3.5" />
+                    Account locked — try again in <span className="font-mono font-bold text-amber-300">{lockoutCountdown}</span>
+                  </span>
+                </div>
+                <p className="mt-2 text-[10px] text-amber-400/60">
+                  Too many failed attempts.{" "}
+                  <Link href="/forgot-password" className="underline hover:text-amber-300 transition-colors">
+                    Reset password
+                  </Link>{" "}
+                  or contact support.
+                </p>
+              </motion.div>
+            )}
+
+            {/* Remaining attempts warning */}
+            {remainingAttempts !== null && remainingAttempts <= 3 && !lockoutCountdown && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="bg-amber-500/5 border border-amber-500/15 text-amber-400/80 px-3 py-2 rounded-lg mb-4 text-[11px] flex items-center gap-2"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" />
+                {remainingAttempts === 0
+                  ? "No attempts remaining. Account will be locked."
+                  : `${remainingAttempts} attempt${remainingAttempts > 1 ? "s" : ""} remaining before lockout.`}
               </motion.div>
             )}
 
@@ -203,9 +314,15 @@ export default function LoginPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between ml-1">
                   <label className="text-xs font-semibold text-muted uppercase tracking-wider">Password</label>
-                  <Link href="/forgot-password" className="text-xs font-medium text-accent-primary hover:text-blue-400 transition-colors">
-                    Forgot?
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link href="/forgot-username" className="text-[10px] font-medium text-accent-primary hover:text-blue-400 transition-colors">
+                      Forgot User ID?
+                    </Link>
+                    <span className="text-muted text-[10px]">|</span>
+                    <Link href="/forgot-password" className="text-[10px] font-medium text-accent-primary hover:text-blue-400 transition-colors">
+                      Forgot Password?
+                    </Link>
+                  </div>
                 </div>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-2 group-focus-within:text-accent-primary transition-colors">
@@ -228,6 +345,25 @@ export default function LoginPage() {
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
+                </div>
+              </div>
+
+              {/* CAPTCHA Field */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted ml-1 uppercase tracking-wider">Security Check</label>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-black/40 border border-border text-fg font-mono font-bold text-lg rounded-xl py-2 px-4 flex items-center justify-center select-none tracking-widest relative overflow-hidden">
+                    <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '4px 4px' }}></div>
+                    {captchaCode.a} + {captchaCode.b} = ?
+                  </div>
+                  <input
+                    type="text"
+                    value={captchaInput}
+                    onChange={(e) => setCaptchaInput(e.target.value)}
+                    required
+                    placeholder="Result"
+                    className="w-24 bg-black/20 border border-border text-fg rounded-xl py-3 px-4 text-center text-sm outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary/30 transition-all font-mono"
+                  />
                 </div>
               </div>
 

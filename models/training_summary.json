@@ -1,0 +1,612 @@
+{
+  "timestamp": "2026-06-15T07:47:19.782919+00:00",
+  "dataset": "CMU Keystroke Dynamics (DSN 2009)",
+  "users_trained": 151,
+  "total_time_seconds": 743.87,
+  "results": {
+    "hmog_001": {
+      "models_trained": 10,
+      "duration": 8.58
+    },
+    "hmog_002": {
+      "models_trained": 10,
+      "duration": 3.05
+    },
+    "hmog_003": {
+      "models_trained": 10,
+      "duration": 3.22
+    },
+    "hmog_004": {
+      "models_trained": 10,
+      "duration": 3.11
+    },
+    "hmog_005": {
+      "models_trained": 10,
+      "duration": 3.05
+    },
+    "hmog_006": {
+      "models_trained": 10,
+      "duration": 3.11
+    },
+    "hmog_007": {
+      "models_trained": 10,
+      "duration": 3.11
+    },
+    "hmog_008": {
+      "models_trained": 10,
+      "duration": 3.17
+    },
+    "hmog_009": {
+      "models_trained": 10,
+      "duration": 3.2
+    },
+    "hmog_010": {
+      "models_trained": 10,
+      "duration": 3.14
+    },
+    "hmog_011": {
+      "models_trained": 10,
+      "duration": 3.25
+    },
+    "hmog_012": {
+      "models_trained": 10,
+      "duration": 3.23
+    },
+    "hmog_013": {
+      "models_trained": 10,
+      "duration": 3.17
+    },
+    "hmog_014": {
+      "models_trained": 10,
+      "duration": 3.3
+    },
+    "hmog_015": {
+      "models_trained": 10,
+      "duration": 3.17
+    },
+    "hmog_016": {
+      "models_trained": 10,
+      "duration": 3.56
+    },
+    "hmog_017": {
+      "models_trained": 10,
+      "duration": 3.33
+    },
+    "hmog_018": {
+      "models_trained": 10,
+      "duration": 3.41
+    },
+    "hmog_019": {
+      "models_trained": 10,
+      "duration": 3.27
+    },
+    "hmog_020": {
+      "models_trained": 10,
+      "duration": 3.28
+    },
+    "hmog_021": {
+      "models_trained": 10,
+      "duration": 3.22
+    },
+    "hmog_022": {
+      "models_trained": 10,
+      "duration": 3.31
+    },
+    "hmog_023": {
+      "models_trained": 10,
+      "duration": 3.31
+    },
+    "hmog_024": {
+      "models_trained": 10,
+      "duration": 3.22
+    },
+    "hmog_025": {
+      "models_trained": 10,
+      "duration": 3.31
+    },
+    "hmog_026": {
+      "models_trained": 10,
+      "duration": 3.28
+    },
+    "hmog_027": {
+      "models_trained": 10,
+      "duration": 3.19
+    },
+    "hmog_028": {
+      "models_trained": 10,
+      "duration": 3.31
+    },
+    "hmog_029": {
+      "models_trained": 10,
+      "duration": 3.27
+    },
+    "hmog_030": {
+      "models_trained": 10,
+      "duration": 3.67
+    },
+    "hmog_031": {
+      "models_trained": 10,
+      "duration": 3.33
+    },
+    "hmog_032": {
+      "models_trained": 10,
+      "duration": 3.41
+    },
+    "hmog_033": {
+      "models_trained": 10,
+      "duration": 3.28
+    },
+    "hmog_034": {
+      "models_trained": 10,
+      "duration": 3.44
+    },
+    "hmog_035": {
+      "models_trained": 10,
+      "duration": 3.33
+    },
+    "hmog_036": {
+      "models_trained": 10,
+      "duration": 3.3
+    },
+    "hmog_037": {
+      "models_trained": 10,
+      "duration": 3.33
+    },
+    "hmog_038": {
+      "models_trained": 10,
+      "duration": 3.3
+    },
+    "hmog_039": {
+      "models_trained": 10,
+      "duration": 3.69
+    },
+    "hmog_040": {
+      "models_trained": 10,
+      "duration": 4.0
+    },
+    "hmog_041": {
+      "models_trained": 10,
+      "duration": 3.86
+    },
+    "hmog_042": {
+      "models_trained": 10,
+      "duration": 3.44
+    },
+    "hmog_043": {
+      "models_trained": 10,
+      "duration": 3.67
+    },
+    "hmog_044": {
+      "models_trained": 10,
+      "duration": 4.16
+    },
+    "hmog_045": {
+      "models_trained": 10,
+      "duration": 3.75
+    },
+    "hmog_046": {
+      "models_trained": 10,
+      "duration": 3.52
+    },
+    "hmog_047": {
+      "models_trained": 10,
+      "duration": 4.0
+    },
+    "hmog_048": {
+      "models_trained": 10,
+      "duration": 3.86
+    },
+    "hmog_049": {
+      "models_trained": 10,
+      "duration": 3.86
+    },
+    "hmog_050": {
+      "models_trained": 10,
+      "duration": 4.08
+    },
+    "hmog_051": {
+      "models_trained": 10,
+      "duration": 3.94
+    },
+    "hmog_052": {
+      "models_trained": 10,
+      "duration": 4.33
+    },
+    "hmog_053": {
+      "models_trained": 10,
+      "duration": 4.47
+    },
+    "hmog_054": {
+      "models_trained": 10,
+      "duration": 4.39
+    },
+    "hmog_055": {
+      "models_trained": 10,
+      "duration": 4.05
+    },
+    "hmog_056": {
+      "models_trained": 10,
+      "duration": 3.58
+    },
+    "hmog_057": {
+      "models_trained": 10,
+      "duration": 3.92
+    },
+    "hmog_058": {
+      "models_trained": 10,
+      "duration": 4.08
+    },
+    "hmog_059": {
+      "models_trained": 10,
+      "duration": 4.5
+    },
+    "hmog_060": {
+      "models_trained": 10,
+      "duration": 4.34
+    },
+    "hmog_061": {
+      "models_trained": 10,
+      "duration": 3.97
+    },
+    "hmog_062": {
+      "models_trained": 10,
+      "duration": 4.38
+    },
+    "hmog_063": {
+      "models_trained": 10,
+      "duration": 4.42
+    },
+    "hmog_064": {
+      "models_trained": 10,
+      "duration": 4.03
+    },
+    "hmog_065": {
+      "models_trained": 10,
+      "duration": 4.06
+    },
+    "hmog_066": {
+      "models_trained": 10,
+      "duration": 4.05
+    },
+    "hmog_067": {
+      "models_trained": 10,
+      "duration": 4.05
+    },
+    "hmog_068": {
+      "models_trained": 10,
+      "duration": 3.61
+    },
+    "hmog_069": {
+      "models_trained": 10,
+      "duration": 3.77
+    },
+    "hmog_070": {
+      "models_trained": 10,
+      "duration": 3.66
+    },
+    "hmog_071": {
+      "models_trained": 10,
+      "duration": 3.66
+    },
+    "hmog_072": {
+      "models_trained": 10,
+      "duration": 3.64
+    },
+    "hmog_073": {
+      "models_trained": 10,
+      "duration": 3.95
+    },
+    "hmog_074": {
+      "models_trained": 10,
+      "duration": 3.61
+    },
+    "hmog_075": {
+      "models_trained": 10,
+      "duration": 3.83
+    },
+    "hmog_076": {
+      "models_trained": 10,
+      "duration": 4.08
+    },
+    "hmog_077": {
+      "models_trained": 10,
+      "duration": 4.25
+    },
+    "hmog_078": {
+      "models_trained": 10,
+      "duration": 3.97
+    },
+    "hmog_079": {
+      "models_trained": 10,
+      "duration": 4.19
+    },
+    "hmog_080": {
+      "models_trained": 10,
+      "duration": 3.75
+    },
+    "hmog_081": {
+      "models_trained": 10,
+      "duration": 3.83
+    },
+    "hmog_082": {
+      "models_trained": 10,
+      "duration": 3.75
+    },
+    "hmog_083": {
+      "models_trained": 10,
+      "duration": 3.92
+    },
+    "hmog_084": {
+      "models_trained": 10,
+      "duration": 3.78
+    },
+    "hmog_085": {
+      "models_trained": 10,
+      "duration": 3.61
+    },
+    "hmog_086": {
+      "models_trained": 10,
+      "duration": 3.55
+    },
+    "hmog_087": {
+      "models_trained": 10,
+      "duration": 3.67
+    },
+    "hmog_088": {
+      "models_trained": 10,
+      "duration": 3.89
+    },
+    "hmog_089": {
+      "models_trained": 10,
+      "duration": 3.56
+    },
+    "hmog_090": {
+      "models_trained": 10,
+      "duration": 3.55
+    },
+    "hmog_091": {
+      "models_trained": 10,
+      "duration": 3.48
+    },
+    "hmog_092": {
+      "models_trained": 10,
+      "duration": 3.25
+    },
+    "hmog_093": {
+      "models_trained": 10,
+      "duration": 3.67
+    },
+    "hmog_094": {
+      "models_trained": 10,
+      "duration": 3.5
+    },
+    "hmog_095": {
+      "models_trained": 10,
+      "duration": 3.59
+    },
+    "hmog_096": {
+      "models_trained": 10,
+      "duration": 3.44
+    },
+    "hmog_097": {
+      "models_trained": 10,
+      "duration": 3.59
+    },
+    "hmog_098": {
+      "models_trained": 10,
+      "duration": 3.48
+    },
+    "hmog_099": {
+      "models_trained": 10,
+      "duration": 3.41
+    },
+    "hmog_100": {
+      "models_trained": 10,
+      "duration": 3.53
+    },
+    "s002": {
+      "models_trained": 10,
+      "duration": 7.5
+    },
+    "s003": {
+      "models_trained": 10,
+      "duration": 7.44
+    },
+    "s004": {
+      "models_trained": 10,
+      "duration": 7.11
+    },
+    "s005": {
+      "models_trained": 10,
+      "duration": 6.86
+    },
+    "s007": {
+      "models_trained": 10,
+      "duration": 6.91
+    },
+    "s008": {
+      "models_trained": 10,
+      "duration": 6.66
+    },
+    "s010": {
+      "models_trained": 10,
+      "duration": 6.98
+    },
+    "s011": {
+      "models_trained": 10,
+      "duration": 7.88
+    },
+    "s012": {
+      "models_trained": 10,
+      "duration": 8.17
+    },
+    "s013": {
+      "models_trained": 10,
+      "duration": 8.7
+    },
+    "s015": {
+      "models_trained": 10,
+      "duration": 7.78
+    },
+    "s016": {
+      "models_trained": 10,
+      "duration": 7.14
+    },
+    "s017": {
+      "models_trained": 10,
+      "duration": 7.36
+    },
+    "s018": {
+      "models_trained": 10,
+      "duration": 7.03
+    },
+    "s019": {
+      "models_trained": 10,
+      "duration": 7.69
+    },
+    "s020": {
+      "models_trained": 10,
+      "duration": 7.7
+    },
+    "s021": {
+      "models_trained": 10,
+      "duration": 8.41
+    },
+    "s022": {
+      "models_trained": 10,
+      "duration": 8.44
+    },
+    "s024": {
+      "models_trained": 10,
+      "duration": 7.34
+    },
+    "s025": {
+      "models_trained": 10,
+      "duration": 7.08
+    },
+    "s026": {
+      "models_trained": 10,
+      "duration": 8.31
+    },
+    "s027": {
+      "models_trained": 10,
+      "duration": 8.69
+    },
+    "s028": {
+      "models_trained": 10,
+      "duration": 7.39
+    },
+    "s029": {
+      "models_trained": 10,
+      "duration": 7.27
+    },
+    "s030": {
+      "models_trained": 10,
+      "duration": 7.31
+    },
+    "s031": {
+      "models_trained": 10,
+      "duration": 7.19
+    },
+    "s032": {
+      "models_trained": 10,
+      "duration": 7.44
+    },
+    "s033": {
+      "models_trained": 10,
+      "duration": 7.06
+    },
+    "s034": {
+      "models_trained": 10,
+      "duration": 7.0
+    },
+    "s035": {
+      "models_trained": 10,
+      "duration": 7.14
+    },
+    "s036": {
+      "models_trained": 10,
+      "duration": 7.23
+    },
+    "s037": {
+      "models_trained": 10,
+      "duration": 6.98
+    },
+    "s038": {
+      "models_trained": 10,
+      "duration": 6.95
+    },
+    "s039": {
+      "models_trained": 10,
+      "duration": 6.91
+    },
+    "s040": {
+      "models_trained": 10,
+      "duration": 6.95
+    },
+    "s041": {
+      "models_trained": 10,
+      "duration": 7.42
+    },
+    "s042": {
+      "models_trained": 10,
+      "duration": 7.05
+    },
+    "s043": {
+      "models_trained": 10,
+      "duration": 7.03
+    },
+    "s044": {
+      "models_trained": 10,
+      "duration": 6.89
+    },
+    "s046": {
+      "models_trained": 10,
+      "duration": 6.88
+    },
+    "s047": {
+      "models_trained": 10,
+      "duration": 7.06
+    },
+    "s048": {
+      "models_trained": 10,
+      "duration": 6.8
+    },
+    "s049": {
+      "models_trained": 10,
+      "duration": 6.81
+    },
+    "s050": {
+      "models_trained": 10,
+      "duration": 8.58
+    },
+    "s051": {
+      "models_trained": 10,
+      "duration": 7.52
+    },
+    "s052": {
+      "models_trained": 10,
+      "duration": 7.31
+    },
+    "s053": {
+      "models_trained": 10,
+      "duration": 7.26
+    },
+    "s054": {
+      "models_trained": 10,
+      "duration": 7.03
+    },
+    "s055": {
+      "models_trained": 10,
+      "duration": 6.84
+    },
+    "s056": {
+      "models_trained": 10,
+      "duration": 7.02
+    },
+    "s057": {
+      "models_trained": 10,
+      "duration": 7.0
+    }
+  }
+}

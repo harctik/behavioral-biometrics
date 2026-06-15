@@ -33,6 +33,7 @@ export type PageContext =
   | "CALIBRATION"
   | "COMPLIANCE"
   | "EXPLAINABILITY"
+  | "APPROVE_CORPORATE"
   | "PRIVACY"
   | "TRANSFERS_PAGE"
   | "INVESTMENTS_PAGE"
@@ -468,12 +469,12 @@ export class BehavioralCollector {
       }
     }
 
-    this.keystrokeEvents = [];
-    this.mouseEvents = [];
-    this.touchEvents = [];
-    this.scrollEvents = [];
-    this.navigationEvents = [];
-    this.motionEvents = [];
+    this.keystrokeEvents.length = 0;
+    this.mouseEvents.length = 0;
+    this.touchEvents.length = 0;
+    this.scrollEvents.length = 0;
+    this.navigationEvents.length = 0;
+    this.motionEvents.length = 0;
     // Keep cognitiveEvents across resets — duress/hesitation signals
     // detected on login should persist into the dashboard session.
     this.sessionStart = Date.now();
@@ -567,7 +568,7 @@ export class BehavioralCollector {
         hold_time: Math.max(0, hold),
         flight_time: Math.max(0, flight),
         is_backspace: e.key === "Backspace",
-        target_id: target?.id || target?.getAttribute('name') || "",
+        target_id: target?.id || (target?.getAttribute && typeof target.getAttribute === 'function' ? target.getAttribute('name') : "") || "",
         input_type: target?.type || "unknown"
       });
 
@@ -1399,12 +1400,12 @@ export class BehavioralCollector {
     }
 
     // Clear buffers after flush (keep session-level counters)
-    this.keystrokeEvents = [];
-    this.mouseEvents = [];
-    this.touchEvents = [];
-    this.scrollEvents = [];
-    this.navigationEvents = [];
-    this.motionEvents = [];
+    this.keystrokeEvents.length = 0;
+    this.mouseEvents.length = 0;
+    this.touchEvents.length = 0;
+    this.scrollEvents.length = 0;
+    this.navigationEvents.length = 0;
+    this.motionEvents.length = 0;
     // Keep cognitive events for session-level analysis
 
     return payload;

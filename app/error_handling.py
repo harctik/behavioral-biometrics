@@ -147,6 +147,9 @@ def create_error_response(
     Returns:
         Dictionary with standardized error format
     """
+    from flask import g
+    rid = request_id or getattr(g, "request_id", None) or request.headers.get("X-Request-ID")
+    
     response = {
         "error": {
             "id": error.error_id,
@@ -156,7 +159,7 @@ def create_error_response(
             "status_code": error.status_code,
             "details": error.details,
         },
-        "request_id": request_id or request.headers.get("X-Request-ID"),
+        "request_id": rid,
     }
 
     if include_traceback and error.cause:
@@ -268,20 +271,7 @@ class ErrorHandler:
 
             return jsonify(response_data), 500
 
-        # Add request ID middleware
-        @app.before_request
-        def assign_request_id():
-            """Assign a unique request ID to each request for correlation."""
-            if not request.headers.get("X-Request-ID"):
-                request.environ["X-Request-ID"] = str(uuid.uuid4())
 
-        @app.after_request
-        def add_request_id_header(response: Response):
-            """Add request ID to response headers."""
-            request_id = request.environ.get("X-Request-ID")
-            if request_id:
-                response.headers["X-Request-ID"] = request_id
-            return response
 
 
 # ============================================================================

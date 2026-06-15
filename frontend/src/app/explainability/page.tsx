@@ -1,4 +1,6 @@
 "use client";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -191,7 +193,7 @@ export default function ExplainabilityPage() {
           let authScore = 0.5;
           let riskDecision = "MONITOR";
           try {
-            const csrf = document.cookie?.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+            const csrf = getCsrfToken();
             const mRes = await fetch("/api/v1/session/metrics", { headers: { "X-CSRF-TOKEN": csrf } });
             if (mRes.ok) {
               const mData = await mRes.json();

@@ -6,8 +6,9 @@ import {
 } from "lucide-react";
 import { getCollector } from "@/lib/behavioral-collector";
 import { NotificationBell } from "@/components/NotificationBell";
-import { getCsrfToken } from "@/lib/auth-utils";
-
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 const TransactionRow = ({ name, date, amount, type }: { name: string, date: string, amount: string, type: 'in'|'out' }) => (
   <div className="flex items-center justify-between py-3 border-b border-border last:border-0">
@@ -21,7 +22,7 @@ const TransactionRow = ({ name, date, amount, type }: { name: string, date: stri
       </div>
     </div>
     <div className={`text-sm tabular-nums font-medium ${type === 'in' ? 'text-accent-success' : 'text-fg'}`}>
-      {type === 'in' ? '+' : '-'}${amount}
+      {type === 'in' ? '+' : '-'}₹{amount}
     </div>
   </div>
 );
@@ -37,13 +38,28 @@ const ToggleSwitch = ({ enabled, onToggle }: { enabled: boolean, onToggle: () =>
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useTelemetry } from "@/components/TelemetryProvider";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [username, setUsername] = useState("User");
-  const [demoMode, setDemoMode] = useState(true); // Always visible by default
-  const [score, setScore] = useState<number | null>(null);
-  const [events, setEvents] = useState<{ time: string, msg: string }[]>([]);
+  const [demoMode, setDemoMode] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('bba_demo_mode');
+      if (saved !== null) {
+        setDemoMode(saved === 'true');
+      }
+    }
+  }, []);
+
+  const toggleDemoMode = () => {
+    const newVal = !demoMode;
+    setDemoMode(newVal);
+    localStorage.setItem('bba_demo_mode', newVal.toString());
+  };
+  const { score, events, backendMetrics, enrollment } = useTelemetry();
   const [currentContext, setCurrentContext] = useState<string>("DASHBOARD");
 
   // Live behavioral signal stats
@@ -53,19 +69,22 @@ export default function DashboardPage() {
   const [amount, setAmount] = useState('');
   const [recipient, setRecipient] = useState('');
   const [confirmText, setConfirmText] = useState('');
-  const [sessionId, setSessionId] = useState('');
   const [transferError, setTransferError] = useState('');
   
-  const [enrollment, setEnrollment] = useState<{enrolled: boolean, phase: string, completed: number, required: number} | null>(null);
   const [trustTimeline, setTrustTimeline] = useState<{timestamp: string, risk_score: number, risk_level: string}[]>([]);
   const [cognitiveProfile, setCognitiveProfile] = useState<Record<string, unknown> | null>(null);
   const [behavioralScore, setBehavioralScore] = useState<{authenticity_score?: number, risk_score?: number} | null>(null);
   const [transferAssessment, setTransferAssessment] = useState<string | null>(null);
 
+  // New states for tabs
+  const [activeTab, setActiveTab] = useState<'retail' | 'corporate' | 'insights'>('retail');
+  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [approvalState, setApprovalState] = useState<Record<string, string>>({}); // track approval status by txn_id
+
   // Backend-driven account data
-  const [backendMetrics, setBackendMetrics] = useState<any>(null);
   const [balance, setBalance] = useState<number | null>(null);
-  const [recentTransactions, setRecentTransactions] = useState<{name: string, date: string, amount: string, type: 'in'|'out'}[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<{name: string, date: string, amount: string, type: 'in'|'out', category: string}[]>([]);
+  const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
 
   // Poll live behavioral stats from collector every 500ms
   useEffect(() => {
@@ -92,22 +111,6 @@ export default function DashboardPage() {
         });
         setCurrentContext(snap.page_context || "DASHBOARD");
 
-        // Push real events to the live event stream when new activity is detected
-        if (ks.length !== prevKs || ms.length !== prevMs) {
-          const avgH = holds.length > 0 ? Math.round(holds.reduce((a, b) => a + b, 0) / holds.length) : 0;
-          setEvents(prev => {
-            const newEvent = {
-              time: new Date().toLocaleTimeString(),
-              msg: `KS:${ks.length} Ptr:${ms.length} Hold:${avgH}ms Cor:${ks.filter(k => k.is_backspace).length}`
-            };
-            if (prev.length === 0 || prev[0].msg !== newEvent.msg) {
-              return [newEvent, ...prev].slice(0, 6);
-            }
-            return prev;
-          });
-          prevKs = ks.length;
-          prevMs = ms.length;
-        }
       } catch {}
     }, 500);
     return () => clearInterval(interval);
@@ -127,42 +130,23 @@ export default function DashboardPage() {
         const data = await res.json();
         setUsername(data.username || "User");
 
-        // Fetch session metrics for live scores
-        const csrfToken0 = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
-        try {
-          const mRes = await fetch("/api/v1/session/metrics", { headers: { "X-CSRF-TOKEN": csrfToken0 } });
-          if (mRes.ok) {
-            const mData = await mRes.json();
-            setBackendMetrics(mData);
-            const val = mData.authenticity_score || 0;
-            setScore(val <= 1 ? Math.round(val * 100) : val);
-          }
-        } catch {}
-        setSessionId(data.session_id || "");
-
         // Fetch enrollment status
         const enrollmentRes = await fetch("/api/v1/behavioral/enrollment/status", {
           headers: {
             "Content-Type": "application/json",
-            "X-CSRF-TOKEN": document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || ""
+            "X-CSRF-TOKEN": getCsrfToken()
           }
         });
         if (enrollmentRes.ok) {
           const enrollmentData = await enrollmentRes.json();
           if (enrollmentData.enrollment) {
-            setEnrollment({
-              enrolled: enrollmentData.enrollment.enrolled,
-              phase: enrollmentData.enrollment.enrollment_phase,
-              completed: enrollmentData.enrollment.sessions_completed || 0,
-              required: enrollmentData.enrollment.sessions_required || 5
-            });
             localStorage.setItem("bba_enrollment_completed", String(enrollmentData.enrollment.sessions_completed || 0));
             localStorage.setItem("bba_enrollment_required", String(enrollmentData.enrollment.sessions_required || 5));
           }
         }
 
         // Fetch trust timeline
-        const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+        const csrfToken = getCsrfToken();
         try {
           const tlRes = await fetch("/api/v1/session/trust-timeline?window_minutes=30", {
             headers: { "X-CSRF-TOKEN": csrfToken }
@@ -193,10 +177,11 @@ export default function DashboardPage() {
             const txData = await txRes.json();
             if (txData.transactions && txData.transactions.length > 0) {
               setRecentTransactions(txData.transactions.map((tx: any) => ({
-                name: tx.operation === 'transfer' ? 'Bank Transfer' : tx.operation,
+                name: tx.merchant || tx.operation,
                 date: new Date(tx.date).toLocaleDateString(),
                 amount: parseFloat(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }),
-                type: 'out' as const,
+                type: (tx.type as 'in' | 'out') || 'out',
+                category: tx.category || 'Transfer'
               })));
             }
           }
@@ -213,6 +198,25 @@ export default function DashboardPage() {
           }
         } catch {}
 
+        // Fetch beneficiaries
+        try {
+          const benRes = await fetch("/api/v1/beneficiaries");
+          if (benRes.ok) {
+            const bData = await benRes.json();
+            setBeneficiaries(bData.beneficiaries || []);
+          }
+        } catch {}
+
+        // Fetch pending corporate approvals
+        try {
+          const corpRes = await fetch("/api/v1/transaction/corporate/pending", {
+            headers: { "X-CSRF-TOKEN": csrfToken }
+          });
+          if (corpRes.ok) {
+            const corpData = await corpRes.json();
+            setPendingApprovals(corpData.pending_approvals || []);
+          }
+        } catch {}
 
       } catch (err) {
         console.error("Auth check failed:", err);
@@ -221,73 +225,8 @@ export default function DashboardPage() {
     };
     checkAuth();
 
-    // Start collector
-
-    collector.start();
-
-    // Real telemetry updates from backend using Server-Sent Events (SSE) via streaming fetch
-    const abortController = new AbortController();
-
-    const streamMetrics = async () => {
-      try {
-        const freshCsrf = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
-        const res = await fetch("/api/v1/session/metrics/stream", {
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-TOKEN": freshCsrf
-          },
-          signal: abortController.signal
-        });
-        
-        if (!res.ok) throw new Error("Stream failed to connect");
-        if (!res.body) throw new Error("ReadableStream not yet supported in this browser.");
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const metrics = JSON.parse(line.substring(6));
-                const val = metrics.authenticity_score || 0;
-                setScore(val <= 1 ? Math.round(val * 100) : Math.round(val));
-                setEvents(prev => {
-                  const newEvent = { 
-                    time: new Date().toLocaleTimeString(), 
-                    msg: `Sync: KS=${metrics.keystroke_count} Ptr=${metrics.mouse_count}`
-                  };
-                  if (prev.length === 0 || prev[0].msg !== newEvent.msg) {
-                    return [newEvent, ...prev].slice(0, 4);
-                  }
-                  return prev;
-                });
-              } catch (e) {
-                // Ignore parse errors on incomplete chunks
-              }
-            }
-          }
-        }
-      } catch (err: any) {
-        if (err.name !== 'AbortError' && !abortController.signal.aborted) {
-          console.error("Failed to read live metrics stream", err);
-          // Auto-reconnect after 5 seconds if connection lost
-          setTimeout(() => { if (!abortController.signal.aborted) streamMetrics(); }, 5000);
-        }
-      }
-    };
-    
-    streamMetrics();
-
     return () => {
-      collector.stop();
-      abortController.abort();
+      collector.flush("page_transition").catch(console.error);
     };
   }, [router]);
 
@@ -304,7 +243,7 @@ export default function DashboardPage() {
       const transferBehavior = await collector.flush("MAKE_PAYMENT");
 
       // Pre-transaction duress check (supplementary — never blocks on network error)
-      const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+      const csrfToken = getCsrfToken();
       try {
         const duressRes = await fetch("/api/v1/session/duress-check", {
           method: "POST",
@@ -332,7 +271,7 @@ export default function DashboardPage() {
       const nonceRes = await fetch("/api/v1/transaction/nonce", {
         headers: {
           "Content-Type": "application/json",
-          "X-CSRF-TOKEN": document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || ""
+          "X-CSRF-TOKEN": getCsrfToken()
         }
       });
       if (!nonceRes.ok) throw new Error("Failed to get transaction nonce");
@@ -340,8 +279,9 @@ export default function DashboardPage() {
       const nonce = nonceData.nonce;
 
       // 2. Sign Intent
+      const currentSessionId = getSessionId();
       const intentPayload = {
-        session_id: sessionId,
+        session_id: currentSessionId,
         amount: parseFloat(amount),
         operation: "transfer",
         nonce,
@@ -352,7 +292,7 @@ export default function DashboardPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-CSRF-TOKEN": document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || ""
+          "X-CSRF-TOKEN": getCsrfToken()
         },
         body: JSON.stringify(intentPayload)
       });
@@ -366,10 +306,10 @@ export default function DashboardPage() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-CSRF-TOKEN": document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || ""
+            "X-CSRF-TOKEN": getCsrfToken()
           },
           body: JSON.stringify({
-            session_id: sessionId,
+            session_id: currentSessionId,
             amount: parseFloat(amount),
             behavioral_data: transferBehavior,  // Gap 11: include behavioral snapshot
           })
@@ -391,7 +331,7 @@ export default function DashboardPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-CSRF-TOKEN": document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || ""
+          "X-CSRF-TOKEN": getCsrfToken()
         },
         body: JSON.stringify(assessPayload)
       });
@@ -407,7 +347,11 @@ export default function DashboardPage() {
         } else {
           // "allowed" or any other non-blocked decision = success
           setTransferState('success');
-          setRecentTransactions(prev => [{ name: recipient, date: new Date().toLocaleDateString(), amount, type: 'out' as const }, ...prev].slice(0, 5));
+          const selectedBen = beneficiaries.find(b => b.id === recipient);
+          const benName = selectedBen ? selectedBen.name : recipient;
+          
+          setRecentTransactions(prev => [{ name: benName, date: new Date().toLocaleDateString(), amount, type: 'out' as const, category: 'Transfer' }, ...prev].slice(0, 5));
+          toast.success(`Transfer to ${benName} completed successfully!`);
           setTimeout(() => {
             setTransferState('idle');
             setAmount('');
@@ -432,6 +376,44 @@ export default function DashboardPage() {
       setTransferError("Network error. Please check your connection and try again.");
     }
   };
+
+  const handleCorporateApprove = async (txnId: string) => {
+    setApprovalState(prev => ({ ...prev, [txnId]: 'loading' }));
+    try {
+      const collector = getCollector();
+      collector.setContext("APPROVE_CORPORATE");
+      const checkerBehavior = await collector.flush("APPROVE_CORPORATE");
+      
+      // In a real app, we'd also fetch the original maker behavior from DB.
+      // For this demo, the backend Siamese Network verifies against the loaded model.
+      const csrfToken = getCsrfToken();
+      const res = await fetch("/api/v1/transaction/corporate/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-TOKEN": csrfToken
+        },
+        body: JSON.stringify({
+          txn_id: txnId,
+          maker_session_features: [], // Mocked: normally retrieved from pending DB
+          checker_session_features: checkerBehavior
+        })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        setApprovalState(prev => ({ ...prev, [txnId]: 'success' }));
+        setTimeout(() => {
+          setPendingApprovals(prev => prev.filter(p => p.txn_id !== txnId));
+        }, 2000);
+      } else {
+        setApprovalState(prev => ({ ...prev, [txnId]: 'error: ' + (data.error || data.reason) }));
+      }
+    } catch (err) {
+      setApprovalState(prev => ({ ...prev, [txnId]: 'error: Network failure' }));
+    }
+  };
+
 
   return (
     <>
@@ -460,7 +442,7 @@ export default function DashboardPage() {
             )}
             <div className="flex items-center gap-3 text-sm bg-black/20 border border-border px-4 py-1.5 rounded-full">
               <span className="text-muted">Behavioral Demo Panel</span>
-              <ToggleSwitch enabled={demoMode} onToggle={() => setDemoMode(!demoMode)} />
+              <ToggleSwitch enabled={demoMode} onToggle={toggleDemoMode} />
             </div>
             <NotificationBell />
           </div>
@@ -471,18 +453,28 @@ export default function DashboardPage() {
           <div className="max-w-5xl mx-auto space-y-8">
             
             {/* Balance Hero */}
-            <div className="glass-panel rounded-2xl p-8 flex flex-col gap-2">
-              <span className="text-sm text-muted font-medium uppercase tracking-wider">Behavioral Trust Score</span>
-              <div className="text-5xl font-semibold tracking-tighter tabular-nums text-fg">
-                {score === null ? (
-                  <div className="h-[48px] w-24 bg-black/20 animate-pulse rounded-lg mt-1"></div>
-                ) : (
-                  `${score}%`
-                )}
+            <div className="glass-panel rounded-2xl p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="flex flex-col gap-2">
+                <span className="text-sm text-muted font-medium uppercase tracking-wider">Total Balance</span>
+                <div className="text-5xl font-semibold tracking-tighter tabular-nums text-fg">
+                  {balance === null ? (
+                    <div className="h-[48px] w-48 bg-black/20 animate-pulse rounded-lg mt-1"></div>
+                  ) : (
+                    `₹${balance.toLocaleString()}`
+                  )}
+                </div>
+                <div className="text-sm text-muted mt-2 flex items-center gap-1">
+                  <span className="text-accent-success font-medium">Available to spend</span>
+                </div>
               </div>
-              <div className="text-sm text-muted mt-2 flex items-center gap-1">
-                <TrendingUp className="w-4 h-4 text-accent-success" />
-                <span className="text-accent-success font-medium">{backendMetrics?.keystroke_count || 0} keys</span> · {backendMetrics?.mouse_count || 0} mouse events captured
+              <div className="flex flex-col gap-2 md:items-end">
+                <span className="text-sm text-muted font-medium uppercase tracking-wider">Pending Approvals</span>
+                <div className="text-5xl font-semibold tracking-tighter tabular-nums text-fg flex items-center gap-3">
+                  {pendingApprovals.length}
+                </div>
+                <div className="text-sm text-muted mt-2 flex items-center gap-1">
+                  <span className="text-accent-warning font-medium">Action Required</span>
+                </div>
               </div>
             </div>
 
@@ -525,164 +517,328 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
-              {/* Left Col: Transactions */}
-              <div className="lg:col-span-2 space-y-4">
-                <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">Recent Activity</h2>
-                <div className="glass-panel rounded-2xl p-2 px-6">
-                  {recentTransactions.length > 0 ? recentTransactions.map((tx, i) => (
-                    <TransactionRow key={i} name={tx.name} date={tx.date} amount={tx.amount} type={tx.type} />
-                  )) : (
-                    <div className="py-4 text-center text-xs text-muted">No transactions yet. Use Quick Transfer to create your first transaction.</div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Col: Quick Transfer Widget */}
-              <div className="space-y-4">
-                <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">Quick Transfer</h2>
-                <div className="glass-panel rounded-2xl p-6 relative overflow-hidden min-h-[300px]">
-                  
-                  {transferState === 'idle' && (
-                    <form onSubmit={handleTransfer} className="space-y-5">
-                      <div>
-                        <label className="block text-xs font-medium text-muted mb-1.5 uppercase tracking-wider">Recipient</label>
-                        <input 
-                          id="transfer-recipient"
-                          type="text" 
-                          value={recipient}
-                          onChange={(e) => setRecipient(e.target.value)}
-                          placeholder="Name, @cashtag, or email" 
-                          className="w-full bg-black/20 border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-accent-primary transition-colors placeholder:text-muted text-fg"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-muted mb-1.5 uppercase tracking-wider">Amount</label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-3 text-muted">$</span>
-                          <input 
-                            id="transfer-amount"
-                            type="text" 
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            placeholder="0.00" 
-                            className="w-full bg-black/20 border border-border rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-accent-primary transition-colors placeholder:text-muted text-fg tabular-nums"
-                            required
-                          />
-                        </div>
-                      </div>
-                      {parseFloat(amount) > 10000 && (
-                        <div>
-                          <label className="block text-xs font-medium text-muted mb-1.5 uppercase tracking-wider">
-                            Type CONFIRM to proceed
-                          </label>
-                          <input
-                            id="transfer-confirm"
-                            type="text"
-                            value={confirmText}
-                            onChange={(e) => setConfirmText(e.target.value)}
-                            placeholder="Type CONFIRM"
-                            className="w-full bg-black/20 border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-accent-primary transition-colors placeholder:text-muted text-fg font-mono tracking-widest"
-                          />
-                        </div>
-                      )}
-                      <button 
-                        type="submit"
-                        className="w-full bg-accent-primary text-white font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors"
-                      >
-                        Review Transfer
-                      </button>
-                    </form>
-                  )}
-
-                  {transferState === 'loading' && (
-                    <div className="flex flex-col items-center justify-center text-center py-6 space-y-4 animate-in fade-in h-full">
-                      <div className="w-8 h-8 border-4 border-accent-primary border-t-transparent rounded-full animate-spin"></div>
-                      <div className="text-sm text-muted">Running Cognitive Risk Assessment...</div>
-                    </div>
-                  )}
-
-                  {transferState === 'blocked' && (
-                    <div className="flex flex-col items-center justify-center text-center py-4 space-y-4 animate-in fade-in h-full">
-                      <div className="w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
-                        <ShieldAlert className="w-7 h-7 text-red-500" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-base text-fg">Transaction Blocked</h3>
-                        <p className="text-xs text-red-400 mt-2 leading-relaxed">{transferError || "Your transaction was blocked by the security system."}</p>
-                      </div>
-                      <button 
-                        onClick={() => { setTransferState('idle'); setAmount(''); setRecipient(''); setTransferError(''); }}
-                        className="w-full bg-surface-2 text-fg font-medium text-sm py-3 rounded-xl hover:bg-surface-elevated transition-colors mt-2"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  )}
-
-                  {transferState === 'mfa' && (
-                    <div className="flex flex-col items-center justify-center text-center py-4 space-y-4 animate-in fade-in h-full">
-                      <div className="w-14 h-14 rounded-full bg-accent-danger/10 flex items-center justify-center border border-accent-danger/20">
-                        <ShieldAlert className="w-7 h-7 text-accent-danger" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-base text-fg">Security Verification</h3>
-                        <p className="text-xs text-muted mt-2 leading-relaxed">
-                          {/* Gap 25: Show behavioral reason for step-up */}
-                          {behavioralScore?.risk_score
-                            ? `Behavioral confidence ${((1 - behavioralScore.risk_score) * 100).toFixed(0)}% — verification required for this transaction.`
-                            : "Unusual behavioral patterns detected. Please verify this transfer via the Step-Up MFA Challenge."}
-                        </p>
-                      </div>
-                      <button 
-                        onClick={() => router.push('/otp')}
-                        className="w-full bg-accent-danger text-white font-medium text-sm py-3 rounded-xl hover:bg-red-600 transition-colors mt-2"
-                      >
-                        Complete Verification
-                      </button>
-                      <button 
-                        onClick={() => { setTransferState('idle'); setAmount(''); setRecipient(''); setTransferError(''); }}
-                        className="w-full bg-transparent text-muted font-medium text-xs py-2 hover:text-fg transition-colors"
-                      >
-                        Cancel Transfer
-                      </button>
-                    </div>
-                  )}
-
-                  {transferState === 'success' && (
-                    <div className="flex flex-col items-center justify-center text-center py-4 space-y-3 animate-in fade-in h-full">
-                      <div className="w-14 h-14 rounded-full bg-accent-success/10 flex items-center justify-center border border-accent-success/20">
-                        <Check className="w-7 h-7 text-accent-success" />
-                      </div>
-                      <div className="text-base font-medium text-fg mt-2">Transfer Authorized</div>
-                      <p className="text-xs text-muted">
-                        {behavioralScore?.authenticity_score
-                          ? `Behavioral confidence ${((behavioralScore.authenticity_score) * 100).toFixed(0)}%`
-                          : "Behavioral profile matched."}
-                      </p>
-                      {/* Transfer behavioral assessment card */}
-                      <div className="w-full mt-2 bg-accent-success/5 border border-accent-success/15 rounded-lg p-3 text-left">
-                        <div className="text-[10px] uppercase tracking-widest font-bold text-accent-success mb-1.5">Behavioral Assessment</div>
-                        <div className="text-[11px] font-mono text-muted space-y-1">
-                          <div>Keystroke confidence: <span className="text-fg">{behavioralScore?.authenticity_score ? ((behavioralScore.authenticity_score) * 100).toFixed(0) : (liveStats.avgHold > 0 ? '88' : '--')}%</span> · No hesitation detected ✓</div>
-                          <div>Amount typed manually ✓ · Beneficiary {liveStats.copyPaste ? 'pasted ⚠' : 'typed manually ✓'}</div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-              </div>
-
+            {/* Tabs */}
+            <div className="flex items-center gap-4 border-b border-border/50">
+              <button 
+                onClick={() => setActiveTab('retail')} 
+                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'retail' ? 'border-accent-primary text-accent-primary' : 'border-transparent text-muted hover:text-fg'}`}
+              >
+                Retail Banking
+              </button>
+              <button 
+                onClick={() => setActiveTab('corporate')} 
+                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'corporate' ? 'border-accent-primary text-accent-primary' : 'border-transparent text-muted hover:text-fg'}`}
+              >
+                Corporate Approvals
+                {pendingApprovals.length > 0 && (
+                  <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold bg-accent-warning text-black rounded-full">
+                    {pendingApprovals.length}
+                  </span>
+                )}
+              </button>
+              <button 
+                onClick={() => setActiveTab('insights')} 
+                className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'insights' ? 'border-accent-primary text-accent-primary' : 'border-transparent text-muted hover:text-fg'}`}
+              >
+                Spending Insights
+              </button>
             </div>
+
+            {activeTab === 'retail' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
+                {/* Left Col: Transactions */}
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">Recent Activity</h2>
+                    <a href="/dashboard/statements" className="text-xs text-accent-primary hover:text-blue-400 hover:underline">View All</a>
+                  </div>
+                  <div className="glass-panel rounded-2xl p-2 px-6">
+                    {recentTransactions.length > 0 ? recentTransactions.map((tx, i) => (
+                      <TransactionRow key={i} name={tx.name} date={tx.date} amount={tx.amount} type={tx.type} />
+                    )) : (
+                      <div className="py-4 text-center text-xs text-muted">No transactions yet. Use Quick Transfer to create your first transaction.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Col: Quick Transfer Widget */}
+                <div className="space-y-4">
+                  <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">Quick Transfer</h2>
+                  <div className="glass-panel rounded-2xl p-6 relative overflow-hidden min-h-[300px]">
+                    
+                    {transferState === 'idle' && (
+                      <form onSubmit={handleTransfer} className="space-y-5">
+                        <div>
+                          <label className="block text-xs font-medium text-muted mb-1.5 uppercase tracking-wider">Recipient</label>
+                          <select
+                            id="transfer-recipient"
+                            value={recipient}
+                            onChange={(e) => setRecipient(e.target.value)}
+                            className="w-full bg-black/20 border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-accent-primary transition-colors text-fg"
+                            required
+                          >
+                            <option value="">Select beneficiary</option>
+                            {beneficiaries.map(b => (
+                              <option key={b.id} value={b.id}>{b.name} — {b.account}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-muted mb-1.5 uppercase tracking-wider">Amount</label>
+                          <div className="relative">
+                            <span className="absolute left-4 top-3 text-muted">₹</span>
+                            <input 
+                              id="transfer-amount"
+                              type="text" 
+                              value={amount}
+                              onChange={(e) => setAmount(e.target.value)}
+                              placeholder="0.00" 
+                              className="w-full bg-black/20 border border-border rounded-xl pl-8 pr-4 py-3 text-sm outline-none focus:border-accent-primary transition-colors placeholder:text-muted text-fg tabular-nums"
+                              required
+                            />
+                          </div>
+                        </div>
+                        {parseFloat(amount) > 10000 && (
+                          <div>
+                            <label className="block text-xs font-medium text-muted mb-1.5 uppercase tracking-wider">
+                              Type CONFIRM to proceed
+                            </label>
+                            <input
+                              id="transfer-confirm"
+                              type="text"
+                              value={confirmText}
+                              onChange={(e) => setConfirmText(e.target.value)}
+                              placeholder="Type CONFIRM"
+                              className="w-full bg-black/20 border border-border rounded-xl px-4 py-3 text-sm outline-none focus:border-accent-primary transition-colors placeholder:text-muted text-fg font-mono tracking-widest"
+                            />
+                          </div>
+                        )}
+                        <button 
+                          type="submit"
+                          className="w-full bg-accent-primary text-white font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors"
+                        >
+                          Review Transfer
+                        </button>
+                      </form>
+                    )}
+
+                    {transferState === 'loading' && (
+                      <div className="flex flex-col items-center justify-center text-center py-6 space-y-4 animate-in fade-in h-full">
+                        <div className="w-8 h-8 border-4 border-accent-primary border-t-transparent rounded-full animate-spin"></div>
+                        <div className="text-sm text-muted">Running Cognitive Risk Assessment...</div>
+                      </div>
+                    )}
+
+                    {transferState === 'blocked' && (
+                      <div className="flex flex-col items-center justify-center text-center py-4 space-y-4 animate-in fade-in h-full">
+                        <div className="w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
+                          <ShieldAlert className="w-7 h-7 text-red-500" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-base text-fg">Transaction Blocked</h3>
+                          <p className="text-xs text-red-400 mt-2 leading-relaxed">{transferError || "Your transaction was blocked by the security system."}</p>
+                        </div>
+                        <button 
+                          onClick={() => { setTransferState('idle'); setAmount(''); setRecipient(''); setTransferError(''); }}
+                          className="w-full bg-surface-2 text-fg font-medium text-sm py-3 rounded-xl hover:bg-surface-elevated transition-colors mt-2"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
+
+                    {transferState === 'mfa' && (
+                      <div className="flex flex-col items-center justify-center text-center py-4 space-y-4 animate-in fade-in h-full">
+                        <div className="w-14 h-14 rounded-full bg-accent-danger/10 flex items-center justify-center border border-accent-danger/20">
+                          <ShieldAlert className="w-7 h-7 text-accent-danger" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-base text-fg">Security Verification</h3>
+                          <p className="text-xs text-muted mt-2 leading-relaxed">
+                            {/* Gap 25: Show behavioral reason for step-up */}
+                            {behavioralScore?.risk_score
+                              ? `Behavioral confidence ${((1 - behavioralScore.risk_score) * 100).toFixed(0)}% — verification required for this transaction.`
+                              : "Unusual behavioral patterns detected. Please verify this transfer via the Step-Up MFA Challenge."}
+                          </p>
+                        </div>
+                        <button 
+                          onClick={() => router.push('/otp')}
+                          className="w-full bg-accent-danger text-white font-medium text-sm py-3 rounded-xl hover:bg-red-600 transition-colors mt-2"
+                        >
+                          Complete Verification
+                        </button>
+                        <button 
+                          onClick={() => { setTransferState('idle'); setAmount(''); setRecipient(''); setTransferError(''); }}
+                          className="w-full bg-transparent text-muted font-medium text-xs py-2 hover:text-fg transition-colors"
+                        >
+                          Cancel Transfer
+                        </button>
+                      </div>
+                    )}
+
+                    {transferState === 'success' && (
+                      <div className="flex flex-col items-center justify-center text-center py-4 space-y-3 animate-in fade-in h-full">
+                        <div className="w-14 h-14 rounded-full bg-accent-success/10 flex items-center justify-center border border-accent-success/20">
+                          <Check className="w-7 h-7 text-accent-success" />
+                        </div>
+                        <div className="text-base font-medium text-fg mt-2">Transfer Authorized</div>
+                        <p className="text-xs text-muted">
+                          {behavioralScore?.authenticity_score
+                            ? `Behavioral confidence ${((behavioralScore.authenticity_score) * 100).toFixed(0)}%`
+                            : "Behavioral profile matched."}
+                        </p>
+                        {/* Transfer behavioral assessment card */}
+                        <div className="w-full mt-2 bg-accent-success/5 border border-accent-success/15 rounded-lg p-3 text-left">
+                          <div className="text-[10px] uppercase tracking-widest font-bold text-accent-success mb-1.5">Behavioral Assessment</div>
+                          <div className="text-[11px] font-mono text-muted space-y-1">
+                            <div>Keystroke confidence: <span className="text-fg">{behavioralScore?.authenticity_score ? ((behavioralScore.authenticity_score) * 100).toFixed(0) : (liveStats.avgHold > 0 ? '88' : '--')}%</span> · No hesitation detected ✓</div>
+                            <div>Amount typed manually ✓ · Beneficiary {liveStats.copyPaste ? 'pasted ⚠' : 'typed manually ✓'}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'corporate' && (
+              <div className="space-y-4 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">Maker-Checker Dual Control</h2>
+                  <span className="text-xs text-muted">Powered by Siamese Network Behavioral Verification</span>
+                </div>
+                <div className="glass-panel rounded-2xl p-6">
+                  {pendingApprovals.length > 0 ? (
+                    <div className="space-y-4">
+                      {pendingApprovals.map((approval) => (
+                        <div key={approval.txn_id} className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-border">
+                          <div>
+                            <div className="text-sm font-medium text-fg">Corporate Transfer to {approval.beneficiary}</div>
+                            <div className="text-xs text-muted mt-1">Maker ID: {approval.maker_id} • Amount: <span className="text-accent-primary font-mono tabular-nums">₹{parseFloat(approval.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                            {approvalState[approval.txn_id]?.startsWith('error') && (
+                              <div className="text-xs text-red-400 mt-2 bg-red-500/10 px-2 py-1 rounded inline-block border border-red-500/20">
+                                ⚠ {approvalState[approval.txn_id].replace('error: ', '')}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            {approvalState[approval.txn_id] === 'loading' ? (
+                              <div className="px-6 py-2 bg-surface-elevated rounded-lg flex items-center justify-center">
+                                <div className="w-5 h-5 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+                              </div>
+                            ) : approvalState[approval.txn_id] === 'success' ? (
+                              <div className="px-6 py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium text-sm rounded-lg flex items-center gap-2">
+                                <Check className="w-4 h-4" /> Approved
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleCorporateApprove(approval.txn_id)}
+                                className="px-6 py-2 bg-accent-primary hover:bg-blue-600 transition-colors text-white font-medium text-sm rounded-lg"
+                              >
+                                Approve
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
+                      <div className="w-12 h-12 rounded-full bg-surface-2 flex items-center justify-center">
+                        <Check className="w-6 h-6 text-muted" />
+                      </div>
+                      <div className="text-fg font-medium">No Pending Approvals</div>
+                      <div className="text-xs text-muted max-w-sm">
+                        You have zero corporate transactions awaiting your checker approval. 
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'insights' && (
+              <div className="space-y-4 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">Financial Insights</h2>
+                  <span className="text-xs text-muted">AI-Powered Cash Flow Forecasting</span>
+                </div>
+                <div className="glass-panel rounded-2xl p-8 min-h-[400px] flex flex-col">
+                  
+                  <div className="mb-8">
+                    <div className="text-sm font-medium text-muted">Total Monthly Spend</div>
+                    <div className="text-3xl font-bold text-fg flex items-end gap-3 mt-1">
+                      ₹42,850.00
+                      <span className="text-xs text-accent-success bg-accent-success/10 px-2 py-0.5 rounded-full mb-1 font-medium">↓ 12% vs last month</span>
+                    </div>
+                  </div>
+
+                  {/* Pure CSS Animated Bar Chart */}
+                  <div className="flex-1 flex items-end justify-between gap-2 mt-auto pt-8 border-b border-border/50 pb-4 relative">
+                    {/* Y-axis grid lines */}
+                    <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pb-4">
+                      <div className="border-t border-white/5 w-full"></div>
+                      <div className="border-t border-white/5 w-full"></div>
+                      <div className="border-t border-white/5 w-full"></div>
+                      <div className="border-t border-white/5 w-full"></div>
+                    </div>
+
+                    {[
+                      { day: 'Mon', value: 35 },
+                      { day: 'Tue', value: 60 },
+                      { day: 'Wed', value: 20 },
+                      { day: 'Thu', value: 85 },
+                      { day: 'Fri', value: 45 },
+                      { day: 'Sat', value: 95 },
+                      { day: 'Sun', value: 30 }
+                    ].map((d, i) => (
+                      <div key={d.day} className="flex flex-col items-center flex-1 z-10 group cursor-pointer">
+                        <div className="w-full relative flex justify-center items-end h-[150px]">
+                          {/* Tooltip */}
+                          <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-elevated text-xs px-2 py-1 rounded text-fg border border-border whitespace-nowrap z-20 shadow-xl pointer-events-none">
+                            ₹{(d.value * 120).toLocaleString()}
+                          </div>
+                          
+                          {/* Animated Bar */}
+                          <motion.div 
+                            initial={{ height: 0 }}
+                            animate={{ height: `${d.value}%` }}
+                            transition={{ duration: 0.8, delay: i * 0.1, type: "spring", bounce: 0.3 }}
+                            className={`w-full max-w-[40px] rounded-t-lg relative overflow-hidden group-hover:brightness-110 transition-all ${
+                              d.day === 'Sat' ? 'bg-gradient-to-t from-accent-primary to-blue-400' : 'bg-surface-2 border border-border/50 border-b-0'
+                            }`}
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/10"></div>
+                          </motion.div>
+                        </div>
+                        <div className={`text-[10px] uppercase font-bold mt-3 ${d.day === 'Sat' ? 'text-accent-primary' : 'text-muted'}`}>{d.day}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ML Insight Pill */}
+                  <div className="mt-8 flex items-center gap-3 bg-accent-primary/10 border border-accent-primary/20 p-4 rounded-xl">
+                    <div className="w-8 h-8 rounded-full bg-accent-primary/20 flex items-center justify-center shrink-0">
+                      <Activity className="w-4 h-4 text-accent-primary" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-fg">Behavioral Spending Anomaly Detected</div>
+                      <div className="text-[11px] text-muted mt-0.5">Your Saturday spending on Dining exceeded your usual weekend profile by 40%.</div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
 
         {/* Always-Visible Behavioral Signal Panel */}
         {demoMode && (
-          <div className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 w-[340px] glass-panel-glow rounded-2xl p-5 z-50 flex flex-col gap-4 shadow-2xl max-h-[calc(100vh-120px)] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+          <div className="fixed bottom-4 right-4 w-[calc(100vw-32px)] sm:bottom-8 sm:right-8 sm:w-[340px] glass-panel-glow rounded-2xl p-5 z-50 flex flex-col gap-4 shadow-2xl max-h-[calc(100vh-120px)] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-accent-primary" />
@@ -690,7 +846,7 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-center gap-3">
                 <div className={`w-2 h-2 rounded-full ${score !== null && score > 75 ? 'bg-accent-success' : 'bg-accent-danger'} shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse`}></div>
-                <button onClick={() => setDemoMode(false)} className="text-muted hover:text-white transition-colors" title="Hide Panel">×</button>
+                <button onClick={toggleDemoMode} className="text-muted hover:text-white transition-colors" title="Hide Panel">×</button>
               </div>
             </div>
 
@@ -765,28 +921,31 @@ export default function DashboardPage() {
                   {[
                     { label: 'Cognitive', value: backendMetrics.ensemble.cognitive_analysis?.cognitive_risk || 0 },
                     { label: 'Duress', value: backendMetrics.ensemble.duress_score || 0 },
-                    { label: 'Liveness', value: 1 - (backendMetrics.ensemble.liveness_score ?? 1), invert: true },
+                    { label: 'Liveness', value: backendMetrics.ensemble.liveness_score ?? 1, invert: true },
                     { label: 'Challenge', value: backendMetrics.ensemble.challenge_risk || 0 },
                     { label: 'Device', value: backendMetrics.ensemble.device_risk || 0 },
                     { label: 'Replay', value: backendMetrics.ensemble.replay_risk || 0 },
                     { label: 'Drift', value: backendMetrics.ensemble.drift_risk || 0 },
-                    { label: 'Match', value: 1 - (backendMetrics.ensemble.weighted_match_score || 0), invert: true },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="flex items-center gap-2">
-                      <span className="text-[9px] text-muted w-14 shrink-0">{label}</span>
-                      <div className="flex-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            value > 0.6 ? 'bg-red-500' : value > 0.3 ? 'bg-amber-500' : 'bg-emerald-500'
-                          }`}
-                          style={{ width: `${Math.max(2, Math.min(100, value * 100))}%` }}
-                        />
+                    { label: 'Match', value: backendMetrics.ensemble.weighted_match_score || 0, invert: true },
+                  ].map(({ label, value, invert }) => {
+                    const riskValue = invert ? 1 - value : value;
+                    return (
+                      <div key={label} className="flex items-center gap-2">
+                        <span className="text-[9px] text-muted w-14 shrink-0">{label}</span>
+                        <div className="flex-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              riskValue > 0.6 ? 'bg-red-500' : riskValue > 0.3 ? 'bg-amber-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${Math.max(2, Math.min(100, riskValue * 100))}%` }}
+                          />
+                        </div>
+                        <span className={`text-[9px] font-mono w-8 text-right ${
+                          riskValue > 0.6 ? 'text-red-400' : riskValue > 0.3 ? 'text-amber-400' : 'text-emerald-400'
+                        }`}>{(value * 100).toFixed(0)}%</span>
                       </div>
-                      <span className={`text-[9px] font-mono w-8 text-right ${
-                        value > 0.6 ? 'text-red-400' : value > 0.3 ? 'text-amber-400' : 'text-emerald-400'
-                      }`}>{(value * 100).toFixed(0)}%</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {/* Ensemble risk summary */}
                 <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
@@ -908,13 +1067,20 @@ export default function DashboardPage() {
             {cognitiveProfile && (
               <div className="pt-3 border-t border-border">
                 <div className="text-[9px] text-muted uppercase tracking-wider mb-2">Cognitive Profile</div>
-                <div className="grid grid-cols-2 gap-2 text-[9px] font-mono">
-                  {Object.entries(cognitiveProfile).slice(0, 4).map(([k, v]) => (
-                    <div key={k}>
-                      <span className="text-muted">{k.replace(/_/g, ' ')}: </span>
-                      <span className="text-fg">{typeof v === 'number' ? (v as number).toFixed(2) : String(v)}</span>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-1 gap-2 text-[9px] font-mono">
+                  {Object.entries(cognitiveProfile).slice(0, 4).map(([k, v]) => {
+                    const formattedKey = k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    let displayValue = typeof v === 'number' ? v.toFixed(2) : String(v);
+                    let unit = "";
+                    if (k.includes("time") || k.includes("duration")) { displayValue = (v as number).toFixed(0); unit = "ms"; }
+                    if (k.includes("velocity")) { displayValue = (v as number).toFixed(2); unit = "px/ms"; }
+                    return (
+                      <div key={k} className="flex justify-between items-center bg-black/10 px-2 py-1 rounded">
+                        <span className="text-muted">{formattedKey}</span>
+                        <span className="text-fg">{displayValue}{unit}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

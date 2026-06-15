@@ -8,6 +8,7 @@ import {
   CheckCircle2, XCircle, FileCheck, UserCog, Wifi, HeartPulse
 } from "lucide-react";
 import { apiClient, getCsrfToken } from "@/lib/api-client";
+import { getSessionId } from "@/lib/auth-utils";
 
 
 
@@ -59,7 +60,7 @@ export default function AdminPage() {
 
   const fetchAuditEvidence = useCallback(async () => {
     try {
-      const sid = document.cookie?.match(/session_id=([^;]+)/)?.[1];
+      const sid = getSessionId();
       if (!sid) return;
       const res = await fetch(`/api/v1/admin/audit-evidence?session_id=${sid}`, {
         headers: { "X-CSRF-TOKEN": getCsrfToken() }
@@ -70,7 +71,7 @@ export default function AdminPage() {
 
   const verifyAuditChain = async () => {
     try {
-      const sid = document.cookie?.match(/session_id=([^;]+)/)?.[1];
+      const sid = getSessionId();
       if (!sid) return;
       const res = await fetch(`/api/v1/admin/audit-evidence/verify?session_id=${sid}`, {
         headers: { "X-CSRF-TOKEN": getCsrfToken() }
@@ -168,7 +169,7 @@ export default function AdminPage() {
         const res = await fetch("/api/v1/admin/dashboard-stats", {
           headers: {
             "Content-Type": "application/json",
-            "X-CSRF-TOKEN": document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || ""
+            "X-CSRF-TOKEN": getCsrfToken()
           }
         });
         if (res.ok) {
@@ -184,7 +185,7 @@ export default function AdminPage() {
     
     const fetchLiveSessions = async () => {
       try {
-        const csrf = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+        const csrf = getCsrfToken();
         let res = await fetch("/api/v1/admin/live-sessions", { headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrf } });
         const data = res.ok ? await res.json() : null;
         
@@ -216,7 +217,7 @@ export default function AdminPage() {
 
     const fetchLiveMetrics = async () => {
       try {
-        const csrf = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+        const csrf = getCsrfToken();
         const res = await fetch("/api/v1/session/metrics", { headers: { "X-CSRF-TOKEN": csrf } });
         if (res.ok) {
           const data = await res.json();
@@ -271,7 +272,7 @@ export default function AdminPage() {
       const res = await fetch("/api/v1/compliance/report?type=rbi", {
         headers: {
           "Content-Type": "application/json",
-          "X-CSRF-TOKEN": document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || ""
+          "X-CSRF-TOKEN": getCsrfToken()
         }
       });
       

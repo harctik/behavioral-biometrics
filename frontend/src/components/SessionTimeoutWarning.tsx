@@ -1,4 +1,6 @@
 "use client";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
@@ -23,7 +25,11 @@ export function SessionTimeoutWarning() {
   const pathname = usePathname();
   const [showWarning, setShowWarning] = useState(false);
   const [timeLeft, setTimeLeft] = useState(WARNING_MINUTES * 60);
-  const lastActivityRef = useRef<number>(typeof Date !== "undefined" ? Date.now() : 0);
+  const lastActivityRef = useRef<number>(0);
+
+  useEffect(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
   const warningStartTimeRef = useRef<number>(0);
   const [challengeText, setChallengeText] = useState("");
   const [localConfidence, setLocalConfidence] = useState(0);
@@ -95,7 +101,7 @@ export function SessionTimeoutWarning() {
       
       if (challengeKs.length >= 7) {
         try {
-          const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+          const csrfToken = getCsrfToken();
           
           // Send isolated challenge keystrokes to backend for evaluation
           const isolatedData = { ...snap, keystroke_events: challengeKs, type: "challenge_only" };

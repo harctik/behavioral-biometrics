@@ -180,9 +180,9 @@ def create_app(env: str = "development"):
                 "In multi-worker deployments, rate limits are per-process. "
                 "Set REDIS_URL or RATELIMIT_STORAGE_URI for shared counters."
             )
-    limiter._storage_uri = "memory://"
-    app.config["RATELIMIT_STORAGE_URI"] = "memory://"
-    app.config["RATELIMIT_STORAGE_URL"] = "memory://"
+    limiter._storage_uri = storage_uri
+    app.config["RATELIMIT_STORAGE_URI"] = storage_uri
+    app.config["RATELIMIT_STORAGE_URL"] = storage_uri
     limiter.init_app(app)
 
     # ── Flask-RESTX API (OpenAPI) ───────────────────────────────────────────
@@ -212,6 +212,7 @@ def create_app(env: str = "development"):
         beneficiaries_ns,
         investments_ns,
         cards_ns,
+        ml_ns,
     )
 
     api.add_namespace(auth_ns, path="")
@@ -228,6 +229,7 @@ def create_app(env: str = "development"):
     api.add_namespace(beneficiaries_ns, path="/beneficiaries")
     api.add_namespace(investments_ns, path="/investments")
     api.add_namespace(cards_ns, path="/cards")
+    api.add_namespace(ml_ns, path="/ml")
 
     # ── ErrorHandler middleware (correlation IDs, structured exceptions) ─────
     ErrorHandler(app, debug=app.debug)
@@ -482,6 +484,22 @@ def create_app(env: str = "development"):
     @app.errorhandler(404)
     def not_found(error):
         return make_error_response("NOT_FOUND", "Resource not found", status=404)
+
+    @app.errorhandler(405)
+    def method_not_allowed(error):
+        return make_error_response("METHOD_NOT_ALLOWED", "Method not allowed for this endpoint", status=405)
+
+    @app.errorhandler(422)
+    def unprocessable_entity(error):
+        return make_error_response("UNPROCESSABLE_ENTITY", "Unprocessable entity", status=422)
+
+    @app.errorhandler(429)
+    def too_many_requests(error):
+        from flask import jsonify, make_response
+        data, status = make_error_response("TOO_MANY_REQUESTS", "Rate limit exceeded", status=429)
+        resp = make_response(jsonify(data), status)
+        resp.headers["Retry-After"] = str(getattr(error, "retry_after", 60) or 60)
+        return resp
 
     @app.errorhandler(500)
     def internal_server_error(error):

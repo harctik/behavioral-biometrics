@@ -1,4 +1,6 @@
 "use client";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -26,7 +28,7 @@ function TrustIndicator() {
 
     const fetchScore = async () => {
       try {
-        const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1];
+        const csrfToken = getCsrfToken();
         if (!csrfToken) return;
 
         const res = await fetch("/api/v1/session/metrics", {

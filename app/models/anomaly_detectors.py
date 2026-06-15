@@ -1,12 +1,13 @@
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
 import logging
+import joblib
 logger = logging.getLogger(__name__)
 
 from app.models.base import FeatureConsistencyMixin
 from sklearn.svm import OneClassSVM
 from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 try:
     import tensorflow as tf
     from tensorflow.keras.models import Model, Sequential

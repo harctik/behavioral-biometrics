@@ -13,13 +13,14 @@ from flask_jwt_extended import (
     jwt_required,
     set_access_cookies,
 )
-from pydantic import (
-    BaseModel,
-    EmailStr,
-    ValidationError,
-    field_validator,
-    model_validator,
-    StringConstraints,
+from pydantic import ValidationError
+from app.schemas.auth_schemas import (
+    RegisterSchema,
+    LoginSchema,
+    ForgotPasswordSchema,
+    ResetPasswordSchema,
+    MFAVerifySchema,
+    VerifyEmailSchema
 )
 import re
 import hashlib
@@ -115,76 +116,6 @@ auth_error = auth_ns.model(
 )
 
 
-# ── Pydantic validation schemas ─────────────────────────────────────────────
-
-
-class RegisterSchema(BaseModel):
-    username: Annotated[str, StringConstraints(min_length=3, max_length=50)]
-    email: EmailStr
-    password: Annotated[str, StringConstraints(min_length=8)]
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Password must contain a lowercase letter")
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain an uppercase letter")
-        if not re.search(r"\d", v):
-            raise ValueError("Password must contain a digit")
-        if not re.search(r"[@$!%*?&]", v):
-            raise ValueError("Password must contain a special character")
-        return v
-
-
-class LoginSchema(BaseModel):
-    username: str
-    password: str
-    keystroke_data: list = []
-    device_fingerprint: dict = {}
-    behavioral_data: dict = {}
-    device_id: str = ""
-    trust_device: bool = False
-
-
-class ForgotPasswordSchema(BaseModel):
-    username: Optional[str] = None
-    email: Optional[EmailStr] = None
-
-    @model_validator(mode="after")
-    def require_at_least_one(self) -> "ForgotPasswordSchema":
-        if not self.username and not self.email:
-            raise ValueError("Must provide at least one of 'username' or 'email'")
-        return self
-
-
-class ResetPasswordSchema(BaseModel):
-    token: str
-    new_password: Annotated[str, StringConstraints(min_length=8)]
-
-    @field_validator("new_password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Password must contain a lowercase letter")
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain an uppercase letter")
-        if not re.search(r"\d", v):
-            raise ValueError("Password must contain a digit")
-        if not re.search(r"[@$!%*?&]", v):
-            raise ValueError("Password must contain a special character")
-        return v
-
-
-class MFAVerifySchema(BaseModel):
-    session_id: str
-    otp: Annotated[str, StringConstraints(min_length=6, max_length=6)]
-
-
-class VerifyEmailSchema(BaseModel):
-    token: str
-
-
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 
@@ -229,19 +160,31 @@ class Register(Resource):
         if redis_client:
             redis_client.setex(f"email_verify:{verify_token_hash}", 86400, str(user_id))
 
-        if current_app.config.get("TESTING"):
+        # Auto-verify email when no real mail backend is configured (dev mode)
+        # or when running in test mode — users shouldn't be blocked from
+        # logging in when verification emails can't actually be delivered.
+        mail_backend = current_app.config.get("MAIL_BACKEND", "")
+        mail_server = current_app.config.get("MAIL_SERVER", "localhost")
+        mail_svc = current_app.extensions.get("mail_service")
+        has_real_mail = (
+            mail_backend in ("resend", "ses", "smtp")
+            and mail_server not in ("", "localhost")
+        ) or (mail_svc is not None and getattr(mail_svc, "backend", "console") not in ("console", ""))
+
+        if current_app.config.get("TESTING") or not has_real_mail:
             db.set_email_verified(user_id)
+            logger.info("Auto-verified email for user %d (no mail backend configured)", user_id)
 
         try:
-            from app.mail import MailService
-
-            if "mail_service" in current_app.extensions:
-                mail_service: MailService = current_app.extensions["mail_service"]
-                mail_service.send_email_verification(
-                    to=data.email, username=data.username, verify_token=verify_token
-                )
+            from app.tasks import send_email_async
+            # Dispatch asynchronously
+            send_email_async.delay(
+                to_email=data.email, 
+                template_name="verification", 
+                context={"username": data.username, "verify_token": verify_token}
+            )
         except Exception as exc:
-            logger.error("Failed to send verification email: %s", exc)
+            logger.error("Failed to enqueue verification email task: %s", exc)
 
         # ── Session 0: Initialize behavioral profile from signup ─────────
         enrollment_result = None
@@ -311,35 +254,7 @@ class Register(Resource):
         }, 200
 
 
-def _is_known_device(db, user_id: int, device_id: str) -> bool:
-    """
-    Check if this device_id has successfully logged in before
-    for this user. Returns False for new/unknown devices.
-    """
-    if not device_id:
-        return False
-    from datetime import datetime, timedelta, timezone
-
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-    try:
-        with db.get_connection() as conn:
-            query = resolve_query(
-                db,
-                """
-                SELECT session_id FROM sessions
-                WHERE user_id = :param
-                  AND device_id = :param
-                  AND created_at < :param
-                LIMIT 1
-                """,
-            )
-            rows = conn.execute(
-                query,
-                (user_id, device_id, cutoff.isoformat()),
-            ).fetchall()
-        return len(rows) > 0
-    except Exception:
-        return False  # safe default: treat unknown as new
+from app.services.auth_service import AuthService  # safe default: treat unknown as new
 
 
 @auth_ns.route("/login")
@@ -355,6 +270,20 @@ class Login(Resource):
         except ValidationError as e:
             return make_error_response("MISSING_CREDENTIALS", str(e), status=400)
 
+        ip_address = request.remote_addr or "127.0.0.1"
+
+        # 1. Credential Stuffing Check
+        stuffing_ok, stuffing_msg = AuthService.check_credential_stuffing(ip_address)
+        if not stuffing_ok:
+            return make_error_response("RATE_LIMIT_EXCEEDED", stuffing_msg, status=429)
+            
+        # 2. Account Lockout Check
+        lockout_ok, remaining, lockout_until = AuthService.check_account_lockout(data.username)
+        if not lockout_ok:
+            resp, status = make_error_response("ACCOUNT_LOCKED", "Account locked due to too many failed attempts.", status=423)
+            resp["error"]["details"] = {"lockout_until": lockout_until, "remaining_attempts": 0}
+            return resp, status
+
         db = get_db()
         user = db.authenticate_user(data.username, data.password)
         if not user:
@@ -367,21 +296,38 @@ class Login(Resource):
                 metadata={"username": data.username, "ip": request.remote_addr},
                 retention_tag="security",
             )
-            return make_error_response(
-                "INVALID_CREDENTIALS", "Invalid credentials", status=401
-            )
+            AuthService.increment_credential_stuffing(ip_address)
+            rem, until = AuthService.increment_account_lockout(data.username)
+            resp, status = make_error_response("INVALID_CREDENTIALS", "Invalid credentials", status=401)
+            resp["error"]["details"] = {"remaining_attempts": rem, "lockout_until": until}
+            return resp, status
+
+        AuthService.reset_account_lockout(data.username)
 
         if not user.get("email_verified", False):
-            logger.warning(
-                "Failed login attempt - email not verified: %s", data.username
-            )
-            return make_error_response(
-                "EMAIL_NOT_VERIFIED",
-                "Please verify your email address before logging in",
-                status=403,
-            )
+            # Auto-verify at login time when no real mail backend is configured
+            # (handles users who registered before the registration-time auto-verify fix)
+            mail_svc = current_app.extensions.get("mail_service")
+            mail_backend = current_app.config.get("MAIL_BACKEND", "")
+            mail_server = current_app.config.get("MAIL_SERVER", "localhost")
+            has_real_mail = (
+                mail_backend in ("resend", "ses", "smtp")
+                and mail_server not in ("", "localhost")
+            ) or (mail_svc is not None and getattr(mail_svc, "backend", "console") not in ("console", ""))
 
-        ip_address = request.remote_addr or "127.0.0.1"
+            if not has_real_mail:
+                db.set_email_verified(user["user_id"])
+                logger.info("Auto-verified email at login for user %s (no mail backend)", data.username)
+            else:
+                logger.warning(
+                    "Failed login attempt - email not verified: %s", data.username
+                )
+                return make_error_response(
+                    "EMAIL_NOT_VERIFIED",
+                    "Please verify your email address before logging in",
+                    status=403,
+                )
+
         user_agent = request.headers.get("User-Agent", "")
         device_id = (
             request.headers.get("X-Device-Id")
@@ -492,7 +438,7 @@ class Login(Resource):
             logger.error("Passive enrollment update at login failed", exc_info=True)
 
         # Check if this is a known device for this user
-        device_known = _is_known_device(db, user["user_id"], device_id)
+        device_known = AuthService.is_known_device(db, user["user_id"], device_id)
         device_new = not device_known
 
         if device_new:

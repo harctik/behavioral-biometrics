@@ -1,12 +1,17 @@
 "use client";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { getCollector, DeviceFingerprint } from "@/lib/behavioral-collector";
 
 // Export for sensitive pages to call immediately
 export async function flushBehavioralDataNow() {
   if (typeof document === "undefined" || !document.cookie.includes("csrf_access_token=")) return;
-  const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+  const csrfToken = getCsrfToken();
+  const sessionId = getSessionId();
+  if (!sessionId) return; // Can't send behavioral data without a session
   const collector = getCollector();
   const payload = await collector.flush("session");
   const hasData = payload.keystroke_events.length > 0 || payload.mouse_events.length > 0 || payload.touch_events.length > 0;
@@ -17,6 +22,7 @@ export async function flushBehavioralDataNow() {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
       body: JSON.stringify({
+        session_id: sessionId,
         type: "extended",
         event_count: payload.keystroke_events.length + payload.mouse_events.length + payload.touch_events.length,
         keystroke_events: payload.keystroke_events.slice(0, 200),
@@ -44,6 +50,17 @@ export function BehavioralProvider() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const failureCountRef = useRef(0);
   const lastFingerprintRef = useRef<DeviceFingerprint | null>(null);
+  const pathname = usePathname();
+  const prevPathnameRef = useRef(pathname);
+
+  // Flush behavioral data on route transitions (Gap 97)
+  useEffect(() => {
+    if (prevPathnameRef.current !== pathname && prevPathnameRef.current) {
+      // Route changed — flush collected data for the previous page
+      flushBehavioralDataNow().catch(console.error);
+    }
+    prevPathnameRef.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     const collector = getCollector();
@@ -54,19 +71,27 @@ export function BehavioralProvider() {
         scheduleNext(10_000);
         return;
       }
-      const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+      const csrfToken = getCsrfToken();
 
-      // Device Fingerprint diffing
+      // Read session_id from cookie for backend validation
+      const sessionId = getSessionId();
+      if (!sessionId) {
+        // No session yet (e.g. on login page) — skip behavioral flush
+        scheduleNext(10_000);
+        return;
+      }
+
+      // Device Fingerprint diffing — endpoint may not exist, fail silently
       const currentFp = collector.deviceFingerprint;
       if (currentFp && diffFingerprint(lastFingerprintRef.current, currentFp)) {
         try {
-          await fetch("/api/v1/behavioral/device-intel", {
+          const fpRes = await fetch("/api/v1/behavioral/device-intel", {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
-            body: JSON.stringify(currentFp),
+            body: JSON.stringify({ ...currentFp, session_id: sessionId }),
           });
-          lastFingerprintRef.current = { ...currentFp };
-        } catch {}
+          if (fpRes.ok) lastFingerprintRef.current = { ...currentFp };
+        } catch { /* device-intel is optional */ }
       }
 
       const payload = await collector.flush("session");
@@ -82,6 +107,7 @@ export function BehavioralProvider() {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": csrfToken },
           body: JSON.stringify({
+            session_id: sessionId,
             type: "extended",
             event_count: payload.keystroke_events.length + payload.mouse_events.length + payload.touch_events.length,
             keystroke_events: payload.keystroke_events.slice(0, 200),

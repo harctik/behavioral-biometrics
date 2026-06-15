@@ -7,6 +7,7 @@ import time
 import csv
 import io
 import logging
+import threading
 
 from app.extensions import get_db, limiter, get_redis
 from app.api.helpers import (
@@ -21,6 +22,31 @@ from app.models.cognitive_engine import run_cognitive_analysis
 from app.ml_ensemble import score_with_ensemble
 
 logger = logging.getLogger(__name__)
+
+# ── In-memory TTL cache for ensemble scores (avoids re-running every 2s poll) ─
+_ensemble_cache: dict = {}  # {session_id: {"data": ..., "ts": float}}
+_ensemble_cache_lock = threading.Lock()
+_ENSEMBLE_CACHE_TTL = 30  # seconds
+
+
+def _get_cached_ensemble(session_id: str):
+    """Get ensemble result from in-memory cache if fresh enough."""
+    with _ensemble_cache_lock:
+        entry = _ensemble_cache.get(session_id)
+        if entry and (time.time() - entry["ts"]) < _ENSEMBLE_CACHE_TTL:
+            return entry["data"]
+    return None
+
+
+def _set_cached_ensemble(session_id: str, data: dict):
+    """Store ensemble result in in-memory cache."""
+    with _ensemble_cache_lock:
+        _ensemble_cache[session_id] = {"data": data, "ts": time.time()}
+        # Evict stale entries to prevent memory leak (keep last 100)
+        if len(_ensemble_cache) > 100:
+            oldest = sorted(_ensemble_cache, key=lambda k: _ensemble_cache[k]["ts"])
+            for k in oldest[: len(oldest) - 100]:
+                del _ensemble_cache[k]
 
 session_ns = Namespace(
     "session", description="Session management and behavioral monitoring"
@@ -185,38 +211,92 @@ def _build_session_metrics(session_id: str):
         risk_reasons.append("no anomaly indicators detected")
 
     # ── ML Ensemble (non-blocking, best-effort) ────────────────────────────
+    # Strategy: in-memory cache → Redis → SQLite fallback → run ensemble
     ensemble_data = {}
-    try:
-        rc = get_redis()
-        if rc and session_id:
-            import json as _json
-            cached_score = rc.get(f"ensemble_score:{session_id}")
-            if cached_score:
-                ensemble_data = _json.loads(cached_score)
-            else:
-                # Load the latest stored behavioral features from Redis cache
-                stored_features = {}
-                cached_features = rc.get(f"behavioral_features:{session_id}")
-                if cached_features:
-                    stored_features = _json.loads(cached_features)
+    stored_features = {}
 
-                # Load user baseline from passive enrollment profile
+    try:
+        # 1. Check in-memory TTL cache first (avoids recomputing on every 2s poll)
+        cached = _get_cached_ensemble(session_id)
+        if cached:
+            ensemble_data = cached.get("ensemble", {})
+            stored_features = cached.get("features", {})
+        else:
+            # 2. Try Redis
+            rc = get_redis()
+            if rc:
+                try:
+                    cached_score = rc.get(f"ensemble_score:{session_id}")
+                    if cached_score:
+                        ensemble_data = json.loads(cached_score)
+                    cached_feats = rc.get(f"behavioral_features:{session_id}")
+                    if cached_feats:
+                        stored_features = json.loads(cached_feats)
+                except Exception:
+                    pass
+
+            # 3. SQLite fallback — load latest extended features from behavioral_data
+            if not stored_features:
+                try:
+                    with db.get_connection() as conn2:
+                        cursor2 = conn2.cursor()
+                        cursor2.execute(
+                            resolve_query(db,
+                                "SELECT features FROM behavioral_data "
+                                "WHERE session_id = :param AND data_type = 'extended' "
+                                "ORDER BY timestamp DESC LIMIT 1"
+                            ),
+                            (session_id,),
+                        )
+                        row = cursor2.fetchone()
+                        if row and row["features"]:
+                            raw_feat = row["features"]
+                            if isinstance(raw_feat, str):
+                                # Try decryption first, then plaintext JSON
+                                try:
+                                    from cryptography.fernet import Fernet
+                                    fernet_key = current_app.config.get("BACKUP_FERNET")
+                                    if fernet_key:
+                                        fernet = Fernet(fernet_key.encode("utf-8"))
+                                        raw_feat = fernet.decrypt(raw_feat.encode("utf-8")).decode("utf-8")
+                                except Exception:
+                                    pass
+                                stored_features = json.loads(raw_feat)
+                            else:
+                                stored_features = raw_feat
+                except Exception as exc:
+                    logger.debug("SQLite feature load failed: %s", exc)
+
+            # 4. Run ensemble if we have features but no cached score
+            if stored_features and not ensemble_data:
+                # Load user baseline from passive enrollment
                 user_baseline = None
                 if user_id:
                     try:
-                        state_str = rc.get(f"passive_enrollment:{user_id}")
-                        if state_str:
-                            state = _json.loads(state_str)
-                            stats = state.get("profile", {}).get("feature_stats", {})
-                            user_baseline = {k: v.get("mean", 0.0) for k, v in stats.items()}
-                    except Exception as exc:
-                        logger.debug("Failed to load user baseline: %s", exc)
+                        from app.models.passive_enrollment import get_enrollment_manager
+                        mgr = get_enrollment_manager()
+                        profile = mgr.get_profile_summary(int(user_id))
+                        stats = profile.get("feature_stats", {})
+                        if stats:
+                            user_baseline = {k: v.get("mean", 0.0) if isinstance(v, dict) else v for k, v in stats.items()}
+                    except Exception:
+                        pass
 
-                ensemble_data = score_with_ensemble(
-                    extended_features=stored_features,
-                    user_id=user_id,
-                    user_baseline=user_baseline,
-                )
+                try:
+                    ensemble_data = score_with_ensemble(
+                        extended_features=stored_features,
+                        user_id=user_id,
+                        user_baseline=user_baseline,
+                    )
+                except Exception as exc:
+                    logger.debug("Ensemble scoring failed: %s", exc)
+
+            # 5. Cache the result in-memory for subsequent polls
+            if ensemble_data or stored_features:
+                _set_cached_ensemble(session_id, {
+                    "ensemble": ensemble_data,
+                    "features": stored_features,
+                })
     except Exception as exc:
         logger.debug("Ensemble scoring skipped: %s", exc)
 
@@ -239,19 +319,53 @@ def _build_session_metrics(session_id: str):
     category_scores = {}
     feature_richness = 0.0
     try:
-        rc2 = get_redis()
-        if rc2 and session_id:
-            import json as _json2
-            cached_feats = rc2.get(f"behavioral_features:{session_id}")
-            if cached_feats:
-                from app.behavioral_feature_engine import get_behavioral_engine
-                bfe = get_behavioral_engine()
-                raw_feats = _json2.loads(cached_feats)
-                extracted = bfe.extract({"extended_features": raw_feats})
-                category_scores = bfe.get_category_scores(extracted)
-                feature_richness = category_scores.pop("feature_richness", 0.0)
+        feat_source = stored_features  # Already loaded above
+        if not feat_source:
+            # Try Redis as last resort
+            rc2 = get_redis()
+            if rc2 and session_id:
+                cached_feats2 = rc2.get(f"behavioral_features:{session_id}")
+                if cached_feats2:
+                    feat_source = json.loads(cached_feats2)
+
+        if feat_source:
+            from app.behavioral_feature_engine import get_behavioral_engine
+            bfe = get_behavioral_engine()
+            extracted = bfe.extract({"extended_features": feat_source})
+            category_scores = bfe.get_category_scores(extracted)
+            feature_richness = category_scores.pop("feature_richness", 0.0)
     except Exception as exc:
         logger.debug("Feature engine category scoring skipped: %s", exc)
+
+    # ── Enrollment status (real data from passive enrollment) ─────────────
+    enrollment_info = {}
+    try:
+        from app.models.passive_enrollment import get_enrollment_manager
+        em = get_enrollment_manager()
+        enrollment_info = em.get_enrollment_status(int(user_id))
+    except Exception:
+        pass
+
+    # Fallback to database stats if enrollment_info is empty or says 0 sessions completed (e.g. Redis down)
+    if not enrollment_info or enrollment_info.get("sessions_completed", 0) == 0:
+        try:
+            stats = db.get_user_stats(int(user_id))
+            active_sessions = stats.get("total_sessions", 0)
+            required = enrollment_info.get("sessions_required", 5) if enrollment_info else 5
+            
+            enrollment_info = {
+                "enrolled": active_sessions >= required,
+                "sessions_completed": active_sessions,
+                "sessions_required": required,
+                "enrollment_phase": "active" if active_sessions >= required else "collecting"
+            }
+        except Exception as exc:
+            logger.debug("Failed to load user stats for enrollment fallback: %s", exc)
+
+    # Compute signal strength from actual behavioral data counts
+    if feature_richness == 0.0 and total_activity > 0:
+        # Estimate richness from activity — more data = stronger signal
+        feature_richness = round(min(1.0, total_activity / 200.0), 2)
 
     return (
         {
@@ -281,9 +395,12 @@ def _build_session_metrics(session_id: str):
                 "enrollment_status": ensemble_data.get("enrollment_status") or {},
                 "drift_risk": ensemble_data.get("drift_risk", 0.0),
                 "composite_analysis": ensemble_data.get("composite_analysis") or {},
+                "synthetic_probability": ensemble_data.get("synthetic_probability", 0.0),
+                "risk_attribution": ensemble_data.get("risk_attribution", {}),
             },
             "category_scores": category_scores,
             "feature_richness": feature_richness,
+            "enrollment": enrollment_info,
         },
         None,
     )

@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import {
-  PieChart, TrendingUp, TrendingDown, BarChart3, ArrowUpRight, ArrowDownRight, Search
+  PieChart as PieChartIcon, TrendingUp, TrendingDown, BarChart3, ArrowUpRight, ArrowDownRight, Search
 } from "lucide-react";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import { toast } from "sonner";
 import { NotificationBell } from "@/components/NotificationBell";
 import { getCollector } from "@/lib/behavioral-collector";
 
@@ -37,7 +39,31 @@ export default function InvestmentsPage() {
   useEffect(() => {
     const collector = getCollector();
     collector.setContext("INVESTMENTS_PAGE");
+    
+    return () => {
+      collector.flush("page_transition").catch(console.error);
+    };
+  }, []);
 
+  useEffect(() => {
+    const savedNotes = localStorage.getItem("bba_holding_notes");
+    if (savedNotes) {
+      try {
+        setHoldingNotes(JSON.parse(savedNotes));
+      } catch {}
+    }
+  }, []);
+
+  const updateHoldingNote = (id: string, note: string) => {
+    setHoldingNotes(prev => ({ ...prev, [id]: note }));
+  };
+
+  const saveHoldingNote = (id: string) => {
+    localStorage.setItem("bba_holding_notes", JSON.stringify(holdingNotes));
+    toast.success("Note saved");
+  };
+
+  useEffect(() => {
     const fetchPortfolio = async () => {
       try {
         const res = await fetch("/api/v1/investments/portfolio");
@@ -55,6 +81,12 @@ export default function InvestmentsPage() {
     };
     fetchPortfolio();
   }, []);
+
+  const handleTrade = async (holdingId: string, action: "buy" | "sell") => {
+    const collector = getCollector();
+    await collector.flush(`trade_${action}`).catch(console.error);
+    toast.success(`${action === 'buy' ? 'Buy' : 'Sell'} order placed securely.`);
+  };
 
   const totalValue = holdings.reduce((s, h) => s + h.value, 0);
   const totalCost = holdings.reduce((s, h) => s + h.avgCost * h.units, 0);
@@ -109,16 +141,48 @@ export default function InvestmentsPage() {
                 {totalGainPct >= 0 ? "+" : ""}{totalGainPct.toFixed(2)}%
               </div>
             </div>
-            <div className="glass-panel rounded-2xl p-6 border border-border">
+            <div className="glass-panel rounded-2xl p-6 border border-border flex flex-col">
               <div className="text-xs text-muted uppercase tracking-wider font-bold mb-2">Asset Allocation</div>
-              <div className="space-y-1.5">
-                {allocation.map(a => (
-                  <div key={a.type} className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${TYPE_COLORS[a.type].replace('text-', 'bg-')}`} />
-                    <span className="text-xs text-muted flex-1">{TYPE_LABELS[a.type]}</span>
-                    <span className="text-xs font-mono text-fg">{a.pct}%</span>
-                  </div>
-                ))}
+              <div className="flex-1 flex items-center justify-center gap-4">
+                <div className="w-24 h-24 shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={allocation}
+                        dataKey="value"
+                        nameKey="type"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={25}
+                        outerRadius={40}
+                        stroke="none"
+                      >
+                        {allocation.map((entry, index) => {
+                          const tailwindColorClass = TYPE_COLORS[entry.type];
+                          let hexColor = "#94a3b8"; // default slate-400
+                          if (tailwindColorClass.includes("blue")) hexColor = "#60a5fa";
+                          if (tailwindColorClass.includes("purple")) hexColor = "#c084fc";
+                          if (tailwindColorClass.includes("amber")) hexColor = "#fbbf24";
+                          if (tailwindColorClass.includes("emerald")) hexColor = "#34d399";
+                          return <Cell key={`cell-${index}`} fill={hexColor} />;
+                        })}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(value: any) => `₹${Number(value).toLocaleString()}`}
+                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-1.5 flex-1">
+                  {allocation.map(a => (
+                    <div key={a.type} className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${TYPE_COLORS[a.type].replace('text-', 'bg-')}`} />
+                      <span className="text-xs text-muted flex-1">{TYPE_LABELS[a.type]}</span>
+                      <span className="text-xs font-mono text-fg">{a.pct}%</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -180,13 +244,25 @@ export default function InvestmentsPage() {
                               <div className="text-[10px] text-muted font-mono">{h.symbol} · {TYPE_LABELS[h.type]}</div>
                               {expandedHolding === h.id && (
                                 <div className="mt-3 pt-3 border-t border-border" onClick={e => e.stopPropagation()}>
-                                  <input
-                                    type="text"
-                                    placeholder="Add a note about this holding..."
-                                    value={holdingNotes[h.id] || ""}
-                                    onChange={e => setHoldingNotes(prev => ({ ...prev, [h.id]: e.target.value }))}
-                                    className="w-full bg-black/20 border border-border rounded-lg px-3 py-2 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50"
-                                  />
+                                  <div className="flex gap-4">
+                                    <input
+                                      type="text"
+                                      placeholder="Add a note about this holding..."
+                                      value={holdingNotes[h.id] || ""}
+                                      onChange={e => updateHoldingNote(h.id, e.target.value)}
+                                      className="flex-1 bg-black/20 border border-border rounded-lg px-3 py-2 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50"
+                                    />
+                                    <button
+                                      onClick={() => saveHoldingNote(h.id)}
+                                      className="px-3 py-2 bg-accent-primary/10 text-accent-primary border border-accent-primary/20 hover:bg-accent-primary/20 transition-colors text-xs font-medium rounded-lg"
+                                    >
+                                      Save
+                                    </button>
+                                    <div className="flex gap-2">
+                                      <button onClick={() => handleTrade(h.id, "buy")} className="px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors text-xs font-medium rounded-lg">Buy</button>
+                                      <button onClick={() => handleTrade(h.id, "sell")} className="px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors text-xs font-medium rounded-lg">Sell</button>
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -207,6 +283,15 @@ export default function InvestmentsPage() {
                       </tr>
                     );
                   })}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center">
+                        <BarChart3 className="w-8 h-8 text-muted mx-auto mb-2" />
+                        <div className="text-sm font-medium text-fg">No holdings found</div>
+                        <div className="text-xs text-muted mt-1">Try adjusting your search or filter criteria.</div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

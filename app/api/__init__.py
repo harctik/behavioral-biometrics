@@ -13,6 +13,7 @@ from app.api.notifications import notifications_ns
 from app.api.beneficiaries import beneficiaries_ns
 from app.api.investments import investments_ns
 from app.api.cards import cards_ns
+from app.api.ml_status import ml_ns
 
 __all__ = [
     "auth_ns",
@@ -29,4 +30,5 @@ __all__ = [
     "beneficiaries_ns",
     "investments_ns",
     "cards_ns",
+    "ml_ns",
 ]

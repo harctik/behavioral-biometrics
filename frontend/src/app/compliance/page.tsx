@@ -1,4 +1,6 @@
 "use client";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
 
 import { useState, useEffect } from "react";
 import { getCollector } from "@/lib/behavioral-collector";
@@ -116,7 +118,7 @@ export default function CompliancePage() {
       const res = await fetch(endpoint, {
         headers: {
           "Content-Type": "application/json",
-          "X-CSRF-TOKEN": document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || ""
+          "X-CSRF-TOKEN": getCsrfToken()
         }
       });
       if (!res.ok) throw new Error("Export failed");

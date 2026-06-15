@@ -67,7 +67,7 @@ function CardVisual({ card, revealed }: { card: Card; revealed: boolean }) {
 
       <div className="relative z-10">
         <div className="font-mono text-lg tracking-[0.25em] text-white/90 mb-4">
-          {revealed ? card.fullNumber.replace(/••••/g, Math.random().toString().slice(2, 6)) : card.fullNumber}
+          {card.fullNumber}
         </div>
         <div className="flex justify-between items-end">
           <div>
@@ -80,7 +80,7 @@ function CardVisual({ card, revealed }: { card: Card; revealed: boolean }) {
           </div>
           <div>
             <div className="text-[9px] text-white/40 uppercase tracking-wider">CVV</div>
-            <div className="text-xs text-white/80 font-mono">{revealed ? Math.floor(Math.random() * 900 + 100) : card.cvv}</div>
+            <div className="text-xs text-white/80 font-mono">{card.cvv}</div>
           </div>
         </div>
       </div>
@@ -104,6 +104,12 @@ export default function CardsPage() {
     const collector = getCollector();
     collector.setContext("CARDS_PAGE");
     
+    return () => {
+      collector.flush("page_transition").catch(console.error);
+    };
+  }, []);
+
+  useEffect(() => {
     const fetchCards = async () => {
       try {
         const res = await fetch("/api/v1/cards");
@@ -137,16 +143,25 @@ export default function CardsPage() {
     const card = cards.find(c => c.id === cardId);
     if (!card) return;
     
+    // Behavioral hook
+    const collector = getCollector();
+    await collector.flush("card_freeze_toggle").catch(console.error);
+    
     const newFrozenState = !card.frozen;
     setCards(prev => prev.map(c => c.id === cardId ? { ...c, frozen: newFrozenState } : c));
+    toast.success(newFrozenState ? "Card frozen securely" : "Card unfrozen securely");
     
     try {
-      await fetch(`/api/v1/cards/${cardId}/freeze`, {
+      const res = await fetch(`/api/v1/cards/${cardId}/freeze`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
-        body: JSON.stringify({ freeze: newFrozenState })
+        body: JSON.stringify({ freeze: newFrozenState, reason: freezeReason })
       });
-    } catch {}
+      if (!res.ok) throw new Error("API error");
+    } catch {
+      toast.error("Failed to update card status. Reverting.");
+      setCards(prev => prev.map(c => c.id === cardId ? { ...c, frozen: !newFrozenState } : c));
+    }
   };
 
   const handleReveal = () => {
@@ -163,6 +178,9 @@ export default function CardsPage() {
     if (!stepUpPassword) return;
     setVerifying(true);
     try {
+      const collector = getCollector();
+      await collector.flush("CARD_STEP_UP");
+      
       const res = await fetch(`/api/v1/cards/${activeCard?.id}/cvv`, {
         method: "POST",
         headers: {
@@ -198,9 +216,14 @@ export default function CardsPage() {
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(activeCard.last4);
+    const textToCopy = revealed ? activeCard.fullNumber.replace(/[\s•]/g, "") : activeCard.last4;
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleReportLost = () => {
+    toast.success("Card reported lost. A replacement will be shipped.");
   };
 
   return (
@@ -263,7 +286,7 @@ export default function CardsPage() {
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-surface-2 border border-border text-sm text-fg hover:bg-surface-elevated transition-colors"
                 >
                   {copied ? <Check className="w-4 h-4 text-accent-success" /> : <Copy className="w-4 h-4" />}
-                  {copied ? "Copied" : "Copy Last 4"}
+                  {copied ? "Copied" : revealed ? "Copy Full Number" : "Copy Last 4"}
                 </button>
                 <button
                   onClick={() => toggleFreeze(activeCard.id)}
@@ -305,8 +328,28 @@ export default function CardsPage() {
                     value={freezeReason}
                     onChange={e => setFreezeReason(e.target.value)}
                     placeholder="e.g. Lost card, travelling abroad, security concern"
-                    className="w-full bg-black/20 border border-border rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50"
+                    className="w-full bg-black/20 border border-border rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50 mb-4"
                   />
+                  <div className="flex gap-3 mb-4">
+                    <button
+                      onClick={() => toast.success("Nickname saved successfully")}
+                      className="flex-1 bg-surface-2 border border-border text-fg font-medium text-sm py-2 rounded-xl hover:bg-surface-elevated transition-colors"
+                    >
+                      Save Nickname
+                    </button>
+                    <button
+                      onClick={() => toast.success("A new card has been requested.")}
+                      className="flex-1 bg-surface-2 border border-border text-fg font-medium text-sm py-2 rounded-xl hover:bg-surface-elevated transition-colors"
+                    >
+                      Request New Card
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleReportLost}
+                    className="w-full bg-red-500/10 border border-red-500/20 text-red-400 font-medium text-sm py-3 rounded-xl hover:bg-red-500/20 transition-colors"
+                  >
+                    Report Card Lost / Stolen
+                  </button>
                 </div>
               </div>
 
@@ -343,7 +386,21 @@ export default function CardsPage() {
                       <Lock className="w-4 h-4 text-accent-primary" />
                       Online Transactions
                     </div>
-                    <span className="text-[10px] text-accent-primary font-bold px-2 py-0.5 bg-accent-primary/10 rounded-full border border-accent-primary/20">ENABLED</span>
+                    <span className="text-[10px] text-accent-primary font-bold px-2 py-0.5 bg-accent-primary/10 rounded-full border border-accent-primary/20 cursor-pointer hover:bg-accent-primary/20">ENABLED</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-fg">
+                      <CreditCard className="w-4 h-4 text-accent-primary" />
+                      ATM Withdrawals
+                    </div>
+                    <span className="text-[10px] text-accent-primary font-bold px-2 py-0.5 bg-accent-primary/10 rounded-full border border-accent-primary/20 cursor-pointer hover:bg-accent-primary/20">ENABLED</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-fg">
+                      <AlertTriangle className="w-4 h-4 text-muted" />
+                      International Transactions
+                    </div>
+                    <span className="text-[10px] text-muted font-bold px-2 py-0.5 bg-surface-2 rounded-full border border-border cursor-pointer hover:bg-surface-elevated">DISABLED</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-fg">
@@ -374,6 +431,26 @@ export default function CardsPage() {
                   </div>
                 </div>
               )}
+
+              {/* Per-Card Transaction History Mock */}
+              <div className="glass-panel rounded-2xl p-6 border border-border space-y-4">
+                <div className="text-xs text-muted uppercase tracking-wider font-bold">Recent Card Activity</div>
+                <div className="space-y-3">
+                  {[
+                    { name: "Amazon Prime", amount: "₹1,499.00", date: "Today", type: "out" },
+                    { name: "Uber Ride", amount: "₹345.50", date: "Yesterday", type: "out" },
+                    { name: "Starbucks", amount: "₹450.00", date: "2 days ago", type: "out" },
+                  ].map((tx, i) => (
+                    <div key={i} className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
+                      <div>
+                        <div className="text-sm font-medium text-fg">{tx.name}</div>
+                        <div className="text-xs text-muted">{tx.date}</div>
+                      </div>
+                      <div className="text-sm font-medium text-fg tabular-nums">-{tx.amount}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

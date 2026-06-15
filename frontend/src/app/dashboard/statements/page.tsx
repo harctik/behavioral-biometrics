@@ -29,9 +29,10 @@ const CATEGORIES = ["All", "Income", "Shopping", "Transfer", "Utilities", "Cash"
 export default function StatementsPage() {
   const [statements, setStatements] = useState<Statement[]>([]);
   const [search, setSearch] = useState("");
-  const [merchantFilter, setMerchantFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "credit" | "debit">("all");
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const perPage = 5;
@@ -42,23 +43,44 @@ export default function StatementsPage() {
     
     const fetchHistory = async () => {
       try {
-        const res = await fetch("/api/v1/transaction/history");
-        if (res.ok) {
-          const data = await res.json();
-          let currentBalance = 50000; // start balance
-          const mapped = (data.transactions || []).map((t: any) => {
-            const isDebit = t.type === "transfer" || t.type === "debit";
-            if (isDebit) currentBalance -= t.amount;
-            else currentBalance += t.amount;
+        const [histRes, balRes] = await Promise.all([
+          fetch("/api/v1/transaction/history"),
+          fetch("/api/v1/banking/balance")
+        ]);
+
+        let currentBalance = 50000;
+        if (balRes.ok) {
+          const balData = await balRes.json();
+          currentBalance = balData.balance ?? 50000;
+        }
+
+        if (histRes.ok) {
+          const data = await histRes.json();
+          const txns = data.transactions || [];
+          
+          // Sort newest-first to compute running balance correctly
+          txns.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          
+          let runningBalance = currentBalance;
+          const mapped = txns.map((t: any) => {
+            const isDebit = t.transaction_type === "debit" || t.type === "transfer" || t.type === "debit" || (t.amount < 0);
+            const rowBalance = runningBalance;
+            const absAmount = Math.abs(t.amount);
+            
+            // Walk backward: current row = runningBalance, then adjust for previous row
+            if (isDebit) runningBalance += absAmount;
+            else runningBalance -= absAmount;
+            
+            const txId = String(t.id || t.transaction_id || Math.random().toString(36).slice(2));
             return {
-              id: t.id,
-              date: t.date.split("T")[0] || t.date,
-              description: t.merchant || "Transaction",
-              type: isDebit ? "debit" : "credit",
-              amount: t.amount,
-              balance: currentBalance,
-              category: "Transfer",
-              reference: `TXN/${t.id.slice(0,6).toUpperCase()}`
+              id: txId,
+              date: (t.date || '').split("T")[0] || t.date || 'Unknown',
+              description: t.merchant || t.description || "Transaction",
+              type: (isDebit ? "debit" : "credit") as "debit" | "credit",
+              amount: absAmount,
+              balance: rowBalance,
+              category: t.category || (isDebit ? "Transfer" : "Income"),
+              reference: `TXN/${txId.slice(0,6).toUpperCase()}`
             };
           });
           setStatements(mapped.length ? mapped : MOCK_STATEMENTS);
@@ -72,6 +94,10 @@ export default function StatementsPage() {
       }
     };
     fetchHistory();
+    
+    return () => {
+      collector.flush("page_transition").catch(console.error);
+    };
   }, []);
 
   // Apply filters
@@ -79,7 +105,8 @@ export default function StatementsPage() {
     if (typeFilter !== "all" && s.type !== typeFilter) return false;
     if (categoryFilter !== "All" && s.category !== categoryFilter) return false;
     if (search && !s.description.toLowerCase().includes(search.toLowerCase()) && !s.reference.toLowerCase().includes(search.toLowerCase())) return false;
-    if (merchantFilter && !s.description.toLowerCase().includes(merchantFilter.toLowerCase())) return false;
+    if (dateFrom && s.date < dateFrom) return false;
+    if (dateTo && s.date > dateTo) return false;
     return true;
   });
 
@@ -117,6 +144,7 @@ export default function StatementsPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleDownload}
+            title="Download all filtered transactions as a CSV file"
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-accent-primary/10 border border-accent-primary/20 text-accent-primary rounded-lg hover:bg-accent-primary/20 transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
@@ -160,18 +188,26 @@ export default function StatementsPage() {
               <input
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1); }}
-                placeholder="Search transactions..."
+                placeholder="Search descriptions or references..."
                 className="w-full bg-surface border border-border rounded-lg pl-9 pr-3 py-2 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50"
               />
             </div>
 
-            <input
-              type="text"
-              placeholder="Filter by merchant..."
-              value={merchantFilter}
-              onChange={e => { setMerchantFilter(e.target.value); setPage(1); }}
-              className="bg-surface border border-border rounded-lg px-3 py-2 text-xs text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50 min-w-[160px]"
-            />
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs text-fg focus:outline-none"
+              />
+              <span className="text-muted flex items-center text-xs">—</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => { setDateTo(e.target.value); setPage(1); }}
+                className="bg-surface border border-border rounded-lg px-3 py-1.5 text-xs text-fg focus:outline-none"
+              />
+            </div>
 
             <div className="flex gap-1.5">
               {(["all", "credit", "debit"] as const).map(t => (

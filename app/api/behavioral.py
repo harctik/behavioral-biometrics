@@ -3,8 +3,9 @@ from flask import request, current_app
 from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import jwt_required
 import logging
-from pydantic import BaseModel, Field, ValidationError, model_validator
-from typing import List, Optional, Any
+from pydantic import ValidationError
+from typing import Optional, Any
+from app.schemas.behavioral_schemas import BehavioralPayloadSchema
 
 from app.extensions import get_db, limiter
 from app.error_handling import make_error_response
@@ -25,131 +26,6 @@ behavioral_ns = Namespace(
 
 # Maximum number of events accepted per array field to prevent memory pressure
 MAX_EVENTS_PER_ARRAY = 500
-
-
-# ── Pydantic Validation Schemas ──────────────────────────────────────────────
-
-class KeystrokeEventSchema(BaseModel):
-    model_config = {'extra': 'allow'}
-    key: Optional[str] = None
-    hold_time: Optional[float] = None
-    flight_time: Optional[float] = None
-    timestamp: Optional[float] = None
-    pressure: Optional[float] = None
-    dwell_time: Optional[float] = None
-    ts: Optional[float] = None
-    count: Optional[int] = None
-
-
-class MouseEventSchema(BaseModel):
-    model_config = {'extra': 'allow'}
-    type: Optional[str] = None
-    x: Optional[float] = None
-    y: Optional[float] = None
-    duration: Optional[float] = None
-    timestamp: Optional[float] = None
-    button: Optional[int] = None
-    ts: Optional[float] = None
-    count: Optional[int] = None
-
-
-class TouchEventSchema(BaseModel):
-    model_config = {'extra': 'allow'}
-    type: Optional[str] = None
-    x: Optional[float] = None
-    y: Optional[float] = None
-    pressure: Optional[float] = None
-    area: Optional[float] = None
-    timestamp: Optional[float] = None
-    ts: Optional[float] = None
-
-
-class ScrollEventSchema(BaseModel):
-    model_config = {'extra': 'allow'}
-    x: Optional[float] = None
-    y: Optional[float] = None
-    delta_x: Optional[float] = None
-    delta_y: Optional[float] = None
-    timestamp: Optional[float] = None
-    ts: Optional[float] = None
-
-
-class MotionEventSchema(BaseModel):
-    model_config = {'extra': 'allow'}
-    alpha: Optional[float] = None
-    beta: Optional[float] = None
-    gamma: Optional[float] = None
-    x: Optional[float] = None
-    y: Optional[float] = None
-    z: Optional[float] = None
-    timestamp: Optional[float] = None
-    ts: Optional[float] = None
-
-
-class CognitiveEventSchema(BaseModel):
-    model_config = {'extra': 'allow'}
-    hesitation_duration: Optional[float] = None
-    correction_count: Optional[int] = None
-    error_rate: Optional[float] = None
-    timestamp: Optional[float] = None
-    ts: Optional[float] = None
-
-
-class NavigationEventSchema(BaseModel):
-    model_config = {'extra': 'allow'}
-    path: Optional[str] = None
-    timestamp: Optional[float] = None
-    ts: Optional[float] = None
-
-
-class ExtendedFeaturesSchema(BaseModel):
-    model_config = {'extra': 'allow'}
-    touch_event_count: Optional[int] = 0
-    touch_force_mean: Optional[float] = 0.5
-    touch_area_mean: Optional[float] = 15.0
-    touch_velocity_mean: Optional[float] = 0.5
-    
-    scroll_event_count: Optional[int] = 0
-    scroll_velocity_mean: Optional[float] = 1.0
-    scroll_velocity_std: Optional[float] = 0.5
-    scroll_reversal_rate: Optional[float] = 0.2
-    
-    nav_dwell_mean: Optional[Any] = 1000.0
-    nav_field_revisit_count: Optional[int] = 0
-    nav_focus_sequence_entropy: Optional[float] = 1.0
-    
-    copy_paste_count: Optional[int] = 0
-    correction_rate: Optional[float] = 0.1
-    tab_switch_count: Optional[int] = 0
-    hesitation_count: Optional[int] = 0
-    hesitation_duration_mean: Optional[float] = 0.0
-    reread_count: Optional[int] = 0
-    rapid_submit_detected: Optional[Any] = 0
-    
-    motion_event_count: Optional[int] = 0
-    motion_acc_std: Optional[float] = 1.0
-
-
-class BehavioralPayloadSchema(BaseModel):
-    session_id: str
-    type: Optional[str] = "keystroke"
-    event_count: Optional[int] = 1
-    events: Optional[List[MouseEventSchema]] = Field(default=[])
-    extended_features: Optional[ExtendedFeaturesSchema] = Field(default_factory=ExtendedFeaturesSchema)
-    keystroke_events: Optional[List[KeystrokeEventSchema]] = Field(default=[])
-    touch_events: Optional[List[TouchEventSchema]] = Field(default=[])
-    scroll_events: Optional[List[ScrollEventSchema]] = Field(default=[])
-    cognitive_events: Optional[List[CognitiveEventSchema]] = Field(default=[])
-    motion_events: Optional[List[MotionEventSchema]] = Field(default=[])
-    navigation_events: Optional[List[NavigationEventSchema]] = Field(default=[])
-
-    @model_validator(mode="after")
-    def limit_arrays(self) -> "BehavioralPayloadSchema":
-        for attr in ["events", "keystroke_events", "touch_events", "scroll_events", "cognitive_events", "motion_events", "navigation_events"]:
-            lst = getattr(self, attr)
-            if lst and len(lst) > 500:
-                raise ValueError(f"Array '{attr}' exceeds maximum limit of 500 items")
-        return self
 
 
 # ── Swagger models ───────────────────────────────────────────────────────────
@@ -399,11 +275,27 @@ class BehavioralData(Resource):
 @behavioral_ns.route("/calibration/complete")
 class CalibrationComplete(Resource):
     @behavioral_ns.expect(calibration_model)
-    @behavioral_ns.response(200, "Calibration saved")
+    @behavioral_ns.response(200, "Calibration saved and training dispatched")
     @limiter.limit("10 per minute")
     @jwt_required()
     def post(self):
-        """Submit calibration keystroke samples to establish user baseline."""
+        """Submit calibration keystroke samples and trigger ML model training.
+
+        This is the most critical endpoint in the system. It:
+        1. Validates and stores the raw keystroke calibration data
+        2. Extracts 230+ behavioral features via BehavioralFeatureEngine
+        3. Dispatches async ML training across all 15 engines:
+           - OC-SVM, Isolation Forest, k-NN, Passive-Aggressive
+           - Autoencoder, Transformer (4-head), GRU
+           - Siamese Network, SimCLR contrastive
+           - GAN discriminator, Duress baseline
+        4. Generates synthetic impostor data for supervised training
+        5. Calibrates Bayesian fusion weights
+        6. Logs the full training run to the audit trail
+
+        The training runs asynchronously via Celery so the HTTP response
+        returns immediately (~100ms) while models train in the background.
+        """
         payload = request.get_json() or {}
         session_id = payload.get("session_id") or request.cookies.get("session_id")
         keystroke_data = payload.get("keystroke_data") or []
@@ -423,6 +315,8 @@ class CalibrationComplete(Resource):
 
         db = get_db()
         uid = get_current_user_id()
+
+        # ── Step 1: Store raw calibration data ────────────────────────────
         try:
             db.store_behavioral_data(
                 user_id=uid,
@@ -433,6 +327,81 @@ class CalibrationComplete(Resource):
                 confidence_score=None,
                 anomaly_score=None,
             )
+        except Exception:
+            logger.exception("Failed to persist calibration data")
+            return make_error_response("CALIBRATION_FAILED", "Calibration persistence failed", status=500)
+
+        # ── Step 2: Extract features and store as behavioral profile ──────
+        training_dispatched = False
+        training_mode = "none"
+        training_task_id = None
+        training_report = None
+
+        try:
+            from app.behavioral_feature_engine import get_behavioral_engine
+            engine = get_behavioral_engine()
+
+            # Convert raw keystroke data into feature-engineered samples
+            feature_samples = []
+            for ks_event in keystroke_data:
+                if isinstance(ks_event, dict):
+                    feat = engine.extract({
+                        "extended_features": ks_event,
+                        "categories": {},
+                        "device_context": payload.get("device_context", {}),
+                    })
+                    feature_samples.append(feat)
+
+            if feature_samples:
+                # Store extracted features for training pipeline
+                db.store_behavioral_data(
+                    user_id=uid,
+                    session_id=session_id,
+                    data_type="extended",
+                    features=feature_samples[-1],  # Latest snapshot
+                    raw_data=None,
+                    confidence_score=None,
+                    anomaly_score=None,
+                )
+
+            # ── Step 3: Dispatch async ML training ────────────────────────
+            try:
+                from app.tasks import train_user_models_async
+                task = train_user_models_async.delay(uid)
+                training_dispatched = True
+                training_mode = "async_celery"
+                training_task_id = task.id
+                logger.info(
+                    "ML training dispatched via Celery for user %d (task=%s)",
+                    uid, task.id,
+                )
+            except Exception:
+                # Celery not available — fall back to synchronous training
+                logger.warning(
+                    "Celery unavailable; falling back to synchronous training for user %d",
+                    uid,
+                )
+                try:
+                    from app.training_orchestrator import TrainingOrchestrator
+                    orchestrator = TrainingOrchestrator(db=db, models_dir="models")
+                    report = orchestrator.train_all(user_id=uid)
+                    training_dispatched = True
+                    training_mode = "synchronous"
+                    training_report = {
+                        "models_trained": len(report.models_trained),
+                        "models_failed": len(report.models_failed),
+                        "duration_seconds": report.duration_seconds,
+                        "enrollment_phase": report.enrollment_phase,
+                    }
+                except Exception:
+                    logger.exception("Synchronous training also failed for user %d", uid)
+                    training_mode = "failed"
+
+        except Exception:
+            logger.exception("Feature extraction failed for user %d", uid)
+
+        # ── Step 4: Update calibration status + audit log ─────────────────
+        try:
             db.update_calibration_status(uid, True)
             db.log_audit_evidence(
                 action="calibration_complete",
@@ -440,13 +409,29 @@ class CalibrationComplete(Resource):
                 user_id=uid,
                 session_id=session_id,
                 resource="/api/calibration/complete",
-                metadata={"sample_count": len(keystroke_data)},
+                metadata={
+                    "sample_count": len(keystroke_data),
+                    "features_extracted": len(feature_samples) if 'feature_samples' in dir() else 0,
+                    "training_mode": training_mode,
+                    "training_task_id": training_task_id,
+                },
                 retention_tag="behavioral",
             )
         except Exception:
-            logger.exception("Failed to persist calibration data")
-            return make_error_response("CALIBRATION_FAILED", "Calibration persistence failed", status=500)
-        return {"success": True}, 200
+            logger.exception("Failed to update calibration status for user %d", uid)
+
+        response = {
+            "success": True,
+            "training": {
+                "dispatched": training_dispatched,
+                "mode": training_mode,
+                "task_id": training_task_id,
+            },
+        }
+        if training_report:
+            response["training"]["report"] = training_report
+
+        return response, 200
 
 
 @behavioral_ns.route("/enrollment/status")
@@ -557,3 +542,125 @@ class FeatureSelectionStatus(Resource):
         except Exception:
             logger.exception("Feature selection check failed")
             return make_error_response("FEATURE_SELECTION_UNAVAILABLE", "Feature selection unavailable", status=500)
+
+
+@behavioral_ns.route("/training/trigger")
+class TrainingTrigger(Resource):
+    @behavioral_ns.response(200, "Training dispatched")
+    @limiter.limit("3 per minute")
+    @jwt_required()
+    def post(self):
+        """Trigger on-demand ML model retraining for the current user.
+
+        Use this when:
+        - The user has accumulated new behavioral data since last training
+        - After a significant change in user behavior (new device, injury, etc.)
+        - Admin-initiated retraining for a specific user
+
+        Training runs asynchronously — check /training/status for results.
+        """
+        uid = get_current_user_id()
+        db = get_db()
+        payload = request.get_json() or {}
+        force_phase = payload.get("force_phase")  # Optional: bootstrap/building/mature
+
+        try:
+            from app.tasks import train_user_models_async
+            task = train_user_models_async.delay(uid, force_phase=force_phase)
+
+            db.log_audit_evidence(
+                action="training_triggered",
+                status="ok",
+                user_id=uid,
+                metadata={
+                    "task_id": task.id,
+                    "force_phase": force_phase,
+                    "trigger": "user_api",
+                },
+                retention_tag="ml_training",
+            )
+
+            return {
+                "success": True,
+                "task_id": task.id,
+                "message": "ML training dispatched asynchronously. Check /training/status for results.",
+            }, 200
+        except Exception:
+            # Celery unavailable — try synchronous fallback
+            logger.warning("Celery unavailable; attempting synchronous training for user %d", uid)
+            try:
+                from app.training_orchestrator import TrainingOrchestrator
+                orchestrator = TrainingOrchestrator(db=db, models_dir="models")
+                report = orchestrator.train_all(user_id=uid, force_phase=force_phase)
+                return {
+                    "success": True,
+                    "mode": "synchronous",
+                    "report": {
+                        "models_trained": len(report.models_trained),
+                        "models_failed": len(report.models_failed),
+                        "duration_seconds": report.duration_seconds,
+                        "enrollment_phase": report.enrollment_phase,
+                        "data_hash": report.data_hash[:16],
+                        "model_details": report.models_trained,
+                    },
+                }, 200
+            except Exception:
+                logger.exception("Training failed for user %d", uid)
+                return make_error_response(
+                    "TRAINING_FAILED", "ML model training failed", status=500
+                )
+
+
+@behavioral_ns.route("/training/status")
+class TrainingStatus(Resource):
+    @behavioral_ns.response(200, "Training status")
+    @limiter.limit("30 per minute")
+    @jwt_required()
+    def get(self):
+        """Check ML training status and model metadata for the current user.
+
+        Returns:
+        - Current model version and training date
+        - Per-model accuracy metrics
+        - Enrollment phase (bootstrap/building/mature)
+        - Training history from audit trail
+        """
+        uid = get_current_user_id()
+        db = get_db()
+
+        try:
+            # Get model metadata
+            model_meta = db.get_model_metadata(uid)
+
+            # Get recent training audit entries
+            audit_entries = db.get_audit_evidence(
+                user_id=uid, action="ml_training_complete", limit=5
+            )
+            training_history = []
+            for entry in (audit_entries or []):
+                meta = entry.get("metadata")
+                if isinstance(meta, str):
+                    import json
+                    try:
+                        meta = json.loads(meta)
+                    except (json.JSONDecodeError, TypeError):
+                        meta = {}
+                training_history.append({
+                    "timestamp": entry.get("created_at"),
+                    "models_trained": meta.get("models_trained_count", 0) if meta else 0,
+                    "duration_seconds": meta.get("duration_seconds", 0) if meta else 0,
+                    "enrollment_phase": meta.get("enrollment_phase", "unknown") if meta else "unknown",
+                })
+
+            return {
+                "success": True,
+                "model_metadata": model_meta,
+                "training_history": training_history,
+                "models_available": bool(model_meta),
+            }, 200
+        except Exception:
+            logger.exception("Training status check failed for user %d", uid)
+            return make_error_response(
+                "TRAINING_STATUS_UNAVAILABLE", "Training status unavailable", status=500
+            )
+

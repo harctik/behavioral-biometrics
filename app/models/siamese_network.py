@@ -59,7 +59,9 @@ class SiameseEncoder(nn.Module):
         return self.out_proj(h)
 
 
-class SiameseNetwork(nn.Module):
+from app.models.base import FeatureConsistencyMixin
+
+class SiameseNetwork(nn.Module, FeatureConsistencyMixin):
     """Siamese Network for behavioral identity matching.
 
     Uses contrastive loss to learn embeddings where:

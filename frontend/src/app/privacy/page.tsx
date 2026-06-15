@@ -1,4 +1,6 @@
 "use client";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -103,7 +105,7 @@ export default function PrivacyPage() {
   useEffect(() => {
     (async () => {
       try {
-        const csrf = document.cookie?.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+        const csrf = getCsrfToken();
         const res = await fetch("/api/v1/session/metrics", { headers: { "X-CSRF-TOKEN": csrf } });
         if (res.ok) {
           const data = await res.json();
@@ -128,7 +130,7 @@ export default function PrivacyPage() {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const csrfToken = document.cookie?.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+      const csrfToken = getCsrfToken();
       // Call the DSAR (Data Subject Access Request) endpoint
       const res = await fetch("/api/v1/compliance/dsar", {
         headers: {
@@ -369,7 +371,7 @@ export default function PrivacyPage() {
               <button
                 onClick={async () => {
                   try {
-                    const csrfToken = document.cookie?.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+                    const csrfToken = getCsrfToken();
                     // Call the anonymize/right-to-erasure endpoint
                     const res = await fetch("/api/v1/compliance/anonymize", {
                       method: "POST",

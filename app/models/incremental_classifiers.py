@@ -1,4 +1,5 @@
 import numpy as np
+from collections import deque
 from typing import Dict, List, Tuple, Optional, Any
 import logging
 logger = logging.getLogger(__name__)
@@ -39,12 +40,15 @@ class IncrementalKNNClassifier(FeatureConsistencyMixin):
     def update(self, features: Dict, is_genuine: bool):
         """Update the classifier with new data"""
         # Ensure feature consistency for single feature dict
-        features = self._ensure_feature_consistency(features)
+        consistent = self._ensure_feature_consistency([features])
+        if not consistent:
+            return
+        feat = consistent[0]
 
         if is_genuine:
-            self.genuine_buffer.append(features)
+            self.genuine_buffer.append(feat)
         else:
-            self.imposter_buffer.append(features)
+            self.imposter_buffer.append(feat)
 
         # Update scaler periodically
         if len(self.genuine_buffer) > 50 and len(self.genuine_buffer) % 20 == 0:
@@ -60,7 +64,10 @@ class IncrementalKNNClassifier(FeatureConsistencyMixin):
             return 0.5, 0.0
 
         # Ensure feature consistency for single feature dict
-        features = self._ensure_feature_consistency(features)
+        consistent = self._ensure_feature_consistency([features])
+        if not consistent:
+            return 0.5, 0.0
+        features = consistent[0]
 
         # Prepare query point
         query_data = self.prepare_data([features])

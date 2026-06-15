@@ -1,4 +1,6 @@
 "use client";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -160,7 +162,7 @@ function ChallengeContent() {
 
       // ── Try backend ML overlay (optional) ──
       try {
-        const csrf = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+        const csrf = getCsrfToken();
         const res = await fetch("/api/v1/session/metrics", { headers: { "X-CSRF-TOKEN": csrf } });
         if (res.ok) {
           const data = await res.json();

@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import {
   LayoutGrid, ArrowLeftRight, CreditCard, PieChart, FileText,
-  Settings, LogOut, Menu, X, Shield
+  Settings, LogOut, Menu, X, Shield, Activity, Fingerprint, Brain
 } from "lucide-react";
+import { TelemetryProvider, useTelemetry } from "@/components/TelemetryProvider";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutGrid },
@@ -25,6 +27,32 @@ const SidebarItem = ({ icon: Icon, label, active, href }: { icon: any; label: st
     </div>
   </Link>
 );
+
+const GlobalTrustWidget = () => {
+  const { score, enrollment } = useTelemetry();
+  return (
+    <div className="mx-4 mb-4 mt-2 p-3 bg-black/40 border border-border rounded-xl">
+      <div className="flex items-center gap-2 mb-2">
+        <Activity className="w-3.5 h-3.5 text-accent-success" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Continuous Auth</span>
+      </div>
+      <div className="flex items-end justify-between">
+        <span className="text-xl font-medium tracking-tighter tabular-nums text-fg">
+          {score !== null ? `${score}%` : <div className="h-6 w-12 bg-black/20 animate-pulse rounded"></div>}
+        </span>
+        <span className="text-[10px] text-muted">
+          {enrollment && !enrollment.enrolled ? `Learning (${Math.round((enrollment.completed/enrollment.required)*100)}%)` : 'Secured'}
+        </span>
+      </div>
+      <div className="mt-2 h-1 w-full bg-black/40 rounded-full overflow-hidden">
+        <div 
+          className={`h-full ${score !== null && score > 75 ? 'bg-accent-success' : 'bg-accent-danger'} transition-all duration-500`}
+          style={{ width: `${score || 0}%` }}
+        />
+      </div>
+    </div>
+  );
+};
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -81,7 +109,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             href={item.href}
           />
         ))}
+        <div className="text-[10px] uppercase tracking-wider text-muted font-bold mb-2 px-3 mt-4">Biometrics</div>
+        <SidebarItem icon={Fingerprint} label="Calibration" active={pathname === "/dashboard/calibration"} href="/dashboard/calibration" />
+        <SidebarItem icon={Brain} label="Explainability" active={pathname === "/dashboard/explainability"} href="/dashboard/explainability" />
       </div>
+      
+      <GlobalTrustWidget />
 
       {/* User footer with logout */}
       <div className="border-t border-border p-3 space-y-2 shrink-0">
@@ -107,44 +140,55 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   );
 
   return (
-    <div className="flex h-[calc(100vh-48px)] overflow-hidden text-fg font-sans bg-black">
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
+    <TelemetryProvider>
+      <div className="flex h-[calc(100vh-48px)] overflow-hidden text-fg font-sans bg-black">
+        {/* Mobile overlay */}
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+            onClick={() => setMobileOpen(false)}
+          />
+        )}
 
-      {/* Sidebar — desktop */}
-      <aside className="hidden lg:flex w-64 bg-surface/80 backdrop-blur-md border-r border-border flex-col shrink-0 z-10">
-        {sidebarContent}
-      </aside>
+        {/* Sidebar — desktop */}
+        <aside className="hidden lg:flex w-64 bg-surface/80 backdrop-blur-md border-r border-border flex-col shrink-0 z-10">
+          {sidebarContent}
+        </aside>
 
-      {/* Sidebar — mobile drawer */}
-      <aside className={`fixed inset-y-0 left-0 w-72 bg-surface backdrop-blur-md border-r border-border flex flex-col z-50 transform transition-transform duration-200 lg:hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <button
-          onClick={() => setMobileOpen(false)}
-          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-2 text-muted"
-        >
-          <X className="w-5 h-5" />
-        </button>
-        {sidebarContent}
-      </aside>
-
-      {/* Main workspace */}
-      <div className="flex-1 flex flex-col min-w-0 relative z-0">
-        {/* Mobile topbar hamburger */}
-        <div className="lg:hidden h-14 px-4 flex items-center border-b border-border bg-surface/60 backdrop-blur-sm shrink-0">
-          <button onClick={() => setMobileOpen(true)} className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-surface-2 text-muted">
-            <Menu className="w-5 h-5" />
+        {/* Sidebar — mobile drawer */}
+        <aside className={`fixed inset-y-0 left-0 w-72 bg-surface backdrop-blur-md border-r border-border flex flex-col z-50 transform transition-transform duration-200 lg:hidden ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-2 text-muted"
+          >
+            <X className="w-5 h-5" />
           </button>
-          <span className="ml-3 font-semibold text-fg text-sm">AetherAuth</span>
-        </div>
+          {sidebarContent}
+        </aside>
 
-        {/* Page content */}
-        {children}
+        {/* Main workspace */}
+        <div className="flex-1 flex flex-col min-w-0 relative z-0">
+          {/* Mobile topbar hamburger */}
+          <div className="lg:hidden h-14 px-4 flex items-center border-b border-border bg-surface/60 backdrop-blur-sm shrink-0">
+            <button onClick={() => setMobileOpen(true)} className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-surface-2 text-muted">
+              <Menu className="w-5 h-5" />
+            </button>
+            <span className="ml-3 font-semibold text-fg text-sm">AetherAuth</span>
+          </div>
+
+          {/* Page content */}
+          <ErrorBoundary fallbackTitle="Page failed to load">
+            <Suspense fallback={
+              <div className="flex flex-col items-center justify-center h-64 text-muted">
+                <div className="w-8 h-8 rounded-full border-2 border-accent-primary border-t-transparent animate-spin mb-4"></div>
+                Loading...
+              </div>
+            }>
+              {children}
+            </Suspense>
+          </ErrorBoundary>
+        </div>
       </div>
-    </div>
+    </TelemetryProvider>
   );
 }

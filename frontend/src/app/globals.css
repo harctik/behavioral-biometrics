@@ -116,3 +116,149 @@ input:focus, textarea:focus {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Skeleton Loading Shimmer ───────────────────────────── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+.skeleton-text {
+  composes: skeleton;
+  height: 1rem;
+  width: 60%;
+}
+
+.skeleton-circle {
+  composes: skeleton;
+  border-radius: 50%;
+}
+
+/* ── Pulse Glow Animation ───────────────────────────────── */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 8px -2px var(--glow-color, rgba(59, 130, 246, 0.4)); }
+  50% { box-shadow: 0 0 20px -2px var(--glow-color, rgba(59, 130, 246, 0.6)); }
+}
+
+.pulse-glow {
+  animation: pulseGlow 2.5s ease-in-out infinite;
+}
+
+.pulse-glow-success {
+  --glow-color: rgba(16, 185, 129, 0.5);
+  animation: pulseGlow 2.5s ease-in-out infinite;
+}
+
+.pulse-glow-warning {
+  --glow-color: rgba(245, 158, 11, 0.5);
+  animation: pulseGlow 2.5s ease-in-out infinite;
+}
+
+.pulse-glow-danger {
+  --glow-color: rgba(239, 68, 68, 0.5);
+  animation: pulseGlow 2.5s ease-in-out infinite;
+}
+
+/* ── Animated Gradient Border ───────────────────────────── */
+@keyframes borderRotate {
+  0% { --border-angle: 0deg; }
+  100% { --border-angle: 360deg; }
+}
+
+.gradient-border {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--border-angle, 0deg),
+    rgba(59, 130, 246, 0.4),
+    rgba(139, 92, 246, 0.4),
+    rgba(16, 185, 129, 0.4),
+    rgba(59, 130, 246, 0.4)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 1px;
+  animation: borderRotate 4s linear infinite;
+  pointer-events: none;
+}
+
+/* ── Risk Level Color Utilities ─────────────────────────── */
+.risk-low { color: #10b981; }
+.risk-medium { color: #f59e0b; }
+.risk-high { color: #ef4444; }
+
+.risk-bg-low { background-color: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.2); }
+.risk-bg-medium { background-color: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.2); }
+.risk-bg-high { background-color: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2); }
+
+/* ── Animated Counter ───────────────────────────────────── */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ── Fade-in stagger animations ─────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+  opacity: 0;
+}
+
+.animate-delay-100 { animation-delay: 0.1s; }
+.animate-delay-200 { animation-delay: 0.2s; }
+.animate-delay-300 { animation-delay: 0.3s; }
+.animate-delay-400 { animation-delay: 0.4s; }
+.animate-delay-500 { animation-delay: 0.5s; }
+
+/* ── Glass panel elevated variant ───────────────────────── */
+.glass-panel-elevated {
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 8px 32px -8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+/* ── Status dot ─────────────────────────────────────────── */
+.status-dot {
+  display: inline-flex;
+  position: relative;
+}
+.status-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}

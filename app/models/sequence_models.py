@@ -4,6 +4,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 from app.models.base import FeatureConsistencyMixin
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, precision_score, recall_score
+import joblib
+import os
 try:
     import tensorflow as tf
     from tensorflow.keras.models import Model, Sequential
@@ -45,7 +49,7 @@ class GRUSequenceModel(FeatureConsistencyMixin):
         model.compile(
             optimizer=Adam(learning_rate=0.001),
             loss="binary_crossentropy",
-            metrics=["accuracy", "precision", "recall"],
+            metrics=["accuracy"],
         )
 
         self.model = model
@@ -167,18 +171,19 @@ class GRUSequenceModel(FeatureConsistencyMixin):
                 f"{filepath}_gru_scaler.pkl",
             )
             try:
-                import tf2onnx
-
-                spec = (
-                    tf.TensorSpec(
-                        (None, self.sequence_length, self.feature_dim),
-                        tf.float32,
-                        name="input",
-                    ),
-                )
-                tf2onnx.convert.from_keras(
-                    self.model, input_signature=spec, output_path=f"{filepath}_gru.onnx"
-                )
+                # import tf2onnx
+                #
+                # spec = (
+                #     tf.TensorSpec(
+                #         (None, self.sequence_length, self.feature_dim),
+                #         tf.float32,
+                #         name="input",
+                #     ),
+                # )
+                # tf2onnx.convert.from_keras(
+                #     self.model, input_signature=spec, output_path=f"{filepath}_gru.onnx"
+                # )
+                pass
             except Exception as e:
                 logger.error("Failed to export GRU model to ONNX: %s", e)
 
@@ -238,7 +243,7 @@ class LSTMSequenceModel(FeatureConsistencyMixin):
         model.compile(
             optimizer=Adam(learning_rate=0.001),
             loss="binary_crossentropy",
-            metrics=["accuracy", "precision", "recall"],
+            metrics=["accuracy"],
         )
 
         self.model = model

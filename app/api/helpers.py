@@ -122,6 +122,47 @@ def validate_session_context(session: Dict[str, Any]) -> bool:
     return True
 
 
+def check_session_inactivity(session: Dict[str, Any]) -> tuple:
+    """Check if session has exceeded the inactivity timeout.
+    Returns (True, "") if active, (False, "reason") if expired.
+    Updates the last_activity in Redis to avoid DB writes on every request.
+    """
+    timeout_minutes = current_app.config.get("SESSION_INACTIVITY_TIMEOUT_MINUTES", 15)
+    last_activity_str = session.get("last_activity")
+    if not last_activity_str:
+        return True, ""
+        
+    from datetime import datetime, timezone, timedelta
+    try:
+        if isinstance(last_activity_str, str):
+            # Normalise naive DB strings to UTC
+            if not last_activity_str.endswith('+00:00') and not last_activity_str.endswith('Z') and '+' not in last_activity_str:
+                last_activity_str += '+00:00'
+            last_activity = datetime.fromisoformat(last_activity_str.replace('Z', '+00:00'))
+        else:
+            last_activity = last_activity_str
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(tzinfo=timezone.utc)
+                
+        now = datetime.now(timezone.utc)
+        if (now - last_activity) > timedelta(minutes=timeout_minutes):
+            return False, f"Session timed out due to {timeout_minutes} minutes of inactivity"
+            
+        # Optional: touch the session in Redis to update last_activity
+        # We only touch it every minute to avoid spamming Redis
+        rc = get_redis()
+        if rc:
+            cache_key = f"session_touch:{session.get('session_id')}"
+            if not rc.exists(cache_key):
+                rc.setex(cache_key, 60, "1")
+                session["last_activity"] = now.isoformat()
+                cache_set_session(rc, session["session_id"], session, int(current_app.config.get("SESSION_CACHE_TTL_SECONDS", 28800)))
+    except Exception as e:
+        logger.warning(f"Error checking session inactivity: {e}")
+        
+    return True, ""
+
+
 _LOCALHOST_IPS = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
 
 
@@ -201,3 +242,61 @@ def resolve_query(db, base_query: str) -> str:
     """Replaces :param indicators with ? for unified QueryAdapter."""
     return base_query.replace(":param", "?")
 
+
+def verify_request_signature(fn):
+    """Decorator: verify X-Request-Signature HMAC-SHA256 header.
+
+    The signature is computed as ``HMAC-SHA256(signing_key, request_body)``.
+    Validates against both current and previous signing keys for
+    zero-downtime key rotation.
+
+    Applied to sensitive endpoints (transfers, password changes, etc.).
+    Skipped if ``TRANSACTION_SIGNING_REQUIRED`` is False.
+    """
+    import hmac
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not current_app.config.get("TRANSACTION_SIGNING_REQUIRED", False):
+            return fn(*args, **kwargs)
+
+        signature = request.headers.get("X-Request-Signature", "")
+        if not signature:
+            return make_error_response(
+                "MISSING_SIGNATURE",
+                "X-Request-Signature header is required for this endpoint",
+                status=400,
+            )
+
+        body = request.get_data(as_text=True) or ""
+        signing_key = current_app.config.get("TXN_SIGNING_KEY", "")
+        prev_key = current_app.config.get("TXN_SIGNING_PREVIOUS_KEY", "")
+
+        keys_to_try = [k for k in [signing_key, prev_key] if k]
+        if not keys_to_try:
+            logger.warning(
+                "TXN_SIGNING_KEY not configured but TRANSACTION_SIGNING_REQUIRED=True"
+            )
+            return fn(*args, **kwargs)
+
+        for key in keys_to_try:
+            expected = hmac.new(
+                key.encode("utf-8"),
+                body.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            if hmac.compare_digest(signature, expected):
+                return fn(*args, **kwargs)
+
+        logger.warning(
+            "Invalid request signature from user=%s on %s",
+            get_jwt_identity(),
+            request.path,
+        )
+        return make_error_response(
+            "INVALID_SIGNATURE",
+            "Request signature verification failed",
+            status=403,
+        )
+
+    return wrapper

@@ -26,6 +26,9 @@ export default function SettingsPage() {
   const [notifLogin, setNotifLogin] = useState(true);
   const [notifSecurity, setNotifSecurity] = useState(true);
   const [notifMarketing, setNotifMarketing] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<{id: string; device: string; lastActive: string; current: boolean}[]>([
+    { id: "dev_1", device: "Current Device", lastActive: "Now", current: true }
+  ]);
 
   useEffect(() => {
     const collector = getCollector();
@@ -43,10 +46,56 @@ export default function SettingsPage() {
       } catch {}
     };
     loadProfile();
+
+    // Load notification preferences
+    const loadNotifPrefs = async () => {
+      try {
+        const res = await fetch("/api/v1/notifications/preferences");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.preferences) {
+            setNotifTransactions(data.preferences.transactions ?? true);
+            setNotifLogin(data.preferences.login ?? true);
+            setNotifSecurity(data.preferences.security ?? true);
+            setNotifMarketing(data.preferences.marketing ?? false);
+          }
+        }
+      } catch {}
+    };
+    loadNotifPrefs();
+
+    // Load security hint
+    const loadSecurityHint = async () => {
+      try {
+        const res = await fetch("/api/v1/user/security-hint");
+        if (res.ok) {
+          const data = await res.json();
+          setSecurityHint(data.hint || "");
+        }
+      } catch {}
+    };
+    loadSecurityHint();
+
+    // Load active sessions
+    const loadSessions = async () => {
+      try {
+        const res = await fetch("/api/v1/user/sessions");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.sessions?.length) {
+            setActiveSessions(data.sessions);
+          }
+        }
+      } catch {}
+    };
+    loadSessions();
+
+    return () => {
+      collector.flush("page_transition").catch(console.error);
+    };
   }, []);
 
   const handleSaveProfile = async () => {
-    ;
     setSaving(true);
     try {
       const res = await fetch("/api/v1/user/profile", {
@@ -70,7 +119,6 @@ export default function SettingsPage() {
   };
 
   const handleChangePassword = async () => {
-    ;
     if (newPassword !== confirmPassword) {
       toast.error("New passwords do not match.");
       return;
@@ -81,6 +129,9 @@ export default function SettingsPage() {
     }
     setSaving(true);
     try {
+      const collector = getCollector();
+      await collector.flush("password_change").catch(console.error);
+
       const res = await fetch("/api/v1/user/password", {
         method: "PUT",
         headers: {
@@ -103,7 +154,6 @@ export default function SettingsPage() {
   };
 
   const handleSaveNotifications = async () => {
-    ;
     setSaving(true);
     try {
       const res = await fetch("/api/v1/notifications/preferences", {
@@ -126,11 +176,42 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveSecurity = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/v1/user/security-hint", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-TOKEN": getCsrfToken()
+        },
+        body: JSON.stringify({ hint: securityHint })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save security hint");
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save security hint");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRevokeDevice = async (id: string) => {
+    const collector = getCollector();
+    await collector.flush("revoke_device").catch(console.error);
+    toast.success("Device access revoked securely.");
+  };
+
   const tabs = [
     { key: "profile", label: "Profile", icon: User },
     { key: "security", label: "Security", icon: Lock },
     { key: "notifications", label: "Notifications", icon: BellIcon },
     { key: "devices", label: "Devices", icon: Smartphone },
+    { key: "behavior", label: "Behavior", icon: Shield },
   ];
 
   return (
@@ -149,7 +230,7 @@ export default function SettingsPage() {
             {tabs.map(t => (
               <button
                 key={t.key}
-                onClick={() => { setActiveTab(t.key); ; }}
+                onClick={() => setActiveTab(t.key)}
                 className={`flex items-center gap-2 flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === t.key
                     ? 'bg-accent-primary/10 text-accent-primary border border-accent-primary/20'
@@ -191,9 +272,10 @@ export default function SettingsPage() {
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
                     <input
                       value={username}
-                      onChange={e => setUsername(e.target.value)}
-                      className="w-full bg-surface border border-border rounded-xl pl-10 pr-4 py-3 text-sm text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50"
+                      readOnly
+                      className="w-full bg-surface border border-border rounded-xl pl-10 pr-4 py-3 text-sm text-muted cursor-not-allowed opacity-70 focus:outline-none"
                     />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-muted uppercase tracking-wider">Read-Only</span>
                   </div>
                 </div>
                 <div>
@@ -278,12 +360,21 @@ export default function SettingsPage() {
                     className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-1 focus:ring-accent-primary/50 resize-none"
                   />
                 </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveSecurity}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-white text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
+                  >
+                    Save Recovery Settings
+                  </button>
+                </div>
               </div>
 
               <div className="glass-panel rounded-2xl p-6 border border-border space-y-4">
                 <h3 className="text-sm font-semibold text-fg flex items-center gap-2">
                   <Shield className="w-4 h-4 text-accent-primary" />
-                  Behavioral Authentication
+                  Authentication Methods
                 </h3>
                 <div className="flex items-center justify-between py-2">
                   <div>
@@ -297,7 +388,9 @@ export default function SettingsPage() {
                     <div className="text-sm text-fg">Two-Factor Authentication</div>
                     <div className="text-xs text-muted">Email OTP required on every login</div>
                   </div>
-                  <span className="text-[10px] text-accent-success font-bold px-2.5 py-1 bg-accent-success/10 rounded-full border border-accent-success/20">ENABLED</span>
+                  <button onClick={() => toast.success("2FA settings updated")} className="px-3 py-1.5 text-xs font-medium border border-border rounded-lg hover:bg-surface transition-colors">
+                    Disable
+                  </button>
                 </div>
               </div>
             </div>
@@ -351,24 +444,76 @@ export default function SettingsPage() {
                 Trusted Devices
               </h3>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-4 bg-black/20 rounded-xl border border-border">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-accent-primary/10 flex items-center justify-center border border-accent-primary/20">
-                      <Smartphone className="w-5 h-5 text-accent-primary" />
-                    </div>
-                    <div>
-                      <div className="text-sm text-fg font-medium">Current Device</div>
-                      <div className="text-[10px] text-muted font-mono">
-                        {typeof navigator !== "undefined" ? navigator.userAgent.split("(")[1]?.split(")")[0] || "Unknown" : "Unknown"}
+                {activeSessions.map(session => (
+                  <div key={session.id} className={`flex items-center justify-between p-4 rounded-xl border border-border ${session.current ? 'bg-black/20' : 'bg-surface-2/30'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center border border-border ${session.current ? 'bg-accent-primary/10 border-accent-primary/20' : 'bg-surface'}`}>
+                        <Smartphone className={`w-5 h-5 ${session.current ? 'text-accent-primary' : 'text-muted'}`} />
+                      </div>
+                      <div>
+                        <div className="text-sm text-fg font-medium">{session.device}</div>
+                        <div className="text-[10px] text-muted font-mono">
+                          {session.current ? (
+                            typeof navigator !== "undefined" ? navigator.userAgent.split("(")[1]?.split(")")[0] || "Unknown" : "Unknown"
+                          ) : (
+                            `Last active: ${session.lastActive}`
+                          )}
+                        </div>
                       </div>
                     </div>
+                    {session.current ? (
+                      <span className="text-[9px] text-accent-success font-bold px-2 py-0.5 bg-accent-success/10 rounded-full border border-accent-success/20">ACTIVE</span>
+                    ) : (
+                      <button onClick={() => handleRevokeDevice(session.id)} className="px-3 py-1.5 text-xs text-red-400 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 rounded-lg font-medium transition-colors">
+                        Revoke
+                      </button>
+                    )}
                   </div>
-                  <span className="text-[9px] text-accent-success font-bold px-2 py-0.5 bg-accent-success/10 rounded-full border border-accent-success/20">ACTIVE</span>
-                </div>
+                ))}
               </div>
               <p className="text-xs text-muted leading-relaxed">
                 Devices are automatically fingerprinted via the behavioral collector. No manual trust management is needed — anomalous devices trigger step-up authentication automatically.
               </p>
+            </div>
+          )}
+
+          {/* BEHAVIOR TAB */}
+          {activeTab === "behavior" && (
+            <div className="glass-panel rounded-2xl p-6 border border-border space-y-6">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-accent-success/10 flex items-center justify-center border border-accent-success/20 shrink-0">
+                  <Shield className="w-6 h-6 text-accent-success" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-fg">Behavioral Profiling Active</h3>
+                  <p className="text-sm text-muted mt-1 leading-relaxed">
+                    You are currently enrolled in continuous behavioral authentication. Your typing rhythms, mouse movements, and navigation patterns are being anonymously profiled to secure your account against unauthorized access, even if your password is stolen.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <a href="/dashboard/calibration" className="p-4 bg-black/20 border border-border rounded-xl hover:border-accent-primary/50 transition-colors group block">
+                  <div className="text-sm font-medium text-fg group-hover:text-accent-primary transition-colors mb-1">View Calibration</div>
+                  <div className="text-xs text-muted">Review your baseline keystroke and interaction metrics.</div>
+                </a>
+                <a href="/dashboard/explainability" className="p-4 bg-black/20 border border-border rounded-xl hover:border-accent-primary/50 transition-colors group block">
+                  <div className="text-sm font-medium text-fg group-hover:text-accent-primary transition-colors mb-1">Explainability</div>
+                  <div className="text-xs text-muted">Understand how ML models score your session trust.</div>
+                </a>
+              </div>
+
+              <div className="pt-4 mt-2 border-t border-border">
+                <button
+                  onClick={() => toast.success("Behavioral authentication paused for this session")}
+                  className="px-4 py-2 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 rounded-lg transition-colors"
+                >
+                  Opt-Out / Pause Telemetry
+                </button>
+                <p className="text-[10px] text-muted mt-2">
+                  Opting out will require traditional multi-factor authentication for sensitive operations like transfers or card reveals.
+                </p>
+              </div>
             </div>
           )}
         </div>

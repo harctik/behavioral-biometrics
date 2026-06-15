@@ -6,20 +6,21 @@ LivenessDetector, InvisibleChallengeEngine, DeviceIntelligence,
 CompositeSignalEngine, PassiveEnrollment, PerUserFeatureSelector,
 TransactionBaseline, ADWIN drift) and the API scoring pipeline.
 
-This module provides a single ``score_with_ensemble()`` function that:
-1. Runs CognitiveEngine analysis on extended features
-2. Runs DuressDetector if user baseline exists
-3. Runs LivenessDetector for bot detection
-4. Runs InvisibleChallengeEngine (Patent US20150205955A1)
-5. Runs DeviceIntelligenceEngine (RAT, emulator, geo-velocity)
-6. Runs CompositeSignalEngine (lie detection, multi-user, fraud patterns)
-7. Runs PassiveEnrollmentManager (BioCatch-style silent profile building)
-8. Runs PerUserFeatureSelector (top-20 unique features per user)
-9. Runs TransactionHistoryBaseline (amount/beneficiary/timing anomaly)
-10. Fuses all 9 engine signals into a unified risk score
+This module provides two fusion strategies:
+  A. ``score_with_ensemble()`` — legacy weighted average (backward compat)
+  B. ``score_with_bayesian_fusion()`` — state-of-the-art Bayesian belief
+     update framework with calibrated posteriors and full explainability.
+
+The Bayesian fusion (B) is the recommended path for production deployments.
+It replaces naive weighted averaging with log-odds belief updates that are:
+  - Uncertainty-aware (each engine reports score + confidence)
+  - Self-calibrating (engine reliability priors adapt over time)
+  - Fully explainable (audit trail shows how each engine shifted belief)
+  - Robust to failure (gracefully degrades on low-confidence signals)
 """
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -403,11 +404,62 @@ def score_with_ensemble(
         if val > 0.001
     ]
 
+    # ── 12. Risk Confidence — how certain is the ensemble about this score ──
+    # Based on signal consensus: if engines agree, confidence is high
+    non_zero_signals = [v for v in engine_signals.values() if v > 0.01]
+    if len(non_zero_signals) >= 3:
+        import statistics
+        signal_std = statistics.stdev(non_zero_signals) if len(non_zero_signals) > 1 else 0.0
+        # Low variance = high consensus = high confidence
+        risk_confidence = round(max(0.1, min(1.0, 1.0 - signal_std)), 4)
+    else:
+        risk_confidence = 0.3  # Low confidence when few signals are active
+    result["risk_confidence"] = risk_confidence
+
+    # ── 13. GAN Adversarial — synthetic behavior probability ───────────────
+    synthetic_probability = 0.0
+    try:
+        from app.models.gan_adversarial import GANAdversarialDetector
+        gan = GANAdversarialDetector()
+        gan_result = gan.analyze(extended_features)
+        synthetic_probability = gan_result.get("synthetic_probability", 0.0)
+        if synthetic_probability > 0.7:
+            result["ensemble_flags"].append(
+                f"gan:synthetic_behavior_detected(prob={synthetic_probability:.2f})"
+            )
+            # Boost ensemble risk when GAN detects synthetic behavior
+            ensemble_risk = min(1.0, ensemble_risk + synthetic_probability * 0.15)
+            result["ensemble_risk"] = round(ensemble_risk, 4)
+    except Exception as exc:
+        logger.debug("GAN adversarial detection skipped: %s", exc)
+
+    result["synthetic_probability"] = round(synthetic_probability, 4)
+
+    # ── 14. Adaptive Threshold Tuning ──────────────────────────────────────
+    # Adjust action thresholds based on user enrollment maturity and confidence
+    block_threshold = 0.6
+    step_up_threshold = 0.3
+    if enrollment_result.get("enrollment_phase") == "collecting":
+        # Be more lenient during enrollment — user profile is still building
+        block_threshold = 0.75
+        step_up_threshold = 0.45
+    elif risk_confidence < 0.5:
+        # Low confidence — don't block, escalate to step-up instead
+        block_threshold = 0.8
+        step_up_threshold = 0.4
+
+    result["adaptive_thresholds"] = {
+        "block": round(block_threshold, 2),
+        "step_up": round(step_up_threshold, 2),
+        "confidence_adjusted": risk_confidence < 0.5,
+        "enrollment_adjusted": enrollment_result.get("enrollment_phase") == "collecting",
+    }
+
     # Collect flags from cognitive
     if cognitive and cognitive.get("cognitive_flags"):
         result["ensemble_flags"].extend(cognitive["cognitive_flags"])
 
-    # Determine action — use the most restrictive recommendation
+    # Determine action — use adaptive thresholds
     if cognitive and cognitive.get("recommended_action") == "block":
         result["ensemble_action"] = "block"
     elif duress_score >= 0.7:
@@ -418,11 +470,186 @@ def score_with_ensemble(
         result["ensemble_action"] = "block"
     elif replay_risk >= 0.7:
         result["ensemble_action"] = "block"
-    elif ensemble_risk >= 0.6:
+    elif ensemble_risk >= block_threshold:
         result["ensemble_action"] = "step_up"
-    elif ensemble_risk >= 0.3:
+    elif ensemble_risk >= step_up_threshold:
         result["ensemble_action"] = "silent_challenge"
     else:
         result["ensemble_action"] = "allow"
 
     return result
+
+
+def score_with_bayesian_fusion(
+    extended_features: Dict[str, Any],
+    user_id: Optional[int] = None,
+    session_history: Optional[List[Dict]] = None,
+    user_baseline: Optional[Dict[str, Any]] = None,
+    keystroke_features: Optional[Dict] = None,
+    mouse_features: Optional[Dict] = None,
+    transaction_amount: Optional[float] = None,
+    beneficiary_id: Optional[str] = None,
+    enrollment_phase: str = "mature",
+) -> Dict[str, Any]:
+    """State-of-the-art Bayesian risk fusion across all ML engines.
+
+    Runs the same 13 engines as ``score_with_ensemble()`` but replaces
+    the naive weighted-average fusion with a Bayesian belief-update
+    framework that produces calibrated posterior probabilities.
+
+    This is the recommended scoring path for production deployments.
+
+    Returns:
+        Dict with keys:
+          - bayesian_risk: float (calibrated posterior)
+          - decision: str (allow/silent_challenge/step_up/block)
+          - confidence: float (meta-confidence in the decision)
+          - evidence_trail: list (per-engine belief shifts)
+          - top_risk_drivers: list (top 3 engines by contribution)
+          - legacy_ensemble: dict (backward-compat weighted-average result)
+    """
+    from app.models.bayesian_fusion import BayesianRiskFusion, EngineEvidence
+
+    # Run legacy ensemble to get all engine signals
+    t0 = time.monotonic()
+    legacy = score_with_ensemble(
+        extended_features=extended_features,
+        user_id=user_id,
+        session_history=session_history,
+        user_baseline=user_baseline,
+        keystroke_features=keystroke_features,
+        mouse_features=mouse_features,
+        transaction_amount=transaction_amount,
+        beneficiary_id=beneficiary_id,
+    )
+    engine_time_ms = (time.monotonic() - t0) * 1000
+
+    # Collect evidence from all engine signals
+    evidences: List[EngineEvidence] = []
+
+    # 1. Cognitive
+    cog = legacy.get("cognitive_analysis") or {}
+    evidences.append(EngineEvidence(
+        engine_name="cognitive",
+        risk_score=cog.get("cognitive_risk", 0.0),
+        confidence=0.8 if cog else 0.0,
+        flags=cog.get("cognitive_flags", []),
+        raw_output=cog,
+    ))
+
+    # 2. Duress
+    evidences.append(EngineEvidence(
+        engine_name="duress",
+        risk_score=legacy.get("duress_score", 0.0),
+        confidence=0.9 if legacy.get("duress_score", 0) > 0 else 0.0,
+    ))
+
+    # 3. Liveness (inverted: low liveness = high risk)
+    liveness = legacy.get("liveness_score", 1.0)
+    evidences.append(EngineEvidence(
+        engine_name="liveness",
+        risk_score=1.0 - liveness,
+        confidence=0.85 if liveness < 1.0 else 0.1,
+    ))
+
+    # 4. Invisible Challenge
+    evidences.append(EngineEvidence(
+        engine_name="invisible_challenge",
+        risk_score=legacy.get("challenge_risk", 0.0),
+        confidence=0.7 if legacy.get("challenge_risk", 0) > 0 else 0.0,
+    ))
+
+    # 5. Device Intelligence
+    evidences.append(EngineEvidence(
+        engine_name="device_intelligence",
+        risk_score=legacy.get("device_risk", 0.0),
+        confidence=0.8 if legacy.get("device_risk", 0) > 0 else 0.0,
+        flags=(legacy.get("device_analysis") or {}).get("flags", []),
+    ))
+
+    # 6. Composite Fraud
+    comp = legacy.get("composite_analysis") or {}
+    comp_risk = max(comp.get("fraud_pattern_score", 0.0), comp.get("social_eng_score", 0.0))
+    evidences.append(EngineEvidence(
+        engine_name="composite_fraud",
+        risk_score=comp_risk,
+        confidence=0.7 if comp_risk > 0 else 0.0,
+        flags=comp.get("composite_flags", []),
+    ))
+
+    # 7. Passive Enrollment (inverted: low match = high risk)
+    enrollment = legacy.get("enrollment_status") or {}
+    match_score = enrollment.get("match_score", 0.5)
+    evidences.append(EngineEvidence(
+        engine_name="passive_enrollment",
+        risk_score=1.0 - match_score,
+        confidence=0.8 if enrollment.get("enrolled") else 0.1,
+    ))
+
+    # 8. Feature Selection (inverted: mismatch = risk)
+    weighted_match = legacy.get("weighted_match_score", 0.0)
+    evidences.append(EngineEvidence(
+        engine_name="feature_selection",
+        risk_score=1.0 - weighted_match,
+        confidence=0.75 if weighted_match > 0 else 0.0,
+    ))
+
+    # 9. Transaction
+    txn = legacy.get("transaction_risk") or {}
+    txn_risk_val = txn.get("transaction_risk", 0.0) if isinstance(txn, dict) else 0.0
+    evidences.append(EngineEvidence(
+        engine_name="transaction",
+        risk_score=txn_risk_val,
+        confidence=0.85 if txn_risk_val > 0 else 0.0,
+        flags=txn.get("flags", []) if isinstance(txn, dict) else [],
+    ))
+
+    # 10. Replay Detection
+    evidences.append(EngineEvidence(
+        engine_name="replay_detection",
+        risk_score=legacy.get("replay_risk", 0.0),
+        confidence=0.8 if legacy.get("replay_risk", 0) > 0 else 0.0,
+    ))
+
+    # 11. Concept Drift
+    evidences.append(EngineEvidence(
+        engine_name="concept_drift",
+        risk_score=legacy.get("drift_risk", 0.0),
+        confidence=0.6 if legacy.get("drift_risk", 0) > 0 else 0.0,
+    ))
+
+    # 12. GAN Adversarial
+    evidences.append(EngineEvidence(
+        engine_name="gan_adversarial",
+        risk_score=legacy.get("synthetic_probability", 0.0),
+        confidence=0.7 if legacy.get("synthetic_probability", 0) > 0 else 0.0,
+    ))
+
+    # Run Bayesian fusion
+    fusion = BayesianRiskFusion(enrollment_phase=enrollment_phase)
+    result = fusion.fuse(evidences)
+
+    return {
+        "bayesian_risk": result.posterior_risk,
+        "prior_risk": result.prior_risk,
+        "log_odds_shift": result.log_odds_shift,
+        "decision": result.decision,
+        "confidence": result.confidence,
+        "evidence_trail": result.evidence_trail,
+        "top_risk_drivers": result.top_risk_drivers,
+        "fusion_time_ms": result.execution_time_ms,
+        "total_time_ms": round((time.monotonic() - t0) * 1000 + result.execution_time_ms, 2),
+        "engines_used": result.engines_used,
+        "engines_skipped": result.engines_skipped,
+        "adaptive_thresholds": fusion._thresholds,
+        # Backward compat — include legacy weighted-average result
+        "legacy_ensemble": {
+            "ensemble_risk": legacy.get("ensemble_risk"),
+            "ensemble_action": legacy.get("ensemble_action"),
+            "risk_attribution": legacy.get("risk_attribution"),
+            "risk_confidence": legacy.get("risk_confidence"),
+        },
+        # Pass through all flags
+        "ensemble_flags": legacy.get("ensemble_flags", []),
+    }
+

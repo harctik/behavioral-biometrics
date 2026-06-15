@@ -1,4 +1,6 @@
 "use client";
+import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -228,7 +230,7 @@ export default function OtpPage() {
                   const isPaste = snap.cognitive_events.some(c => c.type === 'copy_paste') || otpKeys.length < 3;
                   
                   try {
-                    const csrfToken = document.cookie.match(/csrf_access_token=([^;]+)/)?.[1] || "";
+                    const csrfToken = getCsrfToken();
                     const res = await fetch("/api/v1/session/metrics", {
                       headers: { "X-CSRF-TOKEN": csrfToken }
                     });
