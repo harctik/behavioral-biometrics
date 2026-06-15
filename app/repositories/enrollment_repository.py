@@ -75,20 +75,16 @@ class EnrollmentRepository:
         self,
         user_id: int,
         profile_data: Dict,
-        *,
-        updates_count: int = 1,
-        confidence: float = 0.0,
-        per_key_count: int = 0,
-        per_digraph_count: int = 0,
     ) -> None:
-        """Persist or update the Bayesian digraph profile for a user."""
+        """Persist or update the Bayesian digraph profile for a user.
+
+        The ``profile_data`` dict should contain ``updates_count``,
+        ``confidence``, ``per_key_hold``, and ``per_digraph_flight`` keys —
+        DatabaseManager extracts metadata from these internally.
+        """
         self.db.save_digraph_profile(
             user_id=user_id,
             profile_data=profile_data,
-            updates_count=updates_count,
-            confidence=confidence,
-            per_key_count=per_key_count,
-            per_digraph_count=per_digraph_count,
         )
 
     def load_digraph_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
