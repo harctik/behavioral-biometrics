@@ -2,7 +2,7 @@
 
 import {
   TrendingUp, ArrowDownLeft, ArrowUpRight, ShieldAlert,
-  Check, Activity
+  Check, Activity, Fingerprint
 } from "lucide-react";
 import { getCollector } from "@/lib/behavioral-collector";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -59,7 +59,7 @@ export default function DashboardPage() {
     setDemoMode(newVal);
     localStorage.setItem('bba_demo_mode', newVal.toString());
   };
-  const { score, events, backendMetrics, enrollment } = useTelemetry();
+  const { score, events, backendMetrics, enrollment, digraphProfile } = useTelemetry();
   const [currentContext, setCurrentContext] = useState<string>("DASHBOARD");
 
   // Live behavioral signal stats
@@ -513,6 +513,51 @@ export default function DashboardPage() {
                 <div className="flex-1">
                   <div className="text-sm font-semibold text-emerald-400">✓ Behavioral Profile Active</div>
                   <p className="text-[10px] text-muted">Continuous authentication running — every action is silently verified against your behavioral fingerprint.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Per-Key/Digraph Bayesian Profile Card */}
+            {digraphProfile && digraphProfile.has_profile && (
+              <div className="glass-panel rounded-2xl p-5 border border-accent-primary/20 bg-accent-primary/5">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-accent-primary/10 flex items-center justify-center border border-accent-primary/20 shrink-0">
+                    <Fingerprint className="w-5 h-5 text-accent-primary" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-fg">Keystroke Bio-Signature</div>
+                    <div className="text-[10px] text-muted">Per-key hold + digraph flight time Bayesian profile</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-black/30 rounded-xl p-3 text-center border border-border/30">
+                    <div className="text-lg font-bold text-accent-primary">{digraphProfile.per_key_count}</div>
+                    <div className="text-[9px] text-muted font-mono">Keys Profiled</div>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-3 text-center border border-border/30">
+                    <div className="text-lg font-bold text-purple-400">{digraphProfile.per_digraph_count}</div>
+                    <div className="text-[9px] text-muted font-mono">Digraph Pairs</div>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-3 text-center border border-border/30">
+                    <div className="text-lg font-bold text-cyan-400">{digraphProfile.updates_count}</div>
+                    <div className="text-[9px] text-muted font-mono">Learning Sessions</div>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-3 text-center border border-border/30">
+                    <div className="text-lg font-bold text-accent-success">{Math.round(digraphProfile.confidence * 100)}%</div>
+                    <div className="text-[9px] text-muted font-mono">Confidence</div>
+                  </div>
+                </div>
+                <div className="mt-3 h-1.5 w-full bg-black/40 rounded-full overflow-hidden border border-border/20">
+                  <div 
+                    className="h-full bg-gradient-to-r from-accent-primary via-purple-500 to-cyan-400 transition-all duration-700"
+                    style={{ width: `${Math.min(100, Math.round(digraphProfile.confidence * 100))}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-[9px] text-muted font-mono">Bayesian posterior narrows with each login</span>
+                  <span className="text-[9px] text-accent-primary font-mono">
+                    {digraphProfile.updates_count >= 5 ? 'Mature' : digraphProfile.updates_count >= 3 ? 'Learning' : 'Initializing'}
+                  </span>
                 </div>
               </div>
             )}

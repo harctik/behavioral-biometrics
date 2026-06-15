@@ -6,11 +6,22 @@ import React, { createContext, useContext, useState, useEffect, useRef } from "r
 import { toast } from "sonner";
 import { getCollector } from "@/lib/behavioral-collector";
 
+interface DigraphProfileInfo {
+  has_profile: boolean;
+  per_key_count: number;
+  per_digraph_count: number;
+  updates_count: number;
+  confidence: number;
+  created_at?: string;
+  last_updated?: string;
+}
+
 interface TelemetryContextValue {
   score: number | null;
   events: { time: string; msg: string }[];
   backendMetrics: any;
   enrollment: { enrolled: boolean; phase: string; completed: number; required: number } | null;
+  digraphProfile: DigraphProfileInfo | null;
 }
 
 const TelemetryContext = createContext<TelemetryContextValue>({
@@ -18,6 +29,7 @@ const TelemetryContext = createContext<TelemetryContextValue>({
   events: [],
   backendMetrics: null,
   enrollment: null,
+  digraphProfile: null,
 });
 
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
@@ -25,6 +37,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = useState<{ time: string; msg: string }[]>([]);
   const [backendMetrics, setBackendMetrics] = useState<any>(null);
   const [enrollment, setEnrollment] = useState<{ enrolled: boolean; phase: string; completed: number; required: number } | null>(null);
+  const [digraphProfile, setDigraphProfile] = useState<DigraphProfileInfo | null>(null);
 
 
 
@@ -76,6 +89,9 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
                     required: metrics.enrollment.sessions_required || 5
                   });
                 }
+                if (metrics.digraph_profile) {
+                  setDigraphProfile(metrics.digraph_profile);
+                }
                 
                 setEvents(prev => {
                   const newEvent = { 
@@ -126,9 +142,12 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
               required: mData.enrollment.sessions_required || 5
             });
           }
+          if (mData.digraph_profile) {
+            setDigraphProfile(mData.digraph_profile);
+          }
         }
       } catch {}
-    }, 10000);
+    }, 5000);
 
     return () => {
       isMounted = false;
@@ -159,7 +178,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   }, [backendMetrics]);
 
   return (
-    <TelemetryContext.Provider value={{ score, events, backendMetrics, enrollment }}>
+    <TelemetryContext.Provider value={{ score, events, backendMetrics, enrollment, digraphProfile }}>
       {children}
     </TelemetryContext.Provider>
   );

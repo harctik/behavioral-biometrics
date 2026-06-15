@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ── In-memory TTL cache for ensemble scores (avoids re-running every 2s poll) ─
 _ensemble_cache: dict = {}  # {session_id: {"data": ..., "ts": float}}
 _ensemble_cache_lock = threading.Lock()
-_ENSEMBLE_CACHE_TTL = 30  # seconds
+_ENSEMBLE_CACHE_TTL = 15  # seconds — lower for more responsive dashboard
 
 
 def _get_cached_ensemble(session_id: str):
@@ -104,6 +104,319 @@ silent_challenge_output = session_ns.model(
         "risk_score": fields.Float(),
     },
 )
+
+
+# ── Feature Synthesizer (fills gap when BehavioralProvider hasn't flushed extended features) ──
+
+
+def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, anomaly_count):
+    """Synthesize a minimal extended-feature dict from raw keystroke/mouse data.
+
+    When the BehavioralProvider hasn't flushed extended features yet (or Redis
+    is down and no 'extended' rows exist), this function reads the stored raw
+    behavioral data and constructs a feature vector that the ML ensemble can
+    score. This eliminates the "all zeros" problem where every engine shows 0%.
+
+    The features computed here mirror the subset of ExtendedFeatures that the
+    CognitiveEngine, LivenessDetector, DuressDetector, and other engines
+    actually consume.
+    """
+    import math
+    import statistics
+
+    features = {}
+    all_hold_times = []
+    all_flight_times = []
+    backspace_count = 0
+    total_ks = 0
+
+    # Get Fernet key for decrypting stored features
+    _fernet = None
+    try:
+        fernet_key = current_app.config.get("BACKUP_FERNET")
+        if fernet_key:
+            from cryptography.fernet import Fernet
+            _fernet = Fernet(fernet_key.encode("utf-8"))
+    except Exception:
+        pass
+
+    def _decrypt_field(val):
+        """Try Fernet decryption, then plaintext JSON parse."""
+        if not val or not isinstance(val, str):
+            return val
+        # Try Fernet first
+        if _fernet and val.startswith("gAAAAA"):
+            try:
+                decrypted = _fernet.decrypt(val.encode("utf-8")).decode("utf-8")
+                return json.loads(decrypted)
+            except Exception:
+                pass
+        # Try plaintext JSON
+        try:
+            return json.loads(val)
+        except Exception:
+            return None
+
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # ── Try to load the latest extended features directly ──────────
+            # If we can decrypt them, they already have the full feature set
+            cursor.execute(
+                resolve_query(db,
+                    "SELECT features FROM behavioral_data "
+                    "WHERE session_id = :param AND data_type = 'extended' "
+                    "ORDER BY timestamp DESC LIMIT 1"
+                ),
+                (session_id,),
+            )
+            row = cursor.fetchone()
+            if row and row["features"]:
+                decrypted_feats = _decrypt_field(row["features"])
+                if isinstance(decrypted_feats, dict) and len(decrypted_feats) > 5:
+                    # We found a full extended feature set — return it directly!
+                    return decrypted_feats
+
+            # ── Load raw keystroke data (fallback if no extended features) ──
+            cursor.execute(
+                resolve_query(db,
+                    "SELECT raw_data, features FROM behavioral_data "
+                    "WHERE session_id = :param AND data_type IN ('keystroke', 'extended') "
+                    "ORDER BY timestamp DESC LIMIT 20"
+                ),
+                (session_id,),
+            )
+            for row in cursor.fetchall():
+                # Try raw_data first (may be NULL due to DPDP data minimization)
+                try:
+                    raw = row["raw_data"]
+                    if raw:
+                        raw = _decrypt_field(raw) if isinstance(raw, str) else raw
+                        if isinstance(raw, dict):
+                            ks_events = raw.get("keystroke_events") or raw.get("events") or []
+                            if isinstance(ks_events, list):
+                                for evt in ks_events:
+                                    if not isinstance(evt, dict):
+                                        continue
+                                    ht = evt.get("hold_time", 0)
+                                    ft = evt.get("flight_time", 0)
+                                    if isinstance(ht, (int, float)) and 5 < ht < 2000:
+                                        all_hold_times.append(ht)
+                                    if isinstance(ft, (int, float)) and 5 < ft < 5000:
+                                        all_flight_times.append(ft)
+                                    if evt.get("is_backspace"):
+                                        backspace_count += 1
+                                    total_ks += 1
+                except Exception:
+                    pass
+
+                # Also try to extract computed features from the features column
+                try:
+                    feat_data = _decrypt_field(row["features"]) if isinstance(row["features"], str) else row["features"]
+                    if isinstance(feat_data, dict):
+                        # Pull any pre-computed features
+                        for key in ("extended_risk", "event_count", "touch_events",
+                                    "scroll_events", "cognitive_events"):
+                            if key in feat_data and key not in features:
+                                features[key] = feat_data[key]
+                except Exception:
+                    pass
+
+            # ── Load raw mouse data ─────────────────────────────────────────
+            mouse_velocities = []
+            mouse_positions = []
+            cursor.execute(
+                resolve_query(db,
+                    "SELECT raw_data FROM behavioral_data "
+                    "WHERE session_id = :param AND data_type = 'mouse' "
+                    "ORDER BY timestamp DESC LIMIT 10"
+                ),
+                (session_id,),
+            )
+            for row in cursor.fetchall():
+                try:
+                    raw = row["raw_data"]
+                    if raw:
+                        raw = _decrypt_field(raw) if isinstance(raw, str) else raw
+                        if isinstance(raw, dict):
+                            events = raw.get("events") or []
+                            for evt in events:
+                                if not isinstance(evt, dict):
+                                    continue
+                                vel = evt.get("velocity")
+                                if isinstance(vel, (int, float)) and vel > 0:
+                                    mouse_velocities.append(vel)
+                                x, y = evt.get("x", 0), evt.get("y", 0)
+                                if x or y:
+                                    mouse_positions.append((x, y))
+                except Exception:
+                    pass
+
+    except Exception as exc:
+        logger.debug("Feature synthesis DB read failed: %s", exc)
+
+    # ── Compute keystroke features ──────────────────────────────────────────
+    if all_hold_times:
+        features["typing_hold_variance"] = statistics.variance(all_hold_times) if len(all_hold_times) > 1 else 0.0
+        hold_mean = statistics.mean(all_hold_times)
+        hold_std = statistics.stdev(all_hold_times) if len(all_hold_times) > 1 else hold_mean * 0.3
+        features["keystroke_rhythm_consistency"] = max(0, 1.0 - (hold_std / max(hold_mean, 1)))
+    else:
+        features["typing_hold_variance"] = 0.0
+        features["keystroke_rhythm_consistency"] = 0.0
+
+    if all_flight_times:
+        ft_mean = statistics.mean(all_flight_times)
+        ft_std = statistics.stdev(all_flight_times) if len(all_flight_times) > 1 else ft_mean * 0.3
+        features["flight_time_cv"] = ft_std / max(ft_mean, 1)
+        features["bigram_speed_mean"] = ft_mean
+
+        # Typing rhythm entropy (Shannon entropy of quantile bins)
+        if len(all_flight_times) >= 5:
+            bins = [0] * 8
+            sorted_ft = sorted(all_flight_times)
+            for ft in all_flight_times:
+                bin_idx = min(7, int((ft / max(sorted_ft[-1], 1)) * 8))
+                bins[bin_idx] += 1
+            total = sum(bins)
+            entropy = 0.0
+            for b in bins:
+                if b > 0:
+                    p = b / total
+                    entropy -= p * math.log2(p)
+            features["typing_rhythm_entropy"] = entropy
+        else:
+            features["typing_rhythm_entropy"] = 0.0
+    else:
+        features["flight_time_cv"] = 0.0
+        features["bigram_speed_mean"] = 0.0
+        features["typing_rhythm_entropy"] = 0.0
+
+    # Correction rate
+    features["correction_rate"] = backspace_count / max(total_ks, 1)
+
+    # Typing burst detection
+    burst_count = 0
+    burst_lengths = []
+    current_burst = 0
+    for ft in all_flight_times:
+        if ft < 80:
+            current_burst += 1
+        else:
+            if current_burst >= 3:
+                burst_count += 1
+                burst_lengths.append(current_burst)
+            current_burst = 0
+    if current_burst >= 3:
+        burst_count += 1
+        burst_lengths.append(current_burst)
+    features["typing_burst_count"] = burst_count
+    features["typing_burst_mean_length"] = statistics.mean(burst_lengths) if burst_lengths else 0
+    features["typing_burst_ratio"] = sum(burst_lengths) / max(total_ks, 1)
+
+    # WPM estimate
+    if all_flight_times and len(all_flight_times) >= 5:
+        total_time_ms = sum(all_flight_times)
+        features["typing_speed_wpm"] = (total_ks / 5) / max(total_time_ms / 60000, 0.01)
+    else:
+        features["typing_speed_wpm"] = 0.0
+
+    # Data familiarity: higher correction rate + longer flight times = unfamiliar
+    familiarity = min(1.0, features["correction_rate"] * 2 + (1 if features.get("bigram_speed_mean", 0) > 300 else 0) * 0.3)
+    features["data_familiarity_signal"] = familiarity
+
+    # ── Compute mouse features ──────────────────────────────────────────────
+    if mouse_velocities:
+        features["mouse_acceleration_mean"] = statistics.mean(mouse_velocities)
+        features["trajectory_curvature"] = statistics.stdev(mouse_velocities) / max(statistics.mean(mouse_velocities), 0.01) if len(mouse_velocities) > 1 else 0.0
+
+        # Mouse direction entropy
+        if mouse_positions and len(mouse_positions) > 2:
+            dirs = []
+            for i in range(1, len(mouse_positions)):
+                dx = mouse_positions[i][0] - mouse_positions[i-1][0]
+                dy = mouse_positions[i][1] - mouse_positions[i-1][1]
+                if abs(dx) > 0.001 or abs(dy) > 0.001:
+                    angle = math.atan2(dy, dx)
+                    bin_idx = int(((angle + math.pi) / (2 * math.pi)) * 8) % 8
+                    dirs.append(bin_idx)
+            if dirs:
+                bins = [0] * 8
+                for d in dirs:
+                    bins[d] += 1
+                total = sum(bins)
+                entropy = 0.0
+                for b in bins:
+                    if b > 0:
+                        p = b / total
+                        entropy -= p * math.log2(p)
+                features["mouse_dir_entropy"] = entropy
+                for i in range(8):
+                    features[f"mouse_dir_histogram_{i}"] = bins[i] / max(total, 1)
+            else:
+                features["mouse_dir_entropy"] = 0.0
+        else:
+            features["mouse_dir_entropy"] = 0.0
+
+        # Mouse path straightness
+        if len(mouse_positions) > 2:
+            straightness_ratios = []
+            segment_size = max(3, len(mouse_positions) // 10)
+            for start in range(0, len(mouse_positions) - segment_size, segment_size):
+                segment = mouse_positions[start:start+segment_size]
+                direct_dist = math.sqrt((segment[-1][0] - segment[0][0])**2 + (segment[-1][1] - segment[0][1])**2)
+                path_dist = sum(
+                    math.sqrt((segment[j][0] - segment[j-1][0])**2 + (segment[j][1] - segment[j-1][1])**2)
+                    for j in range(1, len(segment))
+                )
+                if path_dist > 0:
+                    straightness_ratios.append(direct_dist / path_dist)
+            features["mouse_path_straightness"] = statistics.mean(straightness_ratios) if straightness_ratios else 0.5
+        else:
+            features["mouse_path_straightness"] = 0.5
+    else:
+        features["mouse_acceleration_mean"] = 0.0
+        features["trajectory_curvature"] = 0.0
+        features["mouse_dir_entropy"] = 0.0
+        features["mouse_path_straightness"] = 0.5
+
+    # ── Session-level features ──────────────────────────────────────────────
+    features["total_keystrokes"] = total_ks or keystroke_count
+    features["total_active_ms"] = sum(all_flight_times) + sum(all_hold_times) if all_flight_times else 0
+    features["idle_ratio"] = 0.1  # Conservative default
+    features["hesitation_count"] = 0
+    features["hesitation_duration_mean"] = 0
+    features["copy_paste_count"] = 0
+    features["reread_count"] = 0
+    features["tab_switch_count"] = 0
+    features["rapid_submit_detected"] = 0
+    features["pre_submit_pause_mean"] = 0
+    features["inter_session_speed_delta"] = 0
+    features["touch_force_mean"] = 0
+    features["touch_force_std"] = 0
+    features["touch_area_mean"] = 0
+    features["touch_velocity_mean"] = 0
+    features["touch_event_count"] = 0
+    features["scroll_velocity_mean"] = 0
+    features["scroll_velocity_std"] = 0
+    features["scroll_reversal_rate"] = 0
+    features["scroll_session_depth"] = 0
+    features["scroll_event_count"] = 0
+    features["nav_dwell_mean"] = 0
+    features["nav_dwell_std"] = 0
+    features["nav_field_revisit_count"] = 0
+    features["nav_focus_sequence_entropy"] = 0
+    features["motion_acc_mean"] = 0
+    features["motion_acc_std"] = 0
+    features["motion_rotation_mean"] = 0
+    features["motion_event_count"] = 0
+    features["micro_vibration_mean"] = 0
+    features["modifier_overlap_mean"] = 0
+    features["modifier_overlap_std"] = 0
+    features["modifier_overlap_count"] = 0
+
+    return features
 
 
 # ── Metrics builder ──────────────────────────────────────────────────────────
@@ -211,7 +524,7 @@ def _build_session_metrics(session_id: str):
         risk_reasons.append("no anomaly indicators detected")
 
     # ── ML Ensemble (non-blocking, best-effort) ────────────────────────────
-    # Strategy: in-memory cache → Redis → SQLite fallback → run ensemble
+    # Strategy: in-memory cache → Redis → SQLite fallback → synthesize → run ensemble
     ensemble_data = {}
     stored_features = {}
 
@@ -267,7 +580,15 @@ def _build_session_metrics(session_id: str):
                 except Exception as exc:
                     logger.debug("SQLite feature load failed: %s", exc)
 
-            # 4. Run ensemble if we have features but no cached score
+            # 4. Synthesize features from raw keystroke/mouse data when no extended features exist
+            #    This ensures the ensemble always runs when there is actual behavioral activity,
+            #    rather than showing 0% for all ML engines.
+            if not stored_features and total_activity > 0:
+                stored_features = _synthesize_features_from_raw(
+                    db, session_id, keystroke_count, mouse_count, anomaly_count
+                )
+
+            # 5. Run ensemble if we have features but no cached score
             if stored_features and not ensemble_data:
                 # Load user baseline from passive enrollment
                 user_baseline = None
@@ -283,15 +604,28 @@ def _build_session_metrics(session_id: str):
                         pass
 
                 try:
+                    # Build keystroke/mouse feature dicts from stored features
+                    # so DuressDetector and other engines that need them can run
+                    ks_feats = {}
+                    ms_feats = {}
+                    if stored_features:
+                        for k, v in stored_features.items():
+                            if any(t in k for t in ("hold", "flight", "keystroke", "typing", "bigram", "correction", "burst", "rhythm")):
+                                ks_feats[k] = v
+                            elif any(t in k for t in ("mouse", "trajectory", "click", "hover", "path")):
+                                ms_feats[k] = v
+
                     ensemble_data = score_with_ensemble(
                         extended_features=stored_features,
                         user_id=user_id,
                         user_baseline=user_baseline,
+                        keystroke_features=ks_feats or None,
+                        mouse_features=ms_feats or None,
                     )
                 except Exception as exc:
                     logger.debug("Ensemble scoring failed: %s", exc)
 
-            # 5. Cache the result in-memory for subsequent polls
+            # 6. Cache the result in-memory for subsequent polls
             if ensemble_data or stored_features:
                 _set_cached_ensemble(session_id, {
                     "ensemble": ensemble_data,
@@ -339,10 +673,34 @@ def _build_session_metrics(session_id: str):
 
     # ── Enrollment status (real data from passive enrollment) ─────────────
     enrollment_info = {}
+    digraph_info = {}
     try:
         from app.models.passive_enrollment import get_enrollment_manager
         em = get_enrollment_manager()
         enrollment_info = em.get_enrollment_status(int(user_id))
+
+        # ── Per-key/digraph Bayesian profile status ────────────────────────
+        try:
+            dgp = em._load_digraph_state(int(user_id))
+            if dgp:
+                digraph_info = {
+                    "has_profile": True,
+                    "per_key_count": len(dgp.get("per_key_hold", {})),
+                    "per_digraph_count": len(dgp.get("per_digraph_flight", {})),
+                    "updates_count": dgp.get("updates_count", 0),
+                    "confidence": min(
+                        1.0,
+                        (dgp.get("updates_count", 0) / 5.0) * 0.5
+                        + (len(dgp.get("per_key_hold", {})) / 20.0) * 0.3
+                        + (len(dgp.get("per_digraph_flight", {})) / 30.0) * 0.2
+                    ),
+                    "created_at": dgp.get("created_at", ""),
+                    "last_updated": dgp.get("last_updated", ""),
+                }
+            else:
+                digraph_info = {"has_profile": False, "per_key_count": 0, "per_digraph_count": 0, "updates_count": 0, "confidence": 0}
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -362,10 +720,15 @@ def _build_session_metrics(session_id: str):
         except Exception as exc:
             logger.debug("Failed to load user stats for enrollment fallback: %s", exc)
 
-    # Compute signal strength from actual behavioral data counts
+    # Compute signal strength from actual behavioral data quality
     if feature_richness == 0.0 and total_activity > 0:
-        # Estimate richness from activity — more data = stronger signal
-        feature_richness = round(min(1.0, total_activity / 200.0), 2)
+        # Multi-factor signal strength: data volume + diversity + consistency
+        volume_score = min(1.0, total_activity / 50.0)  # Saturates at 50 events
+        diversity_score = min(1.0, (1 if keystroke_count > 0 else 0) * 0.5 + (1 if mouse_count > 0 else 0) * 0.5)
+        # Features count from synthesized/stored features as quality indicator
+        feat_count = len(stored_features) if stored_features else 0
+        quality_score = min(1.0, feat_count / 30.0)  # 30+ features = max quality
+        feature_richness = round(min(1.0, volume_score * 0.4 + diversity_score * 0.3 + quality_score * 0.3), 2)
 
     return (
         {
@@ -401,6 +764,7 @@ def _build_session_metrics(session_id: str):
             "category_scores": category_scores,
             "feature_richness": feature_richness,
             "enrollment": enrollment_info,
+            "digraph_profile": digraph_info,
         },
         None,
     )
