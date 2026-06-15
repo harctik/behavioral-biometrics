@@ -393,6 +393,7 @@ def create_app(env: str = "development"):
             "/api/v1/auth/send-otp-email",
             "/api/v1/auth/refresh",
             "/api/v1/auth/verify-email",
+            "/api/v1/auth/resend-verification",
             "/api/v1/webhooks/cbs/callback",
         }
         logger.debug(

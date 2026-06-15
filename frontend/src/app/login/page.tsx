@@ -147,8 +147,9 @@ export default function LoginPage() {
           setLockoutUntil(Date.now() + 5 * 60 * 1000);
         }
 
-        // Check if behaviorally blocked
-        if (data.code === "BEHAVIORAL_BLOCKED" || res.status === 403) {
+        // Check if behaviorally blocked (only for actual behavioral blocks, not email verification etc.)
+        const errCode = data.error?.code || data.code;
+        if (errCode === "BEHAVIORAL_BLOCKED") {
           setPhase("blocked");
           return;
         }
