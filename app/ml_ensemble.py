@@ -1,12 +1,24 @@
 """
-ML Ensemble Integration Layer.
+ML Ensemble Integration Layer — 13-Engine Behavioral Authentication.
 
-Bridges the gap between the ML models (CognitiveEngine, DuressDetector,
-LivenessDetector, InvisibleChallengeEngine, DeviceIntelligence,
-CompositeSignalEngine, PassiveEnrollment, PerUserFeatureSelector,
-TransactionBaseline, ADWIN drift) and the API scoring pipeline.
+Bridges the gap between the ML engines and the API scoring pipeline.
 
-This module provides two fusion strategies:
+Engines:
+  1. CognitiveEngine         — intent detection (APP fraud, duress, bot, takeover)
+  2. DuressDetector           — 43-feature stress/coercion statistical analysis
+  3. LivenessDetector          — bot/replay detection via timing heuristics
+  4. InvisibleChallengeEngine  — micro-challenge response validation
+  5. DeviceIntelligence        — RAT/emulator/geo-velocity fingerprint scoring
+  6. CompositeSignalEngine     — multi-modal lie/multi-user pattern detection
+  7. PassiveEnrollment         — background user-profile convergence
+  8. PerUserFeatureSelector    — BioCatch-style top-20 feature selection
+  9. TransactionBaseline       — amount/beneficiary/timing anomaly detection
+  10. GAN Adversarial          — CTGAN discriminator for synthetic replay detection
+  11. ADWIN Drift              — adaptive windowing concept-drift detection
+  12. Digraph Matcher          — Bayesian digraph keystroke profile matching
+  13. Siamese/SimCLR           — contrastive behavioral representation learning
+
+Fusion strategies:
   A. ``score_with_ensemble()`` — legacy weighted average (backward compat)
   B. ``score_with_bayesian_fusion()`` — state-of-the-art Bayesian belief
      update framework with calibrated posteriors and full explainability.

@@ -344,7 +344,7 @@ export default function LoginPage() {
 
                 <form onSubmit={handleCredentialSubmit} className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted ml-1 uppercase tracking-wider">Username / Email</label>
+                    <label htmlFor="login-username" className="text-xs font-semibold text-muted ml-1 uppercase tracking-wider">Username / Email</label>
                     <div className="relative group">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-muted-2 group-focus-within:text-accent-primary transition-colors">
                         <User className="w-4 h-4" />
@@ -360,13 +360,14 @@ export default function LoginPage() {
                         required
                         placeholder="Username or email address"
                         className="w-full bg-black/20 border border-border text-fg rounded-xl py-3 pl-11 pr-4 text-sm outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary/30 transition-all placeholder:text-muted-2 font-mono"
+                        aria-label="Username or email address"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between ml-1">
-                      <label className="text-xs font-semibold text-muted uppercase tracking-wider">Password</label>
+                      <label htmlFor="login-password" className="text-xs font-semibold text-muted uppercase tracking-wider">Password</label>
                       <div className="flex items-center gap-2">
                         <Link href="/forgot-username" className="text-[10px] font-medium text-accent-primary hover:text-blue-400 transition-colors">
                           Forgot User ID?
@@ -392,10 +393,12 @@ export default function LoginPage() {
                         required
                         placeholder="Enter your password"
                         className="w-full bg-black/20 border border-border text-fg rounded-xl py-3 pl-11 pr-12 text-sm outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary/30 transition-all placeholder:text-muted-2 font-mono"
+                        aria-label="Password"
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
                         className="absolute inset-y-0 right-0 pr-4 flex items-center text-muted-2 hover:text-fg transition-colors"
                       >
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

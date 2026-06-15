@@ -311,12 +311,40 @@ def test_user_authentication_success():
 
 ### Coverage Requirements
 
-- Minimum 70% code coverage
+- Minimum **80% code coverage** (enforced by `pyproject.toml`)
 - Focus on critical paths:
   - Authentication flow
   - Database operations
   - ML model predictions
   - Security features
+
+### Architecture: Repository Pattern
+
+When adding new database operations, follow the **Repository Pattern**:
+
+```
+API Routes  →  Services  →  Repositories  →  Database (SQLAlchemy)
+```
+
+- **Repositories** live in `app/repositories/` and handle all SQL queries
+- Each repository covers a single domain:
+  - `UserRepository` — user CRUD, authentication
+  - `SessionRepository` — session lifecycle
+  - `AuditRepository` — compliance audit evidence
+  - `BehavioralRepository` — keystroke/mouse data, snapshots, risk timeline
+  - `BankingRepository` — cards, beneficiaries, investments, notifications
+  - `EnrollmentRepository` — enrollment state, digraph profiles, device fingerprints
+- Repositories accept a `db` (DatabaseManager) via constructor injection
+- **Do NOT** add new SQL queries directly to `app/database.py` — create or extend a repository instead
+
+Example:
+```python
+from app.repositories import BehavioralRepository
+from app.extensions import get_db
+
+repo = BehavioralRepository(get_db())
+data = repo.get_user_behavioral_data(user_id=42, data_type="keystroke")
+```
 
 ## Documentation
 
