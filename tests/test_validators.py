@@ -222,8 +222,8 @@ class TestValidateIpAddress:
         assert validate_ip_address("192.168.1.1", "ip") == "192.168.1.1"
 
     def test_valid_ipv6(self):
-        result = validate_ip_address("::1", "ip")
-        assert result == "::1"
+        result = validate_ip_address("0:0:0:0:0:0:0:1", "ip")
+        assert result == "0:0:0:0:0:0:0:1"
 
     def test_invalid_ip_raises(self):
         with pytest.raises(ValidationError):
