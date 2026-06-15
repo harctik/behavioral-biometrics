@@ -165,9 +165,17 @@ class Register(Resource):
         VERIFY_OTP_TTL = 600  # 10 minutes
         db.store_otp(user_id, verification_code, ttl_seconds=VERIFY_OTP_TTL)
 
-        # Determine if we have a real mail backend
+        # Determine if we have a working mail backend (verified sender domain)
         mail_svc = current_app.extensions.get("mail_service")
-        has_real_mail = mail_svc and getattr(mail_svc, "backend", "console") != "console"
+        mail_sender = current_app.config.get("MAIL_DEFAULT_SENDER", "")
+        sender_domain = mail_sender.split("@")[-1] if "@" in mail_sender else ""
+        placeholder_domains = ("behaviorauth.local", "localhost", "example.com", "")
+        has_real_mail = (
+            mail_svc
+            and getattr(mail_svc, "backend", "console") != "console"
+            and sender_domain not in placeholder_domains
+            and not sender_domain.endswith(".local")
+        )
 
         if has_real_mail:
             try:
@@ -407,25 +415,6 @@ class Login(Resource):
                 "Account temporarily locked due to unusual activity. Check your email for a recovery link.",
                 status=403,
             )
-
-        # ── Auto-verify email if no real mail backend ──────────────────────
-        if not user.get("email_verified", False):
-            mail_svc = current_app.extensions.get("mail_service")
-            mail_backend = current_app.config.get("MAIL_BACKEND", "")
-            mail_server = current_app.config.get("MAIL_SERVER", "localhost")
-            has_real_mail = (
-                mail_backend in ("resend", "ses", "smtp")
-                and mail_server not in ("", "localhost")
-            ) or (mail_svc is not None and getattr(mail_svc, "backend", "console") not in ("console", ""))
-
-            if not has_real_mail:
-                db.set_email_verified(user["user_id"])
-            else:
-                return make_error_response(
-                    "EMAIL_NOT_VERIFIED",
-                    "Please verify your email address before logging in",
-                    status=403,
-                )
 
         # ── Generate challenge token ───────────────────────────────────────
         challenge_token = AuthService.create_login_challenge(user["user_id"])
