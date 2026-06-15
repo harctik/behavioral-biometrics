@@ -175,7 +175,7 @@ class UserSessions(Resource):
             with db.get_connection() as conn:
                 rows = conn.execute(
                     "SELECT session_id, ip_address, user_agent, created_at, last_activity "
-                    "FROM sessions WHERE user_id = ? AND is_active = 1 "
+                    "FROM sessions WHERE user_id = ? AND is_active = TRUE "
                     "ORDER BY last_activity DESC LIMIT 10",
                     (uid,)
                 ).fetchall()

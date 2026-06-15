@@ -128,12 +128,24 @@ class Register(Resource):
     def post(self):
         """Register a new user account with MFA secret generation."""
         try:
-            data = RegisterSchema(**request.get_json() or {})
-        except ValidationError as e:
-            logger.warning("Registration validation failed")
-            return make_error_response("VALIDATION_ERROR", str(e), status=400)
+            data = RegisterSchema(*        db = get_db()
 
-        db = get_db()
+        # ── Pre-check for existing user ──────────────────────────────────────────
+        existing = db.get_user_by_username(data.username)
+        if existing:
+            return make_error_response(
+                "USERNAME_TAKEN",
+                "This username is already taken. Try logging in or resetting your password.",
+                status=409,
+            )
+        existing = db.get_user_by_email(data.email)
+        if existing:
+            return make_error_response(
+                "EMAIL_TAKEN",
+                "An account with this email already exists. Try logging in or resetting your password.",
+                status=409,
+            )
+
         result = db.create_user(data.username, data.email, data.password)
         if not result:
             logger.warning("Registration failed - user exists: %s", data.username)
@@ -142,45 +154,54 @@ class Register(Resource):
         user_id, mfa_secret = result
         logger.info("New user registered: %s (ID: %d)", data.username, user_id)
 
-        verify_token = str(uuid.uuid4())
-        verify_token_hash = hashlib.sha256(verify_token.encode("utf-8")).hexdigest()
+        # ── Generate 6-digit email verification code ─────────────────────
+        import secrets as _secrets
+        verification_code = "".join([str(_secrets.choice(range(10))) for _ in range(6)])
+        VERIFY_OTP_TTL = 600  # 10 minutes
+        db.store_otp(user_id, verification_code, ttl_seconds=VERIFY_OTP_TTL)
 
-        # Store token hash for verification endpoint lookup
+        # Determine if we have a real mail backend
+        mail_svc = current_app.extensions.get("mail_service")
+        has_real_mail = mail_svc and getattr(mail_svc, "backend", "console") != "console"
+
+        if has_real_mail:
+            try:
+                subject = "Your Verification Code — AetherAuth"
+                body_text = (
+                    f"Hello {data.username},\n\n"
+                    f"Your email verification code is:\n\n"
+                    f"    {verification_code}\n\n"
+                    f"This code expires in 10 minutes.\n\n"
+                    f"If you did not register, please ignore this email.\n\n"
+                    f"\u2014 AetherAuth Security Team"
+                )
+                body_html = (
+                    f"<h2>Verify Your Email</h2>"
+                    f"<p>Hello <strong>{data.username}</strong>,</p>"
+                    f"<p>Your email verification code is:</p>"
+                    f"<div style='text-align:center;margin:24px 0'>"
+                    f"<span style='font-size:32px;font-family:monospace;letter-spacing:8px;"
+                    f"padding:16px 32px;background:#1e293b;color:#60a5fa;border-radius:12px;"
+                    f"display:inline-block'>{verification_code}</span></div>"
+                    f"<p><small>This code expires in 10 minutes.</small></p>"
+                    f"<p>If you did not register, ignore this email.</p>"
+                    f"<hr><p style='color:#888;font-size:12px'>AetherAuth Security Team</p>"
+                )
+                mail_svc.send(data.email, subject, body_text, body_html)
+            except Exception as exc:
+                logger.error("Failed to send verification email: %s", exc)
+        elif not current_app.config.get("TESTING"):
+            # No real mail backend — auto-verify so users aren't blocked
+            db.set_email_verified(user_id)
+            logger.info("Auto-verified email for user %d (no mail backend)", user_id)
+
         db.log_audit_evidence(
             action="email_verification_issued",
             status="ok",
             user_id=user_id,
-            rationale=verify_token_hash,
             resource="/api/v1/auth/register",
             retention_tag="security",
         )
-
-        # Cache in Redis for fast lookup (24h TTL)
-        redis_client = get_redis()
-        if redis_client:
-            redis_client.setex(f"email_verify:{verify_token_hash}", 86400, str(user_id))
-
-        # Auto-verify email when no real mail backend is configured (dev mode)
-        # or when running in test mode — users shouldn't be blocked from
-        # logging in when verification emails can't actually be delivered.
-        mail_backend = current_app.config.get("MAIL_BACKEND", "")
-        mail_server = current_app.config.get("MAIL_SERVER", "localhost")
-        mail_svc = current_app.extensions.get("mail_service")
-        has_real_mail = (
-            mail_backend in ("resend", "ses", "smtp")
-            and mail_server not in ("", "localhost")
-        ) or (mail_svc is not None and getattr(mail_svc, "backend", "console") not in ("console", ""))
-
-        if current_app.config.get("TESTING") or not has_real_mail:
-            db.set_email_verified(user_id)
-            logger.info("Auto-verified email for user %d (no mail backend configured)", user_id)
-
-        try:
-            from app.tasks import send_email_async
-            # Dispatch asynchronously
-            send_email_async.delay(
-                to_email=data.email, 
-                template_name="verification", 
                 context={"username": data.username, "verify_token": verify_token}
             )
         except Exception as exc:
@@ -256,13 +277,20 @@ class Register(Resource):
                 name=data.username, issuer_name="BehaviorAuth"
             )
 
-        return {
-            "data": {
-                "user_id": user_id,
-                "enrollment": enrollment_result,
-                "mfa_provisioning_uri": provisioning_uri,
-            }
-        }, 200
+        resp_data = {
+            "user_id": user_id,
+            "requires_verification": has_real_mail,
+            "email": data.email,
+            "enrollment": enrollment_result,
+        }
+
+        # Include MFA info only if auto-verified (no real mail backend)
+        if not has_real_mail:
+            resp_data["mfa_provisioning_uri"] = provisioning_uri
+            resp_data["verification_code"] = verification_code
+            resp_data["dev_mode"] = True
+
+        return {"data": resp_data}, 200
 
 
 from app.services.auth_service import AuthService
@@ -847,28 +875,41 @@ class ForgotPassword(Resource):
 class VerifyEmail(Resource):
     @limiter.limit("5 per minute")
     def post(self):
-        """Verify user's email with token and return MFA secret."""
+        """Verify user's email with OTP code or legacy token."""
         try:
             data = VerifyEmailSchema(**request.get_json() or {})
         except ValidationError as e:
             return make_error_response("VALIDATION_ERROR", str(e), status=400)
 
         db = get_db()
-        token_hash = hashlib.sha256(data.token.encode("utf-8")).hexdigest()
-
-        redis_client = get_redis()
         user_id = None
-        if redis_client:
-            user_id = redis_client.get(f"email_verify:{token_hash}")
 
-        if not user_id:
+        # ── Path 1: Code + user_id (OTP-based flow) ─────────────────
+        if data.code and data.user_id:
+            if not db.verify_otp(data.user_id, data.code):
+                return make_error_response(
+                    "INVALID_CODE", "Invalid or expired verification code", status=400
+                )
+            user_id = data.user_id
+
+        # ── Path 2: Token (legacy link-based flow) ──────────────────
+        elif data.token:
+            token_hash = hashlib.sha256(data.token.encode("utf-8")).hexdigest()
+            redis_client = get_redis()
+            if redis_client:
+                cached = redis_client.get(f"email_verify:{token_hash}")
+                if cached:
+                    user_id = int(cached)
+                    redis_client.delete(f"email_verify:{token_hash}")
+
+            if not user_id:
+                return make_error_response(
+                    "INVALID_TOKEN", "Invalid or expired verification token", status=400
+                )
+        else:
             return make_error_response(
-                "INVALID_TOKEN", "Invalid or expired verification token", status=400
+                "VALIDATION_ERROR", "Provide either 'code' + 'user_id' or 'token'", status=400
             )
-
-        user_id = int(user_id)
-        if redis_client:
-            redis_client.delete(f"email_verify:{token_hash}")
 
         db.set_email_verified(user_id)
 
@@ -898,6 +939,65 @@ class VerifyEmail(Resource):
                 "mfa_provisioning_uri": provisioning_uri,
             },
         }, 200
+
+
+@auth_ns.route("/resend-verification")
+class ResendVerification(Resource):
+    @limiter.limit("2 per minute")
+    def post(self):
+        """Resend email verification OTP code."""
+        raw = request.get_json() or {}
+        req_user_id = raw.get("user_id")
+        if not req_user_id:
+            return make_error_response("VALIDATION_ERROR", "user_id is required", status=400)
+
+        db = get_db()
+        user = db.get_user_by_id(int(req_user_id))
+        if not user:
+            return make_error_response("USER_NOT_FOUND", "User not found", status=404)
+
+        if user.get("email_verified"):
+            return {"success": True, "message": "Email already verified"}, 200
+
+        # Generate new 6-digit code
+        import secrets as _secrets
+        verification_code = "".join([str(_secrets.choice(range(10))) for _ in range(6)])
+        db.store_otp(int(req_user_id), verification_code, ttl_seconds=600)
+
+        mail_svc = current_app.extensions.get("mail_service")
+        has_real_mail = mail_svc and getattr(mail_svc, "backend", "console") != "console"
+
+        if has_real_mail:
+            try:
+                subject = "Your Verification Code — AetherAuth"
+                body_text = (
+                    f"Hello {user['username']},\n\n"
+                    f"Your new verification code is:\n\n"
+                    f"    {verification_code}\n\n"
+                    f"This code expires in 10 minutes.\n\n"
+                    f"\u2014 AetherAuth Security Team"
+                )
+                body_html = (
+                    f"<h2>Verify Your Email</h2>"
+                    f"<p>Hello <strong>{user['username']}</strong>,</p>"
+                    f"<p>Your new verification code is:</p>"
+                    f"<div style='text-align:center;margin:24px 0'>"
+                    f"<span style='font-size:32px;font-family:monospace;letter-spacing:8px;"
+                    f"padding:16px 32px;background:#1e293b;color:#60a5fa;border-radius:12px;"
+                    f"display:inline-block'>{verification_code}</span></div>"
+                    f"<p><small>This code expires in 10 minutes.</small></p>"
+                    f"<hr><p style='color:#888;font-size:12px'>AetherAuth Security Team</p>"
+                )
+                mail_svc.send(user["email"], subject, body_text, body_html)
+            except Exception as exc:
+                logger.error("Failed to resend verification email: %s", exc)
+
+        response = {"success": True, "message": "Verification code sent"}
+        if not has_real_mail:
+            response["verification_code"] = verification_code
+            response["dev_mode"] = True
+
+        return response, 200
 
 
 @auth_ns.route("/password-reset/confirm")

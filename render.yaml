@@ -9,37 +9,29 @@ services:
         value: "3.11.12"
       - key: FLASK_ENV
         value: "production"
+      - key: SQLALCHEMY_DATABASE_URI
+        sync: false  # Set in Render dashboard (Supabase PostgreSQL URI)
       - key: JWT_SECRET_KEY
-        generateValue: true
+        sync: false  # Set in Render dashboard
       - key: SECRET_KEY
-        generateValue: true
+        sync: false  # Set in Render dashboard
       - key: BACKUP_FERNET
-        generateValue: true
+        sync: false  # Set in Render dashboard
       - key: TXN_SIGNING_KEY
-        generateValue: true
+        sync: false  # Set in Render dashboard
       - key: FRONTEND_URL
-        sync: false
+        value: "https://aetherauth.vercel.app"
       - key: CORS_ORIGINS
-        sync: false
+        value: "https://aetherauth.vercel.app"
       - key: RATELIMIT_STORAGE_URI
-        fromService:
-          name: bba-redis
-          type: redis
-          property: connectionString
+        value: "memory://"
       - key: REDIS_URL
-        fromService:
-          name: bba-redis
-          type: redis
-          property: connectionString
+        value: ""
       - key: DATABASE_PATH
-        value: "database/auth_system.db"
-    disk:
-      name: bba-data
-      mountPath: /opt/render/project/src/database
-      sizeGB: 1
-
-databases:
-  - name: bba-db
-    plan: free
-    databaseName: bba
-    user: bba_user
+        value: ""
+      - key: MAIL_BACKEND
+        value: "console"
+      - key: DEBUG
+        value: "false"
+      - key: CSRF_ENABLED
+        value: "false"

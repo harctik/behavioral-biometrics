@@ -95,26 +95,6 @@ class DatabaseManager:
             
         self.init_database()
 
-    def _pg_column_exists(self, conn, table_name: str, column_name: str) -> bool:
-        """Check if a column exists in a PostgreSQL table via information_schema."""
-        result = conn.execute(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_name = ? AND column_name = ?",
-            (table_name, column_name),
-        )
-        return result.fetchone() is not None
-
-    def _safe_add_column(self, conn, table_name: str, column_name: str, column_def: str):
-        """Add a column if it doesn't exist. PostgreSQL-safe (no transaction poisoning)."""
-        if self.is_pg:
-            if not self._pg_column_exists(conn, table_name, column_name):
-                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
-        else:
-            try:
-                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
-            except Exception:
-                pass  # Column already exists in SQLite
-
     def init_database(self):
         """Initialize database with required tables.
 
@@ -598,14 +578,26 @@ class DatabaseManager:
     def _safe_add_column(self, cursor, table: str, column: str, col_type: str):
         """Add a column to an existing table if it doesn't already exist.
 
-        Swallows 'duplicate column' errors so this is idempotent — safe to
-        run on every startup without a migration framework.
+        On PostgreSQL, checks information_schema first to avoid issuing a
+        failing ALTER TABLE that would poison the current transaction.
+        On SQLite, swallows 'duplicate column' errors (idempotent).
         """
-        try:
+        if self.is_pg:
+            # Check information_schema — avoids InFailedSqlTransaction
+            result = cursor.execute(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = ? AND column_name = ?",
+                (table, column),
+            )
+            if result.fetchone() is not None:
+                return  # Column already exists
             cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
-        except Exception:
-            # Column already exists — this is expected on subsequent startups
-            pass
+        else:
+            try:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+            except Exception:
+                # Column already exists — this is expected on subsequent startups
+                pass
 
     @contextmanager
     def get_connection(self):
@@ -658,7 +650,7 @@ class DatabaseManager:
             row = conn.execute(
                 "SELECT user_id, username, email, role, is_active, calibration_complete, "
                 "created_at, last_login, failed_attempts, locked_until, password_hash, email_verified "
-                "FROM users WHERE username = ? AND is_active = 1",
+                "FROM users WHERE username = ? AND is_active = TRUE",
                 (username,),
             ).fetchone()
             return dict(row) if row else None
@@ -809,7 +801,7 @@ class DatabaseManager:
             cursor.execute(
                 "SELECT user_id, username, email, role, is_active, calibration_complete, "
                 "created_at, last_login, failed_attempts, locked_until, password_hash, email_verified "
-                "FROM users WHERE (username = ? OR email = ?) AND is_active = 1",
+                "FROM users WHERE (username = ? OR email = ?) AND is_active = TRUE",
                 (username, username),
             )
 
@@ -915,7 +907,7 @@ class DatabaseManager:
                 SELECT s.*, u.username, u.calibration_complete, u.role
                 FROM sessions s
                 JOIN users u ON s.user_id = u.user_id
-                WHERE s.session_id = ? AND s.is_active = 1
+                WHERE s.session_id = ? AND s.is_active = TRUE
             """,
                 (session_id,),
             )
@@ -930,7 +922,7 @@ class DatabaseManager:
             cursor.execute(
                 """
                 UPDATE sessions SET assurance_level = ?
-                WHERE session_id = ? AND is_active = 1
+                WHERE session_id = ? AND is_active = TRUE
                 """,
                 (assurance_level, session_id),
             )
@@ -986,7 +978,7 @@ class DatabaseManager:
             cursor.execute(
                 """
                 UPDATE sessions SET last_activity = ?
-                WHERE session_id = ? AND is_active = 1
+                WHERE session_id = ? AND is_active = TRUE
             """,
                 (datetime.now(), session_id),
             )
@@ -998,7 +990,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE sessions SET is_active = 0, ended_at = CURRENT_TIMESTAMP
+                UPDATE sessions SET is_active = FALSE, ended_at = CURRENT_TIMESTAMP
                 WHERE session_id = ?
             """,
                 (session_id,),
@@ -1618,8 +1610,8 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE sessions SET is_active = 0
-                WHERE last_activity < ? AND is_active = 1
+                UPDATE sessions SET is_active = FALSE
+                WHERE last_activity < ? AND is_active = TRUE
             """,
                 (cutoff_time,),
             )
@@ -1646,7 +1638,7 @@ class DatabaseManager:
             cursor.execute(
                 """
                 SELECT COUNT(*) as total_sessions,
-                       COUNT(CASE WHEN is_active = 1 THEN 1 END) as active_sessions
+                       COUNT(CASE WHEN is_active = TRUE THEN 1 END) as active_sessions
                 FROM sessions WHERE user_id = ?
             """,
                 (user_id,),
@@ -2328,7 +2320,7 @@ class DatabaseManager:
             cursor.execute(
                 """
                 UPDATE sessions
-                SET is_active = 0,
+                SET is_active = FALSE,
                     ended_at = CURRENT_TIMESTAMP,
                     risk_score_final = ?,
                     keystroke_count = ?,

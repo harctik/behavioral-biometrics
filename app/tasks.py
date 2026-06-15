@@ -143,7 +143,7 @@ def retrain_all_users_async():
         # Get all users who have completed calibration
         with db.get_connection() as conn:
             rows = conn.execute(
-                "SELECT user_id FROM users WHERE calibration_complete = 1 AND is_active = 1"
+                "SELECT user_id FROM users WHERE calibration_complete = TRUE AND is_active = TRUE"
             ).fetchall()
 
         user_ids = [row["user_id"] for row in rows]

@@ -197,7 +197,7 @@ class UserRepository:
                 query = resolve_query(self.db,
                     """UPDATE users SET username = :param, email = :param,
                        password_hash = :param, mfa_secret = NULL,
-                       is_active = 0 WHERE user_id = :param""")
+                       is_active = FALSE WHERE user_id = :param""")
                 conn.execute(query, (anon_user, anon_email, "REDACTED", user_id))
                 conn.commit()
             logger.info("User %d anonymized successfully", user_id)

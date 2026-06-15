@@ -54,7 +54,7 @@ class SessionRepository:
             with self.db.get_connection() as conn:
                 query = resolve_query(self.db,
                     """SELECT * FROM sessions
-                       WHERE session_id = :param AND is_active = 1""")
+                       WHERE session_id = :param AND is_active = TRUE""")
                 return conn.execute(query, (session_id,)).fetchone()
         except Exception:
             logger.exception("SessionRepository.get failed for session_id=%s", session_id)
@@ -98,7 +98,7 @@ class SessionRepository:
         try:
             with self.db.get_connection() as conn:
                 query = resolve_query(self.db,
-                    """UPDATE sessions SET is_active = 0, ended_at = :param
+                    """UPDATE sessions SET is_active = FALSE, ended_at = :param
                        WHERE session_id = :param""")
                 conn.execute(query, (datetime.now(timezone.utc).isoformat(), session_id))
                 conn.commit()
@@ -111,8 +111,8 @@ class SessionRepository:
         try:
             with self.db.get_connection() as conn:
                 query = resolve_query(self.db,
-                    """UPDATE sessions SET is_active = 0, ended_at = :param
-                       WHERE is_active = 1 AND last_activity < :param""")
+                    """UPDATE sessions SET is_active = FALSE, ended_at = :param
+                       WHERE is_active = TRUE AND last_activity < :param""")
                 conn.execute(query, (
                     datetime.now(timezone.utc).isoformat(),
                     cutoff.isoformat()
@@ -130,7 +130,7 @@ class SessionRepository:
                     """SELECT session_id, created_at, last_activity, ip_address,
                               user_agent, device_id, assurance_level
                        FROM sessions
-                       WHERE user_id = :param AND is_active = 1
+                       WHERE user_id = :param AND is_active = TRUE
                        ORDER BY last_activity DESC""")
                 return conn.execute(query, (user_id,)).fetchall()
         except Exception:

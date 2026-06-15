@@ -84,4 +84,6 @@ class MFAVerifySchema(BaseModel):
 
 
 class VerifyEmailSchema(BaseModel):
-    token: str
+    token: Optional[str] = None
+    code: Optional[str] = None
+    user_id: Optional[int] = None
