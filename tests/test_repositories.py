@@ -237,14 +237,15 @@ class TestEnrollmentRepository:
         repo = EnrollmentRepository(db)
         user_id = self._create_user(db, "digraph_user")
 
-        profile = {"th": {"mean": 0.12, "std": 0.03}}
+        profile = {
+            "per_key_hold": {"t": {"mean": 0.12, "std": 0.03}},
+            "per_digraph_flight": {"th": {"mean": 0.08, "std": 0.02}},
+            "updates_count": 5,
+            "confidence": 0.85,
+        }
         repo.save_digraph_profile(
             user_id=user_id,
             profile_data=profile,
-            updates_count=5,
-            confidence=0.85,
-            per_key_count=10,
-            per_digraph_count=8,
         )
 
         loaded = repo.load_digraph_profile(user_id)
