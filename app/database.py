@@ -607,6 +607,55 @@ class DatabaseManager:
 
     # ── Column projections are hardcoded in each query (no f-string SQL) ──
 
+    def store_otp(self, user_id: int, code: str, ttl_seconds: int = 600) -> None:
+        """Store a one-time verification code for the given user.
+
+        Invalidates any previous unused codes for the same user, then
+        inserts a fresh code with an expiry of *ttl_seconds* from now.
+        """
+        with self.get_connection() as conn:
+            # Invalidate any previous unused codes
+            conn.execute(
+                "UPDATE otp_codes SET used_at = CURRENT_TIMESTAMP "
+                "WHERE user_id = ? AND used_at IS NULL",
+                (user_id,),
+            )
+            # Insert new code
+            if self.is_pg:
+                conn.execute(
+                    "INSERT INTO otp_codes (user_id, otp_code, expires_at) "
+                    "VALUES (?, ?, CURRENT_TIMESTAMP + INTERVAL '" + str(int(ttl_seconds)) + " seconds')",
+                    (user_id, code),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO otp_codes (user_id, otp_code, expires_at) "
+                    "VALUES (?, ?, datetime('now', '+' || ? || ' seconds'))",
+                    (user_id, code, str(ttl_seconds)),
+                )
+
+    def verify_otp(self, user_id: int, code: str) -> bool:
+        """Verify a one-time code for the given user.
+
+        Returns True if the code matches, has not expired, and has not
+        already been used.  Marks the code as used on success.
+        """
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT otp_id FROM otp_codes "
+                "WHERE user_id = ? AND otp_code = ? "
+                "AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP "
+                "ORDER BY created_at DESC LIMIT 1",
+                (user_id, code),
+            ).fetchone()
+            if not row:
+                return False
+            conn.execute(
+                "UPDATE otp_codes SET used_at = CURRENT_TIMESTAMP WHERE otp_id = ?",
+                (row["otp_id"],),
+            )
+            return True
+
     def get_user_by_id(self, user_id: int) -> Optional[dict]:
         """Return public user fields only — never password_hash or mfa_secret."""
         with self.get_connection() as conn:
