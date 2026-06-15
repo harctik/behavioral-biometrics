@@ -47,6 +47,16 @@ export default function SignUpPage() {
   const [mfaSecret, setMfaSecret] = useState("");
   const [isEnrolled, setIsEnrolled] = useState(false);
 
+  // ── OTP Verification State ─────────────────────────────────────────
+  const [showOtp, setShowOtp] = useState(false);
+  const [registeredUserId, setRegisteredUserId] = useState<number | null>(null);
+  const [otpDigits, setOtpDigits] = useState(["" , "", "", "", "", ""]);
+  const [otpError, setOtpError] = useState("");
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [devModeCode, setDevModeCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [errorType, setErrorType] = useState<"" | "user_exists" | "generic">("");
+
   // ── Behavioral Typing Prompt ──────────────────────────────────────────
   // Empty on server render to avoid hydration mismatch; randomized client-side.
   const [typingPrompt, setTypingPrompt] = useState("");
@@ -56,6 +66,7 @@ export default function SignUpPage() {
   const [typedText, setTypedText] = useState("");
   const [pasteDetected, setPasteDetected] = useState(false);
   const typingRef = useRef<HTMLTextAreaElement>(null);
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // ── Live Analysis State ───────────────────────────────────────────────
   const [holdTimeSeries, setHoldTimeSeries] = useState<number[]>([]);
@@ -182,10 +193,105 @@ export default function SignUpPage() {
     setTimeout(() => setPasteDetected(false), 3000);
   }, []);
 
+  // ── OTP Verification Handlers ─────────────────────────────────────────
+  const handleOtpChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    const newDigits = [...otpDigits];
+    newDigits[index] = value.slice(-1);
+    setOtpDigits(newDigits);
+    setOtpError("");
+    if (value && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !otpDigits[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleOtpPasteInput = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (pasted.length > 0) {
+      const newDigits = [...otpDigits];
+      pasted.split("").forEach((d, i) => { newDigits[i] = d; });
+      setOtpDigits(newDigits);
+      otpRefs.current[Math.min(pasted.length, 5)]?.focus();
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const code = otpDigits.join("");
+    if (code.length !== 6) {
+      setOtpError("Please enter the full 6-digit code.");
+      return;
+    }
+    setIsVerifyingOtp(true);
+    setOtpError("");
+    try {
+      const result = await apiClient<{
+        success: boolean;
+        data?: { mfa_secret?: string; mfa_provisioning_uri?: string };
+        error?: string;
+      }>("/v1/auth/verify-email", {
+        method: "POST",
+        body: JSON.stringify({ code, user_id: registeredUserId }),
+      });
+      if (result.success) {
+        if (result.data?.mfa_secret) {
+          setMfaSecret(result.data.mfa_secret);
+        }
+        setShowOtp(false);
+        setIsEnrolled(true);
+      } else {
+        setOtpError(result.error || "Invalid code. Please try again.");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Verification failed";
+      setOtpError(msg.includes("INVALID_CODE") ? "Invalid or expired code. Please try again." : msg);
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0 || !registeredUserId) return;
+    try {
+      const result = await apiClient<{
+        success: boolean;
+        verification_code?: string;
+        dev_mode?: boolean;
+      }>("/v1/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ user_id: registeredUserId }),
+      });
+      if (result.dev_mode && result.verification_code) {
+        setDevModeCode(result.verification_code);
+      }
+      setResendCooldown(60);
+      setOtpDigits(["", "", "", "", "", ""]);
+      setOtpError("");
+    } catch {
+      setOtpError("Failed to resend code. Try again.");
+    }
+  };
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
   // ── Submit ────────────────────────────────────────────────────────────
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
+    setErrorType("");
 
     if (username.length < 3) {
       setError("Username must be at least 3 characters.");
@@ -225,7 +331,15 @@ export default function SignUpPage() {
 
     try {
       const result = await apiClient<{
-        data?: { user_id: number; mfa_secret: string; mfa_provisioning_uri: string };
+        data?: {
+          user_id: number;
+          requires_verification?: boolean;
+          email?: string;
+          verification_code?: string;
+          dev_mode?: boolean;
+          mfa_secret?: string;
+          mfa_provisioning_uri?: string;
+        };
         error?: string;
       }>("/v1/auth/register", {
         method: "POST",
@@ -255,21 +369,40 @@ export default function SignUpPage() {
         return;
       }
 
-      setMfaSecret(result.data.mfa_secret);
-      setIsEnrolled(true);
-      setIsLoading(false);
-      
       localStorage.setItem("bba_enrollment_completed", "1");
       localStorage.setItem("bba_enrollment_required", "5");
+
+      if (result.data.requires_verification) {
+        // Show OTP verification step
+        setRegisteredUserId(result.data.user_id);
+        setShowOtp(true);
+        if (result.data.dev_mode && result.data.verification_code) {
+          setDevModeCode(result.data.verification_code);
+        }
+      } else {
+        // Auto-verified (no mail backend) — go straight to success
+        if (result.data.mfa_secret) setMfaSecret(result.data.mfa_secret);
+        setIsEnrolled(true);
+      }
+      setIsLoading(false);
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : "Registration failed";
-      if (raw.includes("Password must contain")) {
+      if (raw.includes("already taken") || raw.includes("USERNAME_TAKEN")) {
+        setError("This username is already taken.");
+        setErrorType("user_exists");
+      } else if (raw.includes("already exists") || raw.includes("EMAIL_TAKEN")) {
+        setError("An account with this email already exists.");
+        setErrorType("user_exists");
+      } else if (raw.includes("Password must contain")) {
         const match = raw.match(/Password must contain a? ?(.+)/i);
         setError(match ? `Password must contain ${match[1]}` : raw);
+        setErrorType("generic");
       } else if (raw.includes("VALIDATION_ERROR")) {
         setError("Please check your inputs and try again.");
+        setErrorType("generic");
       } else {
         setError(raw);
+        setErrorType("generic");
       }
       setIsLoading(false);
     }
@@ -313,9 +446,9 @@ export default function SignUpPage() {
               <ShieldCheck className="w-8 h-8 text-emerald-400" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-xl font-bold tracking-tight text-fg">Verify your email to continue</h3>
+              <h3 className="text-xl font-bold tracking-tight text-fg">Account Created Successfully</h3>
               <p className="text-sm text-muted">
-                We've sent a verification link to <strong>{email}</strong>. Please check your inbox.
+                Your email has been verified and your behavioral profile has been seeded.
               </p>
             </div>
             <div className="bg-slate-900/60 border border-border rounded-xl p-5 text-left space-y-4">
@@ -351,6 +484,72 @@ export default function SignUpPage() {
             </Link>
           </div>
         </motion.div>
+      ) : showOtp ? (
+        <motion.div
+          initial={{ opacity: 0, y: 30, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full max-w-md relative z-10 glass-panel-glow rounded-3xl p-8 overflow-hidden"
+        >
+          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-50" />
+          <div className="space-y-6 text-center">
+            <div className="mx-auto w-16 h-16 bg-cyan-500/10 flex items-center justify-center rounded-full border border-cyan-500/20">
+              <Mail className="w-8 h-8 text-cyan-400" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold tracking-tight text-fg">Verify your email</h3>
+              <p className="text-sm text-muted">
+                We sent a 6-digit code to <strong className="text-fg">{email}</strong>
+              </p>
+            </div>
+
+            {devModeCode && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+                <p className="text-xs text-amber-400">Dev Mode — Your code: <strong className="font-mono text-lg tracking-widest">{devModeCode}</strong></p>
+              </div>
+            )}
+
+            <div className="flex gap-2.5 justify-center">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <input
+                  key={i}
+                  ref={(el) => { otpRefs.current[i] = el; }}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={1}
+                  value={otpDigits[i]}
+                  onChange={(e) => handleOtpChange(i, e.target.value)}
+                  onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                  onPaste={handleOtpPasteInput}
+                  className="w-12 h-14 text-center text-2xl font-mono bg-black/40 border border-white/10 rounded-xl text-fg focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 outline-none transition-all"
+                />
+              ))}
+            </div>
+
+            {otpError && (
+              <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{otpError}</p>
+            )}
+
+            <AuthButton
+              onClick={handleVerifyOtp}
+              disabled={isVerifyingOtp || otpDigits.some((d) => !d)}
+              className="w-full"
+            >
+              {isVerifyingOtp ? "Verifying..." : "Verify Email"}
+            </AuthButton>
+
+            <p className="text-xs text-muted">
+              Didn&apos;t receive the code?{" "}
+              <button
+                onClick={handleResendCode}
+                disabled={resendCooldown > 0}
+                className="text-accent-primary hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
+              </button>
+            </p>
+          </div>
+        </motion.div>
       ) : (
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -380,7 +579,22 @@ export default function SignUpPage() {
 
             <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between overflow-y-auto pr-1 custom-scrollbar">
               <div className="space-y-3.5">
-                {error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
+                {error && errorType === "user_exists" ? (
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <p className="text-sm text-amber-300">{error}</p>
+                    </div>
+                    <div className="flex gap-4 justify-center">
+                      <Link href="/login" className="text-xs text-accent-primary hover:text-blue-400 transition-colors font-medium">
+                        Log in instead →
+                      </Link>
+                      <Link href="/forgot-password" className="text-xs text-accent-primary hover:text-blue-400 transition-colors font-medium">
+                        Forgot password?
+                      </Link>
+                    </div>
+                  </div>
+                ) : error ? <AuthInlineMessage tone="error">{error}</AuthInlineMessage> : null}
 
                 {/* Username */}
                 <div className="space-y-1">

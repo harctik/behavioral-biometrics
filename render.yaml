@@ -30,7 +30,11 @@ services:
       - key: DATABASE_PATH
         value: ""
       - key: MAIL_BACKEND
-        value: "console"
+        value: "resend"
+      - key: RESEND_API_KEY
+        sync: false  # Set in Render dashboard
+      - key: MAIL_DEFAULT_SENDER
+        value: "onboarding@resend.dev"
       - key: DEBUG
         value: "false"
       - key: CSRF_ENABLED
