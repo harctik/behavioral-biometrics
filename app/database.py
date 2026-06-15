@@ -95,6 +95,26 @@ class DatabaseManager:
             
         self.init_database()
 
+    def _pg_column_exists(self, conn, table_name: str, column_name: str) -> bool:
+        """Check if a column exists in a PostgreSQL table via information_schema."""
+        result = conn.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = ? AND column_name = ?",
+            (table_name, column_name),
+        )
+        return result.fetchone() is not None
+
+    def _safe_add_column(self, conn, table_name: str, column_name: str, column_def: str):
+        """Add a column if it doesn't exist. PostgreSQL-safe (no transaction poisoning)."""
+        if self.is_pg:
+            if not self._pg_column_exists(conn, table_name, column_name):
+                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+        else:
+            try:
+                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+            except Exception:
+                pass  # Column already exists in SQLite
+
     def init_database(self):
         """Initialize database with required tables.
 
@@ -147,19 +167,16 @@ class DatabaseManager:
             """
             )
 
-            # Retrofit existing databases safely
-            try:
-                cursor.execute(
-                    f"ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT {_bool_false}"
-                )
-            except Exception:
-                pass
-            try:
-                cursor.execute(
-                    f"ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN DEFAULT {_bool_false}"
-                )
-            except Exception:
-                pass
+            # Retrofit existing databases safely — use information_schema
+            # on PostgreSQL to avoid poisoning the transaction.
+            self._safe_add_column(
+                cursor, "users", "email_verified",
+                f"BOOLEAN DEFAULT {_bool_false}"
+            )
+            self._safe_add_column(
+                cursor, "users", "mfa_enabled",
+                f"BOOLEAN DEFAULT {_bool_false}"
+            )
 
             # ── Sessions ────────────────────────────────────────────────────
             cursor.execute(
@@ -181,12 +198,7 @@ class DatabaseManager:
             """
             )
 
-            try:
-                cursor.execute(
-                    "ALTER TABLE sessions ADD COLUMN ended_at TIMESTAMP"
-                )
-            except Exception:
-                pass
+            self._safe_add_column(cursor, "sessions", "ended_at", "TIMESTAMP")
 
             # ── Behavioral data ─────────────────────────────────────────────
             cursor.execute(

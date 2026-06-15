@@ -326,7 +326,7 @@ export default function SignUpPage() {
                 </div>
               </div>
               <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
-                <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${(1 / parseInt(typeof window !== 'undefined' ? localStorage.getItem('bba_enrollment_required') || '5' : '5')) * 100}%` }} />
+                <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${(1 / 5) * 100}%` }} />
               </div>
             </div>
             {mfaSecret && (

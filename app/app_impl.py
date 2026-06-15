@@ -435,7 +435,7 @@ def create_app(env: str = "development"):
         db_uri = "sqlite:///database/auth_system.db"
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
 
-    from app.database import get_engine
+    from app.database import get_engine, reset_engine
     db = None
     # Retry with exponential backoff (handles Supabase pooler cold-starts)
     import time as _time
@@ -447,6 +447,8 @@ def create_app(env: str = "development"):
                 conn.execute("SELECT 1")
             break  # Connected successfully
         except Exception as pg_err:
+            # Clear the cached engine so the next attempt creates a fresh one
+            reset_engine(db_uri)
             if _attempt < _max_retries:
                 wait = 2 ** _attempt  # 2s, 4s
                 logger.warning(
