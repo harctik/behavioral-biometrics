@@ -76,7 +76,7 @@ export default function LandingPage() {
           <motion.div 
             className="flex-1 space-y-8"
             variants={containerVariants}
-            initial="hidden"
+            initial="show"
             animate="show"
           >
             <motion.div variants={itemVariants} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium">
@@ -106,7 +106,7 @@ export default function LandingPage() {
           {/* Hero Visual */}
           <motion.div 
             className="flex-1 w-full max-w-lg lg:max-w-none relative"
-            initial={{ opacity: 0, scale: 0.9 }}
+            initial={{ opacity: 1, scale: 1 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.8, delay: 0.2 }}
           >
@@ -162,7 +162,7 @@ export default function LandingPage() {
             {/* Floating badge */}
             <motion.div 
               className="absolute -bottom-6 -left-6 bg-slate-900 border border-slate-700 p-4 rounded-2xl shadow-xl flex items-center gap-4"
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 1, y: 0 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 1.2 }}
             >
@@ -241,7 +241,7 @@ export default function LandingPage() {
             <motion.div 
               key={i}
               className="bg-slate-900/50 border border-slate-800 rounded-2xl p-8 hover:bg-slate-800/50 transition-colors"
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 1, y: 0 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: i * 0.1 }}

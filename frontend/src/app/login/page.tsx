@@ -304,6 +304,8 @@ export default function LoginPage() {
                     name="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
+                    onPaste={(e) => e.preventDefault()}
+                    onCopy={(e) => e.preventDefault()}
                     required
                     placeholder="Username or email address"
                     className="w-full bg-black/20 border border-border text-fg rounded-xl py-3 pl-11 pr-4 text-sm outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary/30 transition-all placeholder:text-muted-2 font-mono"
@@ -334,6 +336,8 @@ export default function LoginPage() {
                     name="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    onPaste={(e) => e.preventDefault()}
+                    onCopy={(e) => e.preventDefault()}
                     required
                     placeholder="Enter your password"
                     className="w-full bg-black/20 border border-border text-fg rounded-xl py-3 pl-11 pr-12 text-sm outline-none focus:border-accent-primary focus:ring-1 focus:ring-accent-primary/30 transition-all placeholder:text-muted-2 font-mono"

@@ -392,6 +392,8 @@ export default function SignUpPage() {
                       placeholder="Enter username"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
+                      onPaste={(e) => e.preventDefault()}
+                      onCopy={(e) => e.preventDefault()}
                       required
                       className="pl-8 py-2 text-sm"
                     />
@@ -411,6 +413,8 @@ export default function SignUpPage() {
                       placeholder="Enter email address"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      onPaste={(e) => e.preventDefault()}
+                      onCopy={(e) => e.preventDefault()}
                       required
                       className="pl-8 py-2 text-sm"
                     />
@@ -430,6 +434,8 @@ export default function SignUpPage() {
                       placeholder="Secure password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      onPaste={(e) => e.preventDefault()}
+                      onCopy={(e) => e.preventDefault()}
                       required
                       className="pl-8 pr-8 py-2 text-sm"
                     />
