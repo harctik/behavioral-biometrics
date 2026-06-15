@@ -203,7 +203,13 @@ behavioral-biometrics/
 │   │   ├── transaction_service.py    # Transaction processing
 │   │   └── synthetic_data.py     #   Synthetic data generation
 │   ├── schemas/                  # Pydantic Validation Schemas
-│   ├── repositories/             # Data Access Layer
+│   ├── repositories/             # Data Access Layer (Repository Pattern)
+│   │   ├── user_repository.py       # User CRUD, authentication
+│   │   ├── session_repository.py    # Session lifecycle
+│   │   ├── audit_repository.py      # Compliance audit evidence
+│   │   ├── behavioral_repository.py # Keystroke/mouse data, snapshots, risk timeline
+│   │   ├── banking_repository.py    # Beneficiaries, cards, investments, notifications
+│   │   └── enrollment_repository.py # Enrollment state, digraph profiles, devices
 │   ├── performance/              # Performance monitoring
 │   ├── config.py                 # Pydantic-based settings (270+ config values)
 │   ├── app_impl.py               # Application factory (create_app)
@@ -278,7 +284,7 @@ behavioral-biometrics/
 │   ├── next.config.mjs           # Next.js config (CSP, rewrites, headers)
 │   ├── tailwind.config.ts        # TailwindCSS 4 configuration
 │   └── package.json              # Frontend dependencies
-├── tests/                        # 🧪 Test Suite (13 test files)
+├── tests/                        # 🧪 Test Suite (18 test files)
 │   ├── conftest.py               #   Pytest fixtures & app factory
 │   ├── test_comprehensive.py     #   Full system integration (36KB)
 │   ├── test_blueprints.py        #   API blueprint tests
@@ -291,6 +297,11 @@ behavioral-biometrics/
 │   ├── test_production_features.py   # Production feature tests
 │   ├── test_netbanking_fixes.py  #   Netbanking regression tests
 │   ├── test_invisible_challenges.py  # Invisible challenge tests
+│   ├── test_repositories.py      #   Repository pattern tests (17 tests)
+│   ├── test_validators.py        #   Input validation tests (38 tests)
+│   ├── test_error_handling.py    #   Error classes & context tests (20 tests)
+│   ├── test_config_validation.py #   Settings/config tests (7 tests)
+│   ├── test_mail_service.py      #   Mail service tests (12 tests)
 │   └── locustfile.py             #   Load/performance testing (Locust)
 ├── alembic/                      # Database migrations
 ├── docs/                         # Documentation

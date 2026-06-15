@@ -64,7 +64,8 @@ def app():
                     TRUNCATE TABLE 
                         users, sessions, behavioral_data, auth_events, model_metadata, 
                         audit_evidence, password_reset_tokens, consent_records, otp_codes, 
-                        investments, beneficiaries, cards, notifications 
+                        investments, beneficiaries, cards, notifications,
+                        enrollment_state, enrollment_history, digraph_profiles, device_fingerprints
                     CASCADE;
                 """)
                 conn.commit()
@@ -74,7 +75,8 @@ def app():
                 cursor = conn.cursor()
                 for table in ["users", "sessions", "behavioral_data", "auth_events", "model_metadata", 
                               "audit_evidence", "password_reset_tokens", "consent_records", "otp_codes", 
-                              "investments", "beneficiaries", "cards", "notifications"]:
+                              "investments", "beneficiaries", "cards", "notifications",
+                              "enrollment_state", "enrollment_history", "digraph_profiles", "device_fingerprints"]:
                     try:
                         cursor.execute(f"DELETE FROM {table}")
                     except Exception:

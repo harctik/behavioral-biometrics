@@ -163,6 +163,8 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
         except Exception:
             return None
 
+    mouse_velocities: list = []
+    mouse_positions: list = []
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
@@ -230,8 +232,8 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
                     pass
 
             # ── Load raw mouse data ─────────────────────────────────────────
-            mouse_velocities = []
-            mouse_positions = []
+            mouse_velocities.clear()
+            mouse_positions.clear()
             cursor.execute(
                 resolve_query(db,
                     "SELECT raw_data FROM behavioral_data "
@@ -1092,9 +1094,8 @@ class SessionMetrics(Resource):
     @limiter.limit("60 per minute")
     def get(self):
         """Get real-time behavioral metrics for a session."""
-        m, e = _build_session_metrics(
-            request.args.get("session_id") or request.cookies.get("session_id")
-        )
+        sid = request.args.get("session_id") or request.cookies.get("session_id") or ""
+        m, e = _build_session_metrics(sid)
         return ({"error": e[0]}, e[1]) if e else (m, 200)
 
 
@@ -1120,7 +1121,7 @@ class SessionMetricsStream(Resource):
                 time.sleep(2)
 
         return Response(
-            stream_with_context(stream()),
+            stream_with_context(iter(stream())),  # type: ignore[arg-type]
             mimetype="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -1193,7 +1194,7 @@ class TrustTimelineCsv(Resource):
         mx = current_app.config.get("TRUST_TIMELINE_MAX_WINDOW_MINUTES", 180)
         if pw < 5 or pw > mx:
             return {"error": f"window_minutes must be between 5 and {mx}"}, 400
-        pts, e = _build_trust_timeline(sid, pw, severity)
+        pts, e = _build_trust_timeline(sid or "", pw, severity)
         if e:
             return {"error": e[0]}, e[1]
         buf = io.StringIO()
@@ -1211,14 +1212,14 @@ class TrustTimelineCsv(Resource):
             ],
         )
         w.writeheader()
-        w.writerows(pts)
+        w.writerows(pts or [])
         get_db().log_audit_evidence(
             action="trust_timeline_export",
             status="ok",
             user_id=s.get("user_id"),
             session_id=sid,
             resource="/api/session/trust-timeline.csv",
-            metadata={"row_count": len(pts), "severity": severity},
+            metadata={"row_count": len(pts or []), "severity": severity},
             retention_tag="compliance",
         )
         return Response(

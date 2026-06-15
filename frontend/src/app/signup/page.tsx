@@ -384,7 +384,7 @@ export default function SignUpPage() {
 
                 {/* Username */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Username</label>
+                  <label htmlFor="signup-username" className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Username</label>
                   <div className="relative">
                     <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-2" />
                     <AuthInput
@@ -405,7 +405,7 @@ export default function SignUpPage() {
 
                 {/* Email */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Email</label>
+                  <label htmlFor="signup-email" className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Email</label>
                   <div className="relative">
                     <Mail className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-2" />
                     <AuthInput
@@ -426,7 +426,7 @@ export default function SignUpPage() {
 
                 {/* Password */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Password</label>
+                  <label htmlFor="signup-password" className="text-[10px] font-semibold text-muted uppercase tracking-wider ml-1">Password</label>
                   <div className="relative">
                     <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-2" />
                     <AuthInput
@@ -445,6 +445,7 @@ export default function SignUpPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-2 hover:text-fg transition-colors"
                     >
                       {showPassword ? <Eye className="w-3.5 h-3.5" /> : <EyeClosed className="w-3.5 h-3.5" />}
@@ -491,7 +492,7 @@ export default function SignUpPage() {
                 <div className="pt-3 mt-2 border-t border-white/5 space-y-2.5">
                   <div className="flex items-center gap-1.5">
                     <Fingerprint className="w-3.5 h-3.5 text-cyan-400" />
-                    <label className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider">
+                    <label htmlFor="behavioral-verify-text" className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider">
                       Seed Your Typing Profile
                     </label>
                   </div>

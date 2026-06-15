@@ -306,9 +306,12 @@ class Login(Resource):
         # 2. Account Lockout Check
         lockout_ok, remaining, lockout_until = AuthService.check_account_lockout(data.username)
         if not lockout_ok:
-            resp, status = make_error_response("ACCOUNT_LOCKED", "Account locked due to too many failed attempts.", status=423)
-            resp["error"]["details"] = {"lockout_until": lockout_until, "remaining_attempts": 0}
-            return resp, status
+            err_result = make_error_response("ACCOUNT_LOCKED", "Account locked due to too many failed attempts.", status=423)
+            if isinstance(err_result, tuple):
+                resp, status_code = err_result
+                resp["error"]["details"] = {"lockout_until": lockout_until, "remaining_attempts": 0}
+                return resp, status_code
+            return err_result
 
         db = get_db()
         user = db.authenticate_user(data.username, data.password)
@@ -359,9 +362,12 @@ class Login(Resource):
             except Exception:
                 logger.error("Failed to send suspicious login alert", exc_info=True)
 
-            resp, status = make_error_response("INVALID_CREDENTIALS", "Invalid credentials", status=401)
-            resp["error"]["details"] = {"remaining_attempts": rem, "lockout_until": until}
-            return resp, status
+            err_result = make_error_response("INVALID_CREDENTIALS", "Invalid credentials", status=401)
+            if isinstance(err_result, tuple):
+                resp, status_code = err_result
+                resp["error"]["details"] = {"remaining_attempts": rem, "lockout_until": until}
+                return resp, status_code
+            return err_result
 
         AuthService.reset_account_lockout(data.username)
 
@@ -918,7 +924,8 @@ class ResetPasswordConfirm(Resource):
 
         if user_id:
             user_id = int(user_id)
-            redis_client.delete(f"pwd_reset:{token_hash}")
+            if redis_client:
+                redis_client.delete(f"pwd_reset:{token_hash}")
             # Also mark consumed in DB
             db.consume_password_reset_token(token_hash)
         else:
@@ -1264,7 +1271,7 @@ class PasswordVerify(Resource):
                     data_type="keystroke",
                     features={"event_count": len(events), "source": "step_up"},
                     raw_data={"keystroke_events": events[:100]},
-                    confidence_score=float(min(len(events) / 100.0, 1.0)),
+                    confidence_score=min(len(events) / 100.0, 1.0),
                     anomaly_score=None,
                 )
 
