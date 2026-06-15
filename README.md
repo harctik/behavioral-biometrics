@@ -9,7 +9,16 @@
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
 </p>
 
-# 🛡️ AetherAuthSecure — Behavioral Biometrics Authentication
+<p align="center">
+  <img src="https://img.shields.io/badge/Coverage-80%25+-brightgreen?style=flat-square" alt="Coverage" />
+  <img src="https://img.shields.io/badge/ML_Engines-13-blueviolet?style=flat-square" alt="ML Engines" />
+  <img src="https://img.shields.io/badge/Tests-18_suites-blue?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/API_Namespaces-14-orange?style=flat-square" alt="API" />
+  <img src="https://img.shields.io/badge/DPDP_Act-Compliant-success?style=flat-square" alt="DPDP" />
+  <img src="https://img.shields.io/badge/PCI_DSS-4.0-success?style=flat-square" alt="PCI DSS" />
+</p>
+
+# 🛡️ AetherAuth — Behavioral Biometrics Authentication
 
 > **Enterprise-grade continuous authentication system** that uses keystroke dynamics, mouse movement analysis, and cognitive behavioral patterns to invisibly verify user identity — no CAPTCHAs, no friction.
 
