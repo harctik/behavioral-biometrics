@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async headers() {
-    const backendOrigin = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5000';
+    const backendOrigin = process.env.NEXT_PUBLIC_API_URL || 'https://behavioral-biometrics-cp5l.onrender.com';
     return [
       {
         source: '/(.*)',
@@ -26,7 +26,7 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: process.env.NODE_ENV === 'development'
-              ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: http://127.0.0.1:5000; frame-ancestors 'none';"
+              ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: http://127.0.0.1:5000 https://behavioral-biometrics-cp5l.onrender.com; frame-ancestors 'none';"
               : `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${backendOrigin} https://*.onrender.com https://*.vercel.app; frame-ancestors 'none';`,
           },
         ],
@@ -34,7 +34,7 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5000';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://behavioral-biometrics-cp5l.onrender.com';
     return [
       {
         source: '/api/v1/:path*',
