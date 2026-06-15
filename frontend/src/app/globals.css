@@ -117,6 +117,46 @@ input:focus, textarea:focus {
   }
 }
 
+/* ── Keyboard Navigation Accessibility ─────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+/* Skip-to-content link for screen readers */
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  z-index: 9999;
+}
+
+.skip-to-content:focus {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  width: auto;
+  height: auto;
+  padding: 12px 24px;
+  background: var(--accent-primary);
+  color: white;
+  border-radius: 8px;
+  font-weight: 600;
+  z-index: 9999;
+}
+
 /* ── Skeleton Loading Shimmer ───────────────────────────── */
 @keyframes shimmer {
   0% { background-position: -200% 0; }

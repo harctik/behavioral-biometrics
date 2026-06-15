@@ -20,9 +20,16 @@ interface Holding {
   avgCost: number;
 }
 
-// Fallback demo holdings
+// Fallback demo holdings — used only when backend is completely unreachable
 const MOCK_HOLDINGS: Holding[] = [
-  { id: "h1", name: "Reliance Industries", symbol: "RELIANCE", type: "equity", value: 145200, change: 2.4, units: 50, avgCost: 2650 },
+  { id: "h1", name: "Reliance Industries",       symbol: "RELIANCE",   type: "equity", value: 145200, change: 2.4,  units: 50,   avgCost: 2650 },
+  { id: "h2", name: "HDFC Bank Ltd",              symbol: "HDFCBANK",   type: "equity", value: 84300,  change: -0.8, units: 50,   avgCost: 1720 },
+  { id: "h3", name: "Infosys Ltd",                symbol: "INFY",       type: "equity", value: 62400,  change: 1.2,  units: 40,   avgCost: 1480 },
+  { id: "h4", name: "SBI Bluechip Fund — Direct", symbol: "SBIBLUE",    type: "mf",     value: 125000, change: 0.6,  units: 1850, avgCost: 64.5 },
+  { id: "h5", name: "Axis Long Term Equity Fund", symbol: "AXISLTEF",   type: "mf",     value: 78500,  change: 1.1,  units: 950,  avgCost: 78.2 },
+  { id: "h6", name: "ICICI Prudential Bond Fund", symbol: "ICICIBOND",  type: "bond",   value: 50000,  change: 0.2,  units: 500,  avgCost: 98.5 },
+  { id: "h7", name: "SBI 5-Year FD @ 7.1%",      symbol: "SBIFD5Y",    type: "fd",     value: 200000, change: 0.0,  units: 1,    avgCost: 200000 },
+  { id: "h8", name: "Tata Motors Ltd",            symbol: "TATAMOTORS", type: "equity", value: 38600,  change: 3.8,  units: 60,   avgCost: 580 },
 ];
 
 const TYPE_LABELS: Record<string, string> = { equity: "Equity", mf: "Mutual Fund", bond: "Bond", fd: "Fixed Deposit" };

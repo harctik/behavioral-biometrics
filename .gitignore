@@ -15,6 +15,9 @@ ENV/
 # Security and Secrets (NEVER COMMIT THESE!)
 .env.local
 .env.*
+.env.docker
+!.env.example
+!.env.docker
 secrets.json
 *.pem
 *.key
@@ -42,7 +45,6 @@ models/saved/*/*.pkl
 
 # Node.js
 node_modules/
-package-lock.json
 
 # Python caches
 .pytest_cache/
@@ -65,9 +67,10 @@ test_out2.txt
 frontend/.env.local
 
 # Vercel (contains OIDC tokens)
-frontend/.vercel/.env.*
+frontend/.vercel/
 
-# Next.js build output
+# Next.js build output (root + frontend)
+.next/
 frontend/.next/
 
 # Database files
@@ -75,3 +78,16 @@ database/
 
 # Large report images
 report_diagrams_png/
+
+# Playwright / test artifacts
+frontend/playwright-report/
+frontend/test-results/
+playwright-report/
+test-results/
+
+# Temp refactor scripts
+refactor.py
+frontend/refactor_toasts.py
+
+# Studvisor diagrams (generated output)
+studvisor_diagrams/

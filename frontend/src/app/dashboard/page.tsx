@@ -9,8 +9,24 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { KeystrokeHeatmap } from "@/components/behavioral/KeystrokeHeatmap";
 
-const TransactionRow = ({ name, date, amount, type }: { name: string, date: string, amount: string, type: 'in'|'out' }) => (
+const CATEGORY_COLORS: Record<string, string> = {
+  'Income': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  'Shopping': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  'Food & Dining': 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  'Entertainment': 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+  'Healthcare': 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+  'Groceries': 'bg-lime-500/10 text-lime-400 border-lime-500/20',
+  'Transport': 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+  'Investment': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  'Utilities': 'bg-slate-500/10 text-slate-300 border-slate-500/20',
+  'Housing': 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+  'Rewards': 'bg-pink-500/10 text-pink-400 border-pink-500/20',
+  'Transfer': 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+};
+
+const TransactionRow = ({ name, date, amount, type, category }: { name: string, date: string, amount: string, type: 'in'|'out', category?: string }) => (
   <div className="flex items-center justify-between py-3 border-b border-border last:border-0">
     <div className="flex items-center gap-3">
       <div className="w-10 h-10 rounded-full bg-black/20 flex items-center justify-center border border-border">
@@ -18,7 +34,14 @@ const TransactionRow = ({ name, date, amount, type }: { name: string, date: stri
       </div>
       <div>
         <div className="text-sm font-medium text-fg">{name}</div>
-        <div className="text-xs text-muted">{date}</div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-xs text-muted">{date}</span>
+          {category && (
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium border ${CATEGORY_COLORS[category] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}`}>
+              {category}
+            </span>
+          )}
+        </div>
       </div>
     </div>
     <div className={`text-sm tabular-nums font-medium ${type === 'in' ? 'text-accent-success' : 'text-fg'}`}>
@@ -36,9 +59,69 @@ const ToggleSwitch = ({ enabled, onToggle }: { enabled: boolean, onToggle: () =>
   </button>
 );
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useTelemetry } from "@/components/TelemetryProvider";
+
+// ── Typing Rhythm Waveform ─────────────────────────────────────────────────
+// Shows the last 30 hold times as an SVG sparkline
+function TypingRhythmWaveform() {
+  const [points, setPoints] = useState<number[]>([]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      try {
+        const collector = getCollector();
+        const snap = collector.getBufferSnapshot();
+        const holds = snap.keystroke_events
+          .map((k: any) => k.hold_time)
+          .filter((h: number) => h > 0 && h < 500);
+        if (holds.length > 0) {
+          setPoints(holds.slice(-30));
+        }
+      } catch {}
+    }, 600);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (points.length < 4) return <div className="text-[8px] text-muted font-mono">Collecting rhythm data...</div>;
+
+  const maxH = Math.max(...points, 1);
+  const minH = Math.min(...points, 0);
+  const range = Math.max(maxH - minH, 1);
+  const w = 280;
+  const h = 32;
+  
+  const pathPoints = points.map((v, i) => {
+    const x = (i / (points.length - 1)) * w;
+    const y = h - ((v - minH) / range) * (h - 4) - 2;
+    return `${x},${y}`;
+  });
+  
+  const linePath = `M ${pathPoints.join(" L ")}`;
+  const fillPath = `${linePath} L ${w},${h} L 0,${h} Z`;
+
+  return (
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="rounded">
+      <defs>
+        <linearGradient id="rhythmGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgba(139, 92, 246, 0.3)" />
+          <stop offset="100%" stopColor="rgba(139, 92, 246, 0)" />
+        </linearGradient>
+      </defs>
+      <path d={fillPath} fill="url(#rhythmGrad)" />
+      <path d={linePath} fill="none" stroke="rgba(139, 92, 246, 0.8)" strokeWidth="1.5" />
+      {/* Latest point indicator */}
+      <circle
+        cx={(points.length - 1) / (points.length - 1) * w}
+        cy={h - ((points[points.length - 1] - minH) / range) * (h - 4) - 2}
+        r="2.5"
+        fill="rgba(139, 92, 246, 1)"
+      />
+    </svg>
+  );
+}
+
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -449,7 +532,7 @@ export default function DashboardPage() {
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-auto p-8">
+        <div className={`flex-1 overflow-auto p-8 ${demoMode ? 'pb-[420px] sm:pb-8 sm:pr-[380px]' : ''}`}>
           <div className="max-w-5xl mx-auto space-y-8">
             
             {/* Balance Hero */}
@@ -562,6 +645,9 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* Live Keystroke Heatmap — Type anywhere to see your fingerprint */}
+            <KeystrokeHeatmap />
+
             {/* Tabs */}
             <div className="flex items-center gap-4 border-b border-border/50">
               <button 
@@ -599,7 +685,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="glass-panel rounded-2xl p-2 px-6">
                     {recentTransactions.length > 0 ? recentTransactions.map((tx, i) => (
-                      <TransactionRow key={i} name={tx.name} date={tx.date} amount={tx.amount} type={tx.type} />
+                      <TransactionRow key={i} name={tx.name} date={tx.date} amount={tx.amount} type={tx.type} category={tx.category} />
                     )) : (
                       <div className="py-4 text-center text-xs text-muted">No transactions yet. Use Quick Transfer to create your first transaction.</div>
                     )}
@@ -736,7 +822,7 @@ export default function DashboardPage() {
                         <div className="w-full mt-2 bg-accent-success/5 border border-accent-success/15 rounded-lg p-3 text-left">
                           <div className="text-[10px] uppercase tracking-widest font-bold text-accent-success mb-1.5">Behavioral Assessment</div>
                           <div className="text-[11px] font-mono text-muted space-y-1">
-                            <div>Keystroke confidence: <span className="text-fg">{behavioralScore?.authenticity_score ? ((behavioralScore.authenticity_score) * 100).toFixed(0) : (liveStats.avgHold > 0 ? '88' : '--')}%</span> · No hesitation detected ✓</div>
+                            <div>Keystroke confidence: <span className="text-fg">{behavioralScore?.authenticity_score ? ((behavioralScore.authenticity_score) * 100).toFixed(0) : '--'}%</span> · No hesitation detected ✓</div>
                             <div>Amount typed manually ✓ · Beneficiary {liveStats.copyPaste ? 'pasted ⚠' : 'typed manually ✓'}</div>
                           </div>
                         </div>
@@ -804,23 +890,59 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {activeTab === 'insights' && (
+            {activeTab === 'insights' && (() => {
+              // Compute dynamic spending data from real transactions
+              const outgoing = recentTransactions.filter(t => t.type === 'out');
+              const monthlyTotal = outgoing.reduce((sum, t) => sum + parseFloat(t.amount.replace(/,/g, '')), 0);
+              
+              // Aggregate by day of week
+              const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+              const dayTotals: Record<string, number> = {};
+              dayNames.forEach(d => dayTotals[d] = 0);
+              outgoing.forEach(t => {
+                const parsed = new Date(t.date);
+                if (!isNaN(parsed.getTime())) {
+                  dayTotals[dayNames[parsed.getDay()]] += parseFloat(t.amount.replace(/,/g, ''));
+                }
+              });
+              const maxDayValue = Math.max(...Object.values(dayTotals), 1);
+              const chartData = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => ({
+                day,
+                value: Math.round((dayTotals[day] / maxDayValue) * 100),
+                amount: dayTotals[day],
+              }));
+              const peakDay = chartData.reduce((a, b) => a.amount > b.amount ? a : b, chartData[0]);
+
+              // Find highest category
+              const categoryTotals: Record<string, number> = {};
+              outgoing.forEach(t => {
+                const cat = t.category || 'Other';
+                categoryTotals[cat] = (categoryTotals[cat] || 0) + parseFloat(t.amount.replace(/,/g, ''));
+              });
+              const topCategory = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1])[0];
+              const hasData = outgoing.length > 0;
+
+              return (
               <div className="space-y-4 animate-in fade-in">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-semibold text-muted uppercase tracking-wider">Financial Insights</h2>
-                  <span className="text-xs text-muted">AI-Powered Cash Flow Forecasting</span>
+                  <span className="text-xs text-muted">Computed from {outgoing.length} transactions</span>
                 </div>
                 <div className="glass-panel rounded-2xl p-8 min-h-[400px] flex flex-col">
                   
                   <div className="mb-8">
-                    <div className="text-sm font-medium text-muted">Total Monthly Spend</div>
+                    <div className="text-sm font-medium text-muted">Total Spend (Recent)</div>
                     <div className="text-3xl font-bold text-fg flex items-end gap-3 mt-1">
-                      ₹42,850.00
-                      <span className="text-xs text-accent-success bg-accent-success/10 px-2 py-0.5 rounded-full mb-1 font-medium">↓ 12% vs last month</span>
+                      {hasData ? `₹${monthlyTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '₹0.00'}
+                      {hasData && (
+                        <span className="text-xs text-accent-primary bg-accent-primary/10 px-2 py-0.5 rounded-full mb-1 font-medium">
+                          {outgoing.length} transactions
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Pure CSS Animated Bar Chart */}
+                  {/* Dynamic Bar Chart */}
                   <div className="flex-1 flex items-end justify-between gap-2 mt-auto pt-8 border-b border-border/50 pb-4 relative">
                     {/* Y-axis grid lines */}
                     <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pb-4">
@@ -830,53 +952,52 @@ export default function DashboardPage() {
                       <div className="border-t border-white/5 w-full"></div>
                     </div>
 
-                    {[
-                      { day: 'Mon', value: 35 },
-                      { day: 'Tue', value: 60 },
-                      { day: 'Wed', value: 20 },
-                      { day: 'Thu', value: 85 },
-                      { day: 'Fri', value: 45 },
-                      { day: 'Sat', value: 95 },
-                      { day: 'Sun', value: 30 }
-                    ].map((d, i) => (
+                    {chartData.map((d, i) => (
                       <div key={d.day} className="flex flex-col items-center flex-1 z-10 group cursor-pointer">
                         <div className="w-full relative flex justify-center items-end h-[150px]">
                           {/* Tooltip */}
                           <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-elevated text-xs px-2 py-1 rounded text-fg border border-border whitespace-nowrap z-20 shadow-xl pointer-events-none">
-                            ₹{(d.value * 120).toLocaleString()}
+                            ₹{d.amount.toLocaleString(undefined, { minimumFractionDigits: 0 })}
                           </div>
                           
                           {/* Animated Bar */}
                           <motion.div 
                             initial={{ height: 0 }}
-                            animate={{ height: `${d.value}%` }}
+                            animate={{ height: `${Math.max(d.value, hasData ? 2 : 0)}%` }}
                             transition={{ duration: 0.8, delay: i * 0.1, type: "spring", bounce: 0.3 }}
                             className={`w-full max-w-[40px] rounded-t-lg relative overflow-hidden group-hover:brightness-110 transition-all ${
-                              d.day === 'Sat' ? 'bg-gradient-to-t from-accent-primary to-blue-400' : 'bg-surface-2 border border-border/50 border-b-0'
+                              d.day === peakDay.day && d.amount > 0 ? 'bg-gradient-to-t from-accent-primary to-blue-400' : 'bg-surface-2 border border-border/50 border-b-0'
                             }`}
                           >
                             <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/10"></div>
                           </motion.div>
                         </div>
-                        <div className={`text-[10px] uppercase font-bold mt-3 ${d.day === 'Sat' ? 'text-accent-primary' : 'text-muted'}`}>{d.day}</div>
+                        <div className={`text-[10px] uppercase font-bold mt-3 ${d.day === peakDay.day && d.amount > 0 ? 'text-accent-primary' : 'text-muted'}`}>{d.day}</div>
                       </div>
                     ))}
                   </div>
 
-                  {/* ML Insight Pill */}
+                  {/* Dynamic Insight Pill */}
                   <div className="mt-8 flex items-center gap-3 bg-accent-primary/10 border border-accent-primary/20 p-4 rounded-xl">
                     <div className="w-8 h-8 rounded-full bg-accent-primary/20 flex items-center justify-center shrink-0">
                       <Activity className="w-4 h-4 text-accent-primary" />
                     </div>
                     <div>
-                      <div className="text-xs font-semibold text-fg">Behavioral Spending Anomaly Detected</div>
-                      <div className="text-[11px] text-muted mt-0.5">Your Saturday spending on Dining exceeded your usual weekend profile by 40%.</div>
+                      <div className="text-xs font-semibold text-fg">
+                        {hasData ? 'Spending Pattern Analysis' : 'Start Transacting to See Insights'}
+                      </div>
+                      <div className="text-[11px] text-muted mt-0.5">
+                        {hasData && topCategory
+                          ? `Peak spending on ${peakDay.day} (₹${peakDay.amount.toLocaleString()}). Top category: ${topCategory[0]} at ₹${topCategory[1].toLocaleString()}.`
+                          : 'Make transfers to generate behavioral spending analysis powered by your transaction history.'}
+                      </div>
                     </div>
                   </div>
 
                 </div>
               </div>
-            )}
+              );
+            })()}
 
           </div>
         </div>
@@ -972,6 +1093,7 @@ export default function DashboardPage() {
                     { label: 'Replay', value: backendMetrics.ensemble.replay_risk || 0 },
                     { label: 'Drift', value: backendMetrics.ensemble.drift_risk || 0 },
                     { label: 'Match', value: backendMetrics.ensemble.weighted_match_score || 0, invert: true },
+                    { label: 'Digraph', value: backendMetrics.ensemble.digraph_match_score ?? 0.5, invert: true },
                   ].map(({ label, value, invert }) => {
                     const riskValue = invert ? 1 - value : value;
                     return (
@@ -1053,6 +1175,38 @@ export default function DashboardPage() {
                 {liveStats.copyPaste && <span className="px-2 py-0.5 rounded-md bg-accent-danger/10 border border-accent-danger/20 text-[9px] font-mono text-accent-danger">Copy-paste ⚠</span>}
               </div>
             </div>
+
+            {/* Digraph Match Status Badge */}
+            {digraphProfile && (
+              <div className="pt-3 border-t border-border">
+                <div className="text-[9px] text-muted uppercase tracking-wider mb-2">Digraph Bio-Signature</div>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-1 rounded-md text-[9px] font-mono font-bold ${
+                    !digraphProfile.has_profile ? 'bg-slate-500/10 border border-slate-500/20 text-slate-400' :
+                    digraphProfile.confidence > 0.7 ? 'bg-accent-success/10 border border-accent-success/20 text-accent-success' :
+                    digraphProfile.confidence > 0.3 ? 'bg-accent-warning/10 border border-accent-warning/20 text-accent-warning' :
+                    'bg-accent-primary/10 border border-accent-primary/20 text-accent-primary'
+                  }`}>
+                    {!digraphProfile.has_profile ? 'NO PROFILE' :
+                     digraphProfile.updates_count >= 5 ? 'MATCHED ✓' :
+                     digraphProfile.updates_count >= 3 ? 'LEARNING' : 'INITIALIZING'}
+                  </span>
+                  <span className="text-[8px] font-mono text-muted">
+                    {digraphProfile.has_profile
+                      ? `${digraphProfile.per_key_count} keys · ${digraphProfile.per_digraph_count} pairs · ${Math.round(digraphProfile.confidence * 100)}% conf`
+                      : 'Type during signup/login to build'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Typing Rhythm Waveform */}
+            {liveStats.ksCount > 3 && (
+              <div className="pt-3 border-t border-border">
+                <div className="text-[9px] text-muted uppercase tracking-wider mb-2">Typing Rhythm</div>
+                <TypingRhythmWaveform />
+              </div>
+            )}
 
             {/* Ensemble Flags */}
             {backendMetrics?.ensemble?.ensemble_flags && backendMetrics.ensemble.ensemble_flags.length > 0 && (
@@ -1142,9 +1296,26 @@ export default function DashboardPage() {
             )}
 
             {/* Demo Actions */}
-            <div className="pt-3 border-t border-border">
+            <div className="pt-3 border-t border-border space-y-2">
               <button 
-                onClick={() => router.push("/challenge?reason=behavioral_anomaly&score=0.88")}
+                onClick={async () => {
+                  try {
+                    // Call backend to inject a real simulated risk spike
+                    const csrf = getCsrfToken();
+                    const res = await fetch('/api/v1/session/silent-challenge', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
+                      body: JSON.stringify({ session_id: getSessionId(), current_risk_score: 0.88 })
+                    });
+                    const data = res.ok ? await res.json() : null;
+                    const realScore = data?.risk_score ?? backendMetrics?.risk_score ?? 0.88;
+                    toast.error('Risk spike simulated — redirecting to behavioral challenge');
+                    setTimeout(() => router.push(`/challenge?reason=behavioral_anomaly&score=${realScore.toFixed(2)}`), 500);
+                  } catch {
+                    // Fallback: navigate directly
+                    router.push('/challenge?reason=behavioral_anomaly&score=0.88');
+                  }
+                }}
                 className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 font-mono text-[9px] py-2 rounded uppercase tracking-wider transition-colors flex justify-center items-center gap-2"
               >
                 <ShieldAlert className="w-3 h-3" />

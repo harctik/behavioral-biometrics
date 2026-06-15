@@ -28,14 +28,25 @@ class RegisterSchema(BaseModel):
 
 
 class LoginSchema(BaseModel):
+    """Phase 1: Credentials only — no behavioral data yet."""
     username: str
     password: str
-    keystroke_data: list = []
-    device_fingerprint: dict = {}
+    device_id: str = ""
+
+
+class LoginVerifySchema(BaseModel):
+    """Phase 2: Behavioral verification with typing challenge."""
+    challenge_token: str
+    typed_text: str = ""
     behavioral_data: dict = {}
     keystroke_profile: dict = {}
-    device_id: str = ""
-    trust_device: bool = False
+
+
+class AccountRecoveryVerifySchema(BaseModel):
+    """Account recovery: re-verify identity via multiple typing samples."""
+    recovery_token: str
+    typed_texts: list = []
+    behavioral_data: dict = {}
 
 
 class ForgotPasswordSchema(BaseModel):

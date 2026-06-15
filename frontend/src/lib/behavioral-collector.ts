@@ -41,7 +41,8 @@ export type PageContext =
   | "STATEMENTS_PAGE"
   | "STEP_UP_CHALLENGE"
   | "SETTINGS_PAGE"
-  | "MAKE_PAYMENT";
+  | "MAKE_PAYMENT"
+  | "RECOVERY";
 
 // ─── Device Fingerprint ───────────────────────────────────────────────────────
 export interface DeviceFingerprint {
@@ -1662,6 +1663,18 @@ export class BehavioralCollector {
   get keystrokeCount() { return this.keystrokeEvents.length; }
   get mouseCount() { return this.mouseEvents.length; }
   get touchCount() { return this.touchEvents.length; }
+
+  /** Return a read-only snapshot of the current buffers without clearing them */
+  getBufferSnapshot() {
+    return {
+      keystroke_events: [...this.keystrokeEvents],
+      mouse_events: [...this.mouseEvents],
+      touch_events: [...this.touchEvents],
+      scroll_events: [...this.scrollEvents],
+      cognitive_events: [...this.cognitiveEvents],
+      navigation_events: [...this.navigationEvents],
+    };
+  }
 }
 
 // ── Singleton ─────────────────────────────────────────────────────────────────

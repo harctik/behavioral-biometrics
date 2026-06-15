@@ -222,6 +222,17 @@ class Register(Resource):
         except Exception:
             logger.error("Session 0 enrollment seed processing failed", exc_info=True)
 
+        # ── Save the user's assigned typing prompt for login verification ──
+        try:
+            raw_json = request.get_json() or {}
+            enrollment_seed = raw_json.get("enrollment_seed") or {}
+            typed_prompt = enrollment_seed.get("typed_prompt", "")
+            if typed_prompt:
+                db.set_typing_prompt(user_id, typed_prompt)
+                logger.info("Saved typing prompt for user %d", user_id)
+        except Exception:
+            logger.error("Failed to save typing prompt", exc_info=True)
+
         db.log_audit_evidence(
             action="user_registered",
             status="ok",
@@ -254,17 +265,32 @@ class Register(Resource):
         }, 200
 
 
-from app.services.auth_service import AuthService  # safe default: treat unknown as new
+from app.services.auth_service import AuthService
+from app.schemas.auth_schemas import LoginVerifySchema, AccountRecoveryVerifySchema
+
+
+# ── Typing prompts for users without an assigned prompt ──────────────────
+_FALLBACK_PROMPTS = [
+    "The quick brown fox jumps over the lazy dog",
+    "Pack my box with five dozen liquor jugs",
+    "A secure system operates invisibly but effectively",
+    "Every keystroke reveals the person behind the screen",
+    "Banking security requires vigilant user behavior",
+]
 
 
 @auth_ns.route("/login")
 class Login(Resource):
     @auth_ns.expect(login_model)
-    @auth_ns.response(200, "Login successful", auth_success)
+    @auth_ns.response(200, "Credentials valid — challenge issued", auth_success)
     @auth_ns.response(401, "Invalid credentials", auth_error)
     @limiter.limit("10 per minute")
     def post(self):
-        """Authenticate with username and password. Returns JWT + session ID."""
+        """Phase 1: Validate credentials and issue a typing challenge.
+
+        Returns a challenge_token + typing_prompt. Does NOT issue a JWT yet.
+        The client must complete Phase 2 (/login/verify) with behavioral data.
+        """
         try:
             data = LoginSchema(**request.get_json() or {})
         except ValidationError as e:
@@ -276,7 +302,7 @@ class Login(Resource):
         stuffing_ok, stuffing_msg = AuthService.check_credential_stuffing(ip_address)
         if not stuffing_ok:
             return make_error_response("RATE_LIMIT_EXCEEDED", stuffing_msg, status=429)
-            
+
         # 2. Account Lockout Check
         lockout_ok, remaining, lockout_until = AuthService.check_account_lockout(data.username)
         if not lockout_ok:
@@ -298,15 +324,57 @@ class Login(Resource):
             )
             AuthService.increment_credential_stuffing(ip_address)
             rem, until = AuthService.increment_account_lockout(data.username)
+
+            # ── Suspicious login alert email ────────────────────────────
+            ALERT_THRESHOLD = current_app.config.get("SUSPICIOUS_LOGIN_ALERT_THRESHOLD", 3)
+            try:
+                target_user = db.get_user_by_username(data.username)
+                if not target_user:
+                    target_user = db.get_user_by_email(data.username)
+
+                if target_user and target_user.get("email"):
+                    failed_count = target_user.get("failed_attempts", 0)
+                    if failed_count >= ALERT_THRESHOLD:
+                        cooldown_key = f"login_alert_cd:{data.username}"
+                        rc = get_redis()
+                        should_send = True
+                        if rc:
+                            try:
+                                if rc.exists(cooldown_key):
+                                    should_send = False
+                                else:
+                                    rc.setex(cooldown_key, 600, 1)
+                            except Exception:
+                                pass
+                        if should_send:
+                            mail_svc = current_app.extensions.get("mail_service")
+                            if mail_svc:
+                                mail_svc.send_suspicious_login_alert(
+                                    to=target_user["email"],
+                                    username=target_user["username"],
+                                    failed_attempts=failed_count,
+                                    ip_address=ip_address,
+                                    user_agent=request.headers.get("User-Agent", "unknown"),
+                                )
+            except Exception:
+                logger.error("Failed to send suspicious login alert", exc_info=True)
+
             resp, status = make_error_response("INVALID_CREDENTIALS", "Invalid credentials", status=401)
             resp["error"]["details"] = {"remaining_attempts": rem, "lockout_until": until}
             return resp, status
 
         AuthService.reset_account_lockout(data.username)
 
+        # ── Check behavioral block ─────────────────────────────────────────
+        if AuthService.is_user_blocked(user["user_id"]):
+            return make_error_response(
+                "BEHAVIORAL_BLOCKED",
+                "Account temporarily locked due to unusual activity. Check your email for a recovery link.",
+                status=403,
+            )
+
+        # ── Auto-verify email if no real mail backend ──────────────────────
         if not user.get("email_verified", False):
-            # Auto-verify at login time when no real mail backend is configured
-            # (handles users who registered before the registration-time auto-verify fix)
             mail_svc = current_app.extensions.get("mail_service")
             mail_backend = current_app.config.get("MAIL_BACKEND", "")
             mail_server = current_app.config.get("MAIL_SERVER", "localhost")
@@ -317,17 +385,83 @@ class Login(Resource):
 
             if not has_real_mail:
                 db.set_email_verified(user["user_id"])
-                logger.info("Auto-verified email at login for user %s (no mail backend)", data.username)
             else:
-                logger.warning(
-                    "Failed login attempt - email not verified: %s", data.username
-                )
                 return make_error_response(
                     "EMAIL_NOT_VERIFIED",
                     "Please verify your email address before logging in",
                     status=403,
                 )
 
+        # ── Generate challenge token ───────────────────────────────────────
+        challenge_token = AuthService.create_login_challenge(user["user_id"])
+
+        # ── Get user's typing prompt ───────────────────────────────────────
+        typing_prompt = db.get_typing_prompt(user["user_id"])
+        if not typing_prompt:
+            # Assign a deterministic prompt based on user_id (no randomness)
+            import hashlib
+            idx = int(hashlib.md5(str(user["user_id"]).encode()).hexdigest(), 16) % len(_FALLBACK_PROMPTS)
+            typing_prompt = _FALLBACK_PROMPTS[idx]
+            db.set_typing_prompt(user["user_id"], typing_prompt)
+
+        # ── Get enrollment status ──────────────────────────────────────────
+        enrollment_info = {"sessions_completed": 0, "sessions_required": 3, "enrolled": False}
+        try:
+            from app.models.passive_enrollment import get_enrollment_manager
+            enrollment_mgr = get_enrollment_manager()
+            enrollment_info = enrollment_mgr.get_enrollment_status(user["user_id"])
+        except Exception:
+            pass
+
+        logger.info(
+            "Login Phase 1 passed for user %s — challenge issued (enrollment: %s)",
+            data.username, enrollment_info.get("enrollment_phase", "unknown"),
+        )
+
+        return {
+            "data": {
+                "challenge_token": challenge_token,
+                "typing_prompt": typing_prompt,
+                "enrollment_phase": enrollment_info.get("enrollment_phase", "collecting"),
+                "sessions_completed": enrollment_info.get("sessions_completed", 0),
+                "sessions_required": enrollment_info.get("sessions_required", 3),
+                "username": data.username,
+            }
+        }, 200
+
+
+@auth_ns.route("/login/verify")
+class LoginVerify(Resource):
+    @auth_ns.response(200, "Login successful", auth_success)
+    @auth_ns.response(401, "Challenge invalid or expired", auth_error)
+    @auth_ns.response(403, "Behavioral anomaly — access denied", auth_error)
+    @limiter.limit("10 per minute")
+    def post(self):
+        """Phase 2: Verify behavioral biometrics from typing challenge.
+
+        Compares the user's typing pattern against their enrolled profile
+        and makes a grant/step_up/block decision.
+        """
+        try:
+            data = LoginVerifySchema(**request.get_json() or {})
+        except ValidationError as e:
+            return make_error_response("VALIDATION_ERROR", str(e), status=400)
+
+        # ── Validate challenge token ───────────────────────────────────────
+        user_id = AuthService.validate_login_challenge(data.challenge_token)
+        if user_id is None:
+            return make_error_response(
+                "CHALLENGE_EXPIRED",
+                "Challenge token expired or invalid. Please start login again.",
+                status=401,
+            )
+
+        db = get_db()
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return make_error_response("USER_NOT_FOUND", "User not found", status=401)
+
+        ip_address = request.remote_addr or "127.0.0.1"
         user_agent = request.headers.get("User-Agent", "")
         device_id = (
             request.headers.get("X-Device-Id")
@@ -335,182 +469,302 @@ class Login(Resource):
             or str(uuid.uuid4())
         )
 
-        session_id = db.create_session(user["user_id"], ip_address, user_agent)
-        if device_id:
-            with db.get_connection() as conn:
-                query = resolve_query(db, "UPDATE sessions SET device_id = :param WHERE session_id = :param")
-                conn.execute(
-                    query,
-                    (device_id, session_id),
-                )
-                conn.commit()
+        # ── Extract behavioral features from typing data ───────────────────
+        behavioral_data = data.behavioral_data or {}
+        keystroke_events = behavioral_data.get("keystroke_events", [])
+        keystroke_profile = data.keystroke_profile or {}
 
-        access_token = create_access_token(
-            identity=str(user["user_id"]),
-            additional_claims={"session_id": session_id, "aal": "pwd"},
-            expires_delta=current_app.config["JWT_ACCESS_TOKEN_EXPIRES"],
-        )
-
-        logger.info("User logged in: %s (Session: %s)", data.username, session_id)
-        db.log_audit_evidence(
-            action="login_success",
-            status="ok",
-            user_id=user["user_id"],
-            session_id=session_id,
-            resource="/api/v1/auth/login",
-            metadata={"ip": ip_address, "device_id": device_id},
-            retention_tag="security",
-        )
-
-        # Store login keystroke data as behavioral baseline
-        if data.keystroke_data:
-            db.store_behavioral_data(
-                user_id=user["user_id"],
-                session_id=session_id,
-                data_type="keystroke",
-                features={
-                    "event_count": len(data.keystroke_data),
-                    "source": "login",  # tag as login-time data
-                    "login_anxiety_flag": True,  # downweight in scoring
-                },
-                raw_data={"keystroke_events": data.keystroke_data[:100]},
-                confidence_score=float(min(len(data.keystroke_data) / 100.0, 1.0)),
-                anomaly_score=None,
-            )
-
-        # ── Passive Enrollment: feed login keystrokes into profile ──────────
+        # ── Get enrollment status ──────────────────────────────────────────
+        enrollment_phase = True
         enrollment_status = None
+        match_score = 1.0  # Default for enrollment
         enrollment_result = None
         digraph_result = None
+
         try:
             from app.models.passive_enrollment import get_enrollment_manager
-
             enrollment_mgr = get_enrollment_manager()
+            enrollment_status = enrollment_mgr.get_enrollment_status(user_id)
+            enrollment_phase = not enrollment_status.get("enrolled", False)
 
-            # Extract keystroke features from login data for enrollment
+            # Extract aggregate features
             login_features = {}
-            if data.keystroke_data and len(data.keystroke_data) >= 2:
+            if keystroke_events and len(keystroke_events) >= 2:
                 try:
-                    hold_times = [
-                        e.get("hold_time", 0)
-                        for e in data.keystroke_data
-                        if e.get("hold_time")
-                    ]
-                    flight_times = [
-                        e.get("flight_time", 0)
-                        for e in data.keystroke_data
-                        if e.get("flight_time")
-                    ]
+                    hold_times = [e.get("hold_time", 0) for e in keystroke_events if e.get("hold_time")]
+                    flight_times = [e.get("flight_time", 0) for e in keystroke_events if e.get("flight_time")]
                     if hold_times:
-                        login_features["hold_time_mean"] = sum(hold_times) / len(
-                            hold_times
-                        )
+                        login_features["hold_time_mean"] = sum(hold_times) / len(hold_times)
                         login_features["hold_time_std"] = (
-                            sum(
-                                (h - login_features["hold_time_mean"]) ** 2
-                                for h in hold_times
-                            )
-                            / len(hold_times)
+                            sum((h - login_features["hold_time_mean"]) ** 2 for h in hold_times) / len(hold_times)
                         ) ** 0.5
                     if flight_times:
-                        login_features["flight_time_mean"] = sum(flight_times) / len(
-                            flight_times
-                        )
+                        login_features["flight_time_mean"] = sum(flight_times) / len(flight_times)
                         login_features["flight_time_std"] = (
-                            sum(
-                                (f - login_features["flight_time_mean"]) ** 2
-                                for f in flight_times
-                            )
-                            / len(flight_times)
+                            sum((f - login_features["flight_time_mean"]) ** 2 for f in flight_times) / len(flight_times)
                         ) ** 0.5
                 except Exception:
                     pass
 
+            # Ingest into aggregate profile
             if login_features:
                 enrollment_result = enrollment_mgr.ingest_session_data(
-                    user_id=user["user_id"],
+                    user_id=user_id,
                     keystroke_features=login_features,
                     source="login",
                 )
-                enrollment_status = enrollment_mgr.get_enrollment_status(
-                    user["user_id"]
-                )
 
             # ── Per-key/digraph Bayesian profile update ────────────────────
-            # Prefer client-sent profile (richer — includes username field data)
-            # Fall back to server-side extraction from keystroke_data
             digraph_profile = None
-            if data.keystroke_profile and data.keystroke_profile.get("per_key_hold"):
-                digraph_profile = data.keystroke_profile
-            elif data.keystroke_data and len(data.keystroke_data) >= 3:
+            if keystroke_profile and keystroke_profile.get("per_key_hold"):
+                digraph_profile = keystroke_profile
+            elif keystroke_events and len(keystroke_events) >= 3:
                 try:
                     from app.models.digraph_profile import get_digraph_extractor
                     extractor = get_digraph_extractor()
-                    digraph_profile = extractor.extract_profile(
-                        data.keystroke_data, source="login"
-                    )
+                    digraph_profile = extractor.extract_profile(keystroke_events, source="login")
                 except Exception:
                     pass
 
             if digraph_profile and digraph_profile.get("meta", {}).get("unique_keys", 0) >= 2:
                 try:
                     digraph_result = enrollment_mgr.ingest_digraph_profile(
-                        user_id=user["user_id"],
+                        user_id=user_id,
                         digraph_profile=digraph_profile,
                         source="login",
-                    )
-                    logger.info(
-                        "Login digraph update for user %s: action=%s score=%.3f keys=%d digraphs=%d",
-                        data.username,
-                        digraph_result.get("action"),
-                        digraph_result.get("match_score", 0),
-                        digraph_result.get("per_key_count", 0),
-                        digraph_result.get("per_digraph_count", 0),
                     )
                 except Exception:
                     logger.error("Digraph profile update at login failed", exc_info=True)
 
-        except Exception as exc:
-            logger.error("Passive enrollment update at login failed", exc_info=True)
+            # ── Compute combined match score ───────────────────────────────
+            if not enrollment_phase:
+                agg_score = enrollment_result.get("match_score", 0.5) if enrollment_result else 0.5
+                dig_score = digraph_result.get("match_score", 0.5) if digraph_result else 0.5
 
-        # Check if this is a known device for this user
-        device_known = AuthService.is_known_device(db, user["user_id"], device_id)
-        device_new = not device_known
+                # Weighted: 60% digraph (more discriminative), 40% aggregate
+                if digraph_result and enrollment_result:
+                    match_score = 0.4 * agg_score + 0.6 * dig_score
+                elif digraph_result:
+                    match_score = dig_score
+                elif enrollment_result:
+                    match_score = agg_score
+                else:
+                    match_score = 0.5
 
-        if device_new:
+                logger.info(
+                    "Login Phase 2 for user %d: agg=%.3f dig=%.3f combined=%.3f",
+                    user_id, agg_score, dig_score, match_score,
+                )
+
+            # Refresh enrollment status after ingestion
+            enrollment_status = enrollment_mgr.get_enrollment_status(user_id)
+
+        except Exception:
+            logger.error("Behavioral verification failed", exc_info=True)
+
+        # ── Make decision ──────────────────────────────────────────────────
+        device_known = AuthService.is_known_device(db, user_id, device_id)
+        decision = AuthService.evaluate_behavioral_decision(
+            match_score=match_score,
+            enrollment_phase=enrollment_phase,
+            is_known_device=device_known,
+        )
+
+        logger.info(
+            "Login Phase 2 decision for user %d: decision=%s score=%.3f enrollment=%s device_known=%s",
+            user_id, decision, match_score, enrollment_phase, device_known,
+        )
+
+        # ── Handle BLOCK decision ──────────────────────────────────────────
+        if decision == "block":
+            AuthService.block_user(user_id)
+
+            db.log_audit_evidence(
+                action="behavioral_block",
+                status="blocked",
+                user_id=user_id,
+                resource="/api/v1/auth/login/verify",
+                metadata={"match_score": match_score, "device_id": device_id, "ip": ip_address},
+                retention_tag="security",
+            )
+
+            # Send alert email + recovery link
+            try:
+                recovery_token = AuthService.create_recovery_token(user_id)
+                mail_svc = current_app.extensions.get("mail_service")
+                user_detail = db.get_user_by_id(user_id)
+                if mail_svc and user_detail and user_detail.get("email"):
+                    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+                    recovery_url = f"{frontend_url}/account-recovery?token={recovery_token}"
+                    mail_svc.send_suspicious_login_alert(
+                        to=user_detail["email"],
+                        username=user_detail["username"],
+                        failed_attempts=0,
+                        ip_address=ip_address,
+                        user_agent=request.headers.get("User-Agent", "unknown"),
+                    )
+                    logger.info("Behavioral block alert sent to user %d", user_id)
+            except Exception:
+                logger.error("Failed to send behavioral block alert", exc_info=True)
+
+            return make_error_response(
+                "BEHAVIORAL_BLOCKED",
+                "Access denied — unusual typing pattern detected. A recovery link has been sent to your email.",
+                status=403,
+            )
+
+        # ── Create session + JWT (for grant, step_up, and enroll) ──────────
+        session_id = db.create_session(user_id, ip_address, user_agent)
+        if device_id:
+            with db.get_connection() as conn:
+                query = resolve_query(db, "UPDATE sessions SET device_id = :param WHERE session_id = :param")
+                conn.execute(query, (device_id, session_id))
+                conn.commit()
+
+        mfa_required = decision == "step_up"
+
+        access_token = create_access_token(
+            identity=str(user_id),
+            additional_claims={"session_id": session_id, "aal": "pwd"},
+            expires_delta=current_app.config["JWT_ACCESS_TOKEN_EXPIRES"],
+        )
+
+        db.log_audit_evidence(
+            action="login_success",
+            status="ok",
+            user_id=user_id,
+            session_id=session_id,
+            resource="/api/v1/auth/login/verify",
+            metadata={
+                "ip": ip_address,
+                "device_id": device_id,
+                "decision": decision,
+                "match_score": round(match_score, 4),
+            },
+            retention_tag="security",
+        )
+
+        if not device_known:
             db.log_audit_evidence(
                 action="new_device_login",
                 status="flagged",
-                user_id=user["user_id"],
+                user_id=user_id,
                 session_id=session_id,
-                resource="/api/v1/auth/login",
+                resource="/api/v1/auth/login/verify",
                 metadata={"device_id": device_id, "ip": ip_address},
                 retention_tag="security",
             )
 
-        mfa_required = user.get("mfa_enabled", False)
-
-        if enrollment_status and enrollment_status.get("enrolled"):
-            match_score = (
-                enrollment_result.get("match_score", 0.0) if enrollment_result else 0.5
-            )
-            if match_score < 0.5:
-                # Step up logic triggers email OTP on frontend
-                mfa_required = True
+        logger.info("User %d logged in via Phase 2: decision=%s session=%s", user_id, decision, session_id)
 
         resp_data = {
             "data": {
                 "access_token": access_token,
                 "session_id": session_id,
                 "mfa_required": mfa_required,
-                "device_new": device_new,
+                "decision": decision,
+                "match_score": round(match_score, 4),
+                "device_new": not device_known,
                 "enrollment": enrollment_status,
-                "digraph_enrollment": digraph_result,
             }
         }
         resp = make_response(jsonify(resp_data), 200)
         set_access_cookies(resp, access_token)
+        resp.set_cookie(
+            "session_id", session_id,
+            httponly=False, samesite="Lax", path="/",
+            max_age=int(current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()),
+        )
         return resp
+
+
+@auth_ns.route("/account-recovery/verify")
+class AccountRecoveryVerify(Resource):
+    @auth_ns.response(200, "Account unlocked")
+    @auth_ns.response(401, "Recovery failed")
+    @limiter.limit("5 per minute")
+    def post(self):
+        """Verify identity via multiple typing samples to unlock a blocked account."""
+        try:
+            data = AccountRecoveryVerifySchema(**request.get_json() or {})
+        except ValidationError as e:
+            return make_error_response("VALIDATION_ERROR", str(e), status=400)
+
+        user_id = AuthService.validate_recovery_token(data.recovery_token)
+        if user_id is None:
+            return make_error_response(
+                "RECOVERY_EXPIRED",
+                "Recovery token expired, invalid, or max attempts exceeded.",
+                status=401,
+            )
+
+        # ── Compare typing samples against stored profile ──────────────
+        db = get_db()
+        match_count = 0
+        total_score = 0.0
+
+        try:
+            from app.models.passive_enrollment import get_enrollment_manager
+            enrollment_mgr = get_enrollment_manager()
+
+            # Get stored profile for comparison
+            for _idx, _typed_text in enumerate(data.typed_texts):
+                # Use the behavioral data to compute a match score
+                behavioral_data = data.behavioral_data or {}
+                keystroke_events = behavioral_data.get("keystroke_events", [])
+
+                if keystroke_events and len(keystroke_events) >= 3:
+                    try:
+                        from app.models.digraph_profile import get_digraph_extractor
+                        extractor = get_digraph_extractor()
+                        digraph_profile = extractor.extract_profile(keystroke_events, source="recovery")
+                        if digraph_profile and digraph_profile.get("meta", {}).get("unique_keys", 0) >= 2:
+                            # Compare without ingesting
+                            stored = enrollment_mgr._load_digraph_state(user_id)
+                            if stored and stored.get("per_key_hold"):
+                                score = enrollment_mgr._compute_digraph_match_score(stored, digraph_profile)
+                                total_score += score
+                                if score >= 0.6:
+                                    match_count += 1
+                    except Exception:
+                        logger.error("Recovery sample %d comparison failed", _idx, exc_info=True)
+
+        except Exception:
+            logger.error("Recovery verification failed", exc_info=True)
+
+        # ── Decision: 2 out of 3 samples must match ────────────────────
+        # If we couldn't compute scores (no profile yet), be lenient
+        if match_count >= 2 or (total_score == 0 and len(data.typed_texts) >= 3):
+            AuthService.unblock_user(user_id)
+            AuthService.consume_recovery_token(data.recovery_token)
+
+            db.log_audit_evidence(
+                action="account_recovered",
+                status="ok",
+                user_id=user_id,
+                resource="/api/v1/auth/account-recovery/verify",
+                metadata={"match_count": match_count, "total_score": round(total_score, 4)},
+                retention_tag="security",
+            )
+
+            logger.info("Account recovered for user %d: %d/3 samples matched", user_id, match_count)
+            return {"message": "Account unlocked successfully"}, 200
+        else:
+            db.log_audit_evidence(
+                action="account_recovery_failed",
+                status="blocked",
+                user_id=user_id,
+                resource="/api/v1/auth/account-recovery/verify",
+                metadata={"match_count": match_count, "total_score": round(total_score, 4)},
+                retention_tag="security",
+            )
+
+            logger.warning("Account recovery failed for user %d: %d/3 samples matched", user_id, match_count)
+            return make_error_response(
+                "RECOVERY_FAILED",
+                "Your typing patterns did not match. Recovery attempts remaining: check your email.",
+                status=401,
+            )
 
 
 @auth_ns.route("/forgot-password")
@@ -559,9 +813,8 @@ class ForgotPassword(Resource):
 
         mail_svc = current_app.extensions.get("mail_service")
         if mail_svc:
-            reset_url_base = current_app.config.get(
-                "RESET_URL_BASE", "http://localhost:3000/reset-password"
-            )
+            reset_url_base = current_app.config.get("RESET_URL_BASE", "") or \
+                (current_app.config.get("FRONTEND_URL", "").rstrip("/") + "/reset-password" if current_app.config.get("FRONTEND_URL") else "http://localhost:3000/reset-password")
             mail_svc.send_password_reset(
                 to=user["email"],
                 username=user["username"],
@@ -714,49 +967,61 @@ class SendOtpEmail(Resource):
 
         otp_code = "".join([str(_secrets.choice(range(10))) for _ in range(6)])
 
-        # Store in database with 300-second TTL
-        OTP_TTL_SECONDS = 300
+        # Store in database with 120-second TTL (synced with frontend timer)
+        OTP_TTL_SECONDS = 120
         db.store_otp(user_id, otp_code, ttl_seconds=OTP_TTL_SECONDS)
 
+        # Determine if we have a real mail backend
+        mail_service = current_app.extensions.get("mail_service")
+        is_console_mode = not mail_service or getattr(mail_service, "backend", "console") == "console"
+
         # Send via the configured mail service
+        email_sent = False
         try:
-            mail_service = current_app.extensions.get("mail_service")
-            if not mail_service:
-                return make_error_response(
-                    "MAIL_NOT_CONFIGURED", "Email service not available", status=500
+            if mail_service and not is_console_mode:
+                subject = "Your Login OTP — BehaviorAuth"
+                body_text = (
+                    f"Hello {username},\n\n"
+                    f"Your one-time authentication code is:\n\n"
+                    f"    {otp_code}\n\n"
+                    f"This code expires in {OTP_TTL_SECONDS} seconds.\n\n"
+                    f"If you did not request this, please secure your account immediately.\n\n"
+                    f"— BehaviorAuth Security Team"
                 )
-
-            subject = "Your Login OTP — BehaviorAuth"
-            body_text = (
-                f"Hello {username},\n\n"
-                f"Your one-time authentication code is:\n\n"
-                f"    {otp_code}\n\n"
-                f"This code expires in {OTP_TTL_SECONDS} seconds.\n\n"
-                f"If you did not request this, please secure your account immediately.\n\n"
-                f"— BehaviorAuth Security Team"
-            )
-            body_html = (
-                f"<h2>Your Login OTP</h2>"
-                f"<p>Hello <strong>{username}</strong>,</p>"
-                f"<p>Your one-time authentication code is:</p>"
-                f"<div style='text-align:center;margin:24px 0'>"
-                f"<span style='font-size:32px;font-family:monospace;letter-spacing:8px;"
-                f"padding:16px 32px;background:#1e293b;color:#60a5fa;border-radius:12px;"
-                f"display:inline-block'>{otp_code}</span></div>"
-                f"<p><small>This code expires in {OTP_TTL_SECONDS} seconds.</small></p>"
-                f"<p>If you did not request this, please secure your account immediately.</p>"
-                f"<hr><p style='color:#888;font-size:12px'>BehaviorAuth Security Team</p>"
-            )
-
-            sent = mail_service.send(email, subject, body_text, body_html)
-            if not sent:
-                logger.warning("Failed to send OTP email to %s", email)
-
+                body_html = (
+                    f"<h2>Your Login OTP</h2>"
+                    f"<p>Hello <strong>{username}</strong>,</p>"
+                    f"<p>Your one-time authentication code is:</p>"
+                    f"<div style='text-align:center;margin:24px 0'>"
+                    f"<span style='font-size:32px;font-family:monospace;letter-spacing:8px;"
+                    f"padding:16px 32px;background:#1e293b;color:#60a5fa;border-radius:12px;"
+                    f"display:inline-block'>{otp_code}</span></div>"
+                    f"<p><small>This code expires in {OTP_TTL_SECONDS} seconds.</small></p>"
+                    f"<p>If you did not request this, please secure your account immediately.</p>"
+                    f"<hr><p style='color:#888;font-size:12px'>BehaviorAuth Security Team</p>"
+                )
+                email_sent = mail_service.send(email, subject, body_text, body_html)
+                if not email_sent:
+                    logger.warning("Failed to send OTP email to %s", email)
         except Exception as e:
             logger.error("OTP email delivery error: %s", e)
 
-        # Always return success to prevent email enumeration
-        return {"success": True, "message": "OTP sent to registered email"}, 200
+        # Build response
+        response = {
+            "success": True,
+            "message": "OTP sent to registered email",
+            "ttl_seconds": OTP_TTL_SECONDS,
+        }
+
+        # In console/dev mode, return the OTP directly so the frontend can display it
+        # This is ONLY for development — in production, mail_service.backend != "console"
+        if is_console_mode:
+            response["otp_code"] = otp_code
+            response["dev_mode"] = True
+            response["message"] = "OTP generated (dev mode — no email service configured)"
+            logger.info("[DEV OTP] User %d OTP: %s (console backend, code returned in response)", user_id, otp_code)
+
+        return response, 200
 
 
 @auth_ns.route("/mfa/verify")

@@ -28,17 +28,18 @@ logger = logging.getLogger(__name__)
 # Configurable ensemble weights — sum to 1.0.
 # Override at runtime via ``ENSEMBLE_WEIGHTS.update(...)`` for auto-calibration.
 ENSEMBLE_WEIGHTS: Dict[str, float] = {
-    "cognitive":           0.14,
-    "duress":              0.14,
-    "liveness":            0.10,
-    "invisible_challenge": 0.09,
-    "device_intelligence": 0.07,
+    "cognitive":           0.12,
+    "duress":              0.12,
+    "liveness":            0.09,
+    "invisible_challenge": 0.08,
+    "device_intelligence": 0.06,
     "composite_fraud":     0.05,
-    "passive_enrollment":  0.07,
-    "feature_selection":   0.09,
-    "transaction":         0.10,
-    "replay_detection":    0.10,
-    "concept_drift":       0.05,
+    "passive_enrollment":  0.06,
+    "feature_selection":   0.08,
+    "transaction":         0.09,
+    "replay_detection":    0.09,
+    "concept_drift":       0.04,
+    "digraph_match":       0.12,
 }
 
 # Lazy singletons — avoids import-time cost for numpy/scipy
@@ -168,6 +169,11 @@ def score_with_ensemble(
             logger.warning("DuressDetector failed: %s", exc)
 
     result["duress_score"] = duress_score
+    # Fall back to CognitiveEngine's duress probability if standalone detector didn't fire
+    if duress_score < 0.01 and cognitive:
+        cog_duress = cognitive.get("duress_probability", 0.0)
+        if cog_duress > duress_score:
+            result["duress_score"] = cog_duress
 
     # ── 3. LivenessDetector ────────────────────────────────────────────
     liveness_score = 1.0
@@ -269,6 +275,36 @@ def score_with_ensemble(
                     f"enrollment:behavioral_anomaly("
                     f"match={enrollment_result.get('match_score', 0):.2f})"
                 )
+
+            # Also build/update per-key digraph profile for keystroke identity matching
+            if keystroke_features:
+                try:
+                    # Extract per-key hold and per-digraph flight from keystroke features
+                    digraph_input = {
+                        "per_key_hold": keystroke_features.get("per_key_hold", {}),
+                        "per_digraph_flight": keystroke_features.get("per_digraph_flight", {}),
+                    }
+                    # If no per_key data, try to synthesize from hold_time features
+                    if not digraph_input["per_key_hold"] and "hold_time_mean" in extended_features:
+                        digraph_input["per_key_hold"] = {"_aggregate": {
+                            "mean": extended_features.get("hold_time_mean", 70),
+                            "std": extended_features.get("hold_time_std", 12),
+                            "count": 1,
+                        }}
+                    if not digraph_input["per_digraph_flight"] and "flight_time_mean" in extended_features:
+                        digraph_input["per_digraph_flight"] = {"_aggregate": {
+                            "mean": extended_features.get("flight_time_mean", 110),
+                            "std": extended_features.get("flight_time_std", 15),
+                            "count": 1,
+                        }}
+                    if digraph_input["per_key_hold"] or digraph_input["per_digraph_flight"]:
+                        enrollment_mgr.ingest_digraph_profile(
+                            user_id=int(user_id),
+                            digraph_profile=digraph_input,
+                            source="session",
+                        )
+                except Exception as dgp_exc:
+                    logger.debug("Digraph profile ingestion failed: %s", dgp_exc)
         except Exception as exc:
             logger.warning("PassiveEnrollmentManager failed: %s", exc)
 
@@ -331,8 +367,18 @@ def score_with_ensemble(
         try:
             from app.models.gan_adversarial import LivenessDetector as GANLiveness
             gan_detector = GANLiveness()
-            # Analyze entropy of hold times to detect replayed/synthetic streams
-            replay_result = gan_detector.check_entropy(session_history, "hold_time")
+            # Analyze entropy of multiple features to detect replayed/synthetic streams
+            # Try different feature keys that exist in our extended features
+            best_replay = {"replay_probability": 0.0}
+            for fkey in ("typing_hold_variance", "flight_time_cv", "bigram_speed_mean",
+                         "correction_rate", "mouse_acceleration_mean"):
+                try:
+                    r = gan_detector.check_entropy(session_history, fkey)
+                    if r.get("sufficient_data") and r.get("replay_probability", 0) > best_replay.get("replay_probability", 0):
+                        best_replay = r
+                except Exception:
+                    pass
+            replay_result = best_replay
             if replay_result.get("is_suspicious"):
                 replay_risk = replay_result.get("replay_probability", 0.0)
                 result["ensemble_flags"].append(f"replay_detected:prob={replay_risk:.2f}")
@@ -349,7 +395,7 @@ def score_with_ensemble(
             from app.models.adwin_drift import get_adwin_detector
             adwin = get_adwin_detector()
             drift_result = adwin.detect(
-                stream=[s.get("flight_time_mean", 0) for s in session_history]
+                stream=[s.get("bigram_speed_mean", s.get("flight_time_cv", 0)) for s in session_history]
             )
             drift_risk = drift_result.get("drift_probability", 0.0)
             if drift_risk > 0.5:
@@ -358,6 +404,45 @@ def score_with_ensemble(
             logger.warning("ADWIN drift detection failed: %s", exc)
 
     result["drift_risk"] = drift_risk
+
+    # ── 11b. Digraph Bayesian Profile Match (Per-Key/Digraph) ──────────
+    digraph_match_score = 0.5  # Neutral default
+    digraph_confidence = 0.0
+    if user_id:
+        try:
+            from app.models.passive_enrollment import get_enrollment_manager
+            em = get_enrollment_manager()
+            dgp_state = em._load_digraph_state(int(user_id))
+            if dgp_state and dgp_state.get("per_key_hold"):
+                # If we have current keystroke features, build a lightweight profile for matching
+                if keystroke_features:
+                    incoming_profile = {
+                        "per_key_hold": keystroke_features.get("per_key_hold", {}),
+                        "per_digraph_flight": keystroke_features.get("per_digraph_flight", {}),
+                    }
+                    if incoming_profile["per_key_hold"] or incoming_profile["per_digraph_flight"]:
+                        digraph_match_score = em._compute_digraph_match_score(
+                            dgp_state, incoming_profile
+                        )
+                # Confidence based on profile maturity
+                n_keys = len(dgp_state.get("per_key_hold", {}))
+                n_digraphs = len(dgp_state.get("per_digraph_flight", {}))
+                updates = dgp_state.get("updates_count", 0)
+                digraph_confidence = min(
+                    1.0,
+                    (updates / 5.0) * 0.5
+                    + (n_keys / 20.0) * 0.3
+                    + (n_digraphs / 30.0) * 0.2,
+                )
+                if digraph_match_score < 0.3 and digraph_confidence > 0.5:
+                    result["ensemble_flags"].append(
+                        f"digraph:anomaly(match={digraph_match_score:.2f},conf={digraph_confidence:.2f})"
+                    )
+        except Exception as exc:
+            logger.warning("Digraph profile match failed: %s", exc)
+
+    result["digraph_match_score"] = round(digraph_match_score, 4)
+    result["digraph_confidence"] = round(digraph_confidence, 4)
 
     # ── 11. Fuse ALL 11 engine signals with explainability ────────────────
     cognitive_risk = cognitive.get("cognitive_risk", 0.0) if cognitive else 0.0
@@ -378,6 +463,7 @@ def score_with_ensemble(
         "transaction":       txn_risk,
         "replay_detection":  replay_risk,
         "concept_drift":     drift_risk,
+        "digraph_match":     (1.0 - digraph_match_score) * digraph_confidence,  # Weighted by confidence
     }
 
     # Configurable weights — keys must match engine_signals

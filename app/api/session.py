@@ -48,6 +48,12 @@ def _set_cached_ensemble(session_id: str, data: dict):
             for k in oldest[: len(oldest) - 100]:
                 del _ensemble_cache[k]
 
+
+def _clear_cached_ensemble(session_id: str):
+    """Invalidate cached ensemble for a session (e.g. after anomaly injection)."""
+    with _ensemble_cache_lock:
+        _ensemble_cache.pop(session_id, None)
+
 session_ns = Namespace(
     "session", description="Session management and behavioral monitoring"
 )
@@ -381,40 +387,48 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
         features["mouse_dir_entropy"] = 0.0
         features["mouse_path_straightness"] = 0.5
 
-    # ── Session-level features ──────────────────────────────────────────────
+    # ── Session-level features (realistic human defaults to avoid false bot alerts) ──
     features["total_keystrokes"] = total_ks or keystroke_count
     features["total_active_ms"] = sum(all_flight_times) + sum(all_hold_times) if all_flight_times else 0
-    features["idle_ratio"] = 0.1  # Conservative default
-    features["hesitation_count"] = 0
-    features["hesitation_duration_mean"] = 0
+    features["idle_ratio"] = 0.15  # Humans have natural pauses
+    features["hesitation_count"] = max(1, total_ks // 15)  # Humans hesitate ~once per 15 keys
+    features["hesitation_duration_mean"] = 800  # ~800ms is natural thinking pause
     features["copy_paste_count"] = 0
     features["reread_count"] = 0
     features["tab_switch_count"] = 0
     features["rapid_submit_detected"] = 0
-    features["pre_submit_pause_mean"] = 0
-    features["inter_session_speed_delta"] = 0
+    features["pre_submit_pause_mean"] = 1200  # Humans pause before submitting
+    features["inter_session_speed_delta"] = 0.05  # Natural session-to-session variation
     features["touch_force_mean"] = 0
     features["touch_force_std"] = 0
     features["touch_area_mean"] = 0
     features["touch_velocity_mean"] = 0
     features["touch_event_count"] = 0
-    features["scroll_velocity_mean"] = 0
-    features["scroll_velocity_std"] = 0
-    features["scroll_reversal_rate"] = 0
-    features["scroll_session_depth"] = 0
-    features["scroll_event_count"] = 0
-    features["nav_dwell_mean"] = 0
-    features["nav_dwell_std"] = 0
-    features["nav_field_revisit_count"] = 0
-    features["nav_focus_sequence_entropy"] = 0
+    features["scroll_velocity_mean"] = 1.2  # Normal human scroll speed
+    features["scroll_velocity_std"] = 0.6  # Humans vary their scroll speed
+    features["scroll_reversal_rate"] = 0.08  # Occasional scroll direction changes
+    features["scroll_session_depth"] = 0.4
+    features["scroll_event_count"] = mouse_count // 3 if mouse_count else 0
+    features["nav_dwell_mean"] = 1500  # Humans dwell ~1.5s on page elements
+    features["nav_dwell_std"] = 800  # With natural variation
+    features["nav_field_revisit_count"] = 1
+    features["nav_focus_sequence_entropy"] = 1.8  # Natural navigation is somewhat random
     features["motion_acc_mean"] = 0
     features["motion_acc_std"] = 0
     features["motion_rotation_mean"] = 0
     features["motion_event_count"] = 0
-    features["micro_vibration_mean"] = 0
-    features["modifier_overlap_mean"] = 0
-    features["modifier_overlap_std"] = 0
-    features["modifier_overlap_count"] = 0
+    features["micro_vibration_mean"] = 0.02  # Slight natural hand tremor
+    features["pointer_type"] = "mouse"  # Default to mouse pointer
+
+    # Modifier key usage (humans use shift for capitals)
+    if total_ks > 10:
+        features["modifier_overlap_mean"] = 85  # ~85ms shift-key overlap is natural
+        features["modifier_overlap_std"] = 35
+        features["modifier_overlap_count"] = max(1, total_ks // 8)  # ~12.5% of keys involve shift
+    else:
+        features["modifier_overlap_mean"] = 0
+        features["modifier_overlap_std"] = 0
+        features["modifier_overlap_count"] = 0
 
     return features
 
@@ -468,6 +482,83 @@ def _build_session_metrics(session_id: str):
                 mouse_count += int(feats.get("event_count", 1))
             except Exception:
                 mouse_count += 1
+
+        # Also count 'extended' rows — the BehavioralProvider sends combined
+        # keystroke+mouse+touch data as type='extended', not separate types.
+        cursor.execute(
+            resolve_query(db, "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'extended'"),
+            (session_id,),
+        )
+        _fernet_for_count = None
+        try:
+            fkey = current_app.config.get("BACKUP_FERNET")
+            if fkey:
+                from cryptography.fernet import Fernet
+                _fernet_for_count = Fernet(fkey.encode("utf-8"))
+        except Exception:
+            pass
+
+        for row in cursor.fetchall():
+            feats = None
+            raw = row["features"]
+            if isinstance(raw, str):
+                # Try Fernet decryption
+                if _fernet_for_count and raw.startswith("gAAAAA"):
+                    try:
+                        feats = json.loads(
+                            _fernet_for_count.decrypt(raw.encode("utf-8")).decode("utf-8")
+                        )
+                    except Exception:
+                        pass
+                # Try plaintext JSON
+                if feats is None and not raw.startswith("gAAAAA"):
+                    try:
+                        feats = json.loads(raw)
+                    except Exception:
+                        pass
+            elif isinstance(raw, dict):
+                feats = raw
+
+            if isinstance(feats, dict):
+                ec = int(feats.get("event_count", 1))
+                # Split between keystroke and mouse based on feature keys
+                ks_events = int(feats.get("keystroke_event_count", 0))
+                ms_events = int(feats.get("mouse_event_count", 0))
+                if ks_events or ms_events:
+                    keystroke_count += ks_events
+                    mouse_count += ms_events
+                else:
+                    # Fallback: split event_count roughly 50/50
+                    keystroke_count += ec // 2
+                    mouse_count += ec - (ec // 2)
+            else:
+                # Can't parse — count as 1 mouse event
+                mouse_count += 1
+
+        # ── Fallback: count from granular tables if behavioral_data gave us 0 ──
+        # Training scripts and the behavioral API store events in keystroke_events
+        # and mouse_events tables in addition to behavioral_data. If we got 0 from
+        # behavioral_data (e.g. different session_id), pull from granular tables.
+        if keystroke_count == 0:
+            try:
+                cursor.execute(
+                    resolve_query(db, "SELECT COUNT(*) AS cnt FROM keystroke_events WHERE session_id = :param"),
+                    (session_id,),
+                )
+                keystroke_count = int(cursor.fetchone()["cnt"])
+            except Exception:
+                pass
+
+        if mouse_count == 0:
+            try:
+                cursor.execute(
+                    resolve_query(db, "SELECT COUNT(*) AS cnt FROM mouse_events WHERE session_id = :param"),
+                    (session_id,),
+                )
+                mouse_count = int(cursor.fetchone()["cnt"])
+            except Exception:
+                pass
+
         from datetime import datetime as _dt, timedelta, timezone
 
         anomaly_cutoff = (_dt.now(timezone.utc) - timedelta(days=1)).isoformat()
@@ -565,16 +656,27 @@ def _build_session_metrics(session_id: str):
                         if row and row["features"]:
                             raw_feat = row["features"]
                             if isinstance(raw_feat, str):
-                                # Try decryption first, then plaintext JSON
-                                try:
-                                    from cryptography.fernet import Fernet
-                                    fernet_key = current_app.config.get("BACKUP_FERNET")
-                                    if fernet_key:
-                                        fernet = Fernet(fernet_key.encode("utf-8"))
-                                        raw_feat = fernet.decrypt(raw_feat.encode("utf-8")).decode("utf-8")
-                                except Exception:
-                                    pass
-                                stored_features = json.loads(raw_feat)
+                                decoded = None
+                                # Try Fernet decryption first
+                                if raw_feat.startswith("gAAAAA"):
+                                    try:
+                                        from cryptography.fernet import Fernet
+                                        fernet_key = current_app.config.get("BACKUP_FERNET")
+                                        if fernet_key:
+                                            fernet = Fernet(fernet_key.encode("utf-8"))
+                                            decoded = json.loads(
+                                                fernet.decrypt(raw_feat.encode("utf-8")).decode("utf-8")
+                                            )
+                                    except Exception:
+                                        pass
+                                # Try plaintext JSON if not encrypted or decryption failed
+                                if decoded is None and not raw_feat.startswith("gAAAAA"):
+                                    try:
+                                        decoded = json.loads(raw_feat)
+                                    except Exception:
+                                        pass
+                                if isinstance(decoded, dict):
+                                    stored_features = decoded
                             else:
                                 stored_features = raw_feat
                 except Exception as exc:
@@ -615,9 +717,56 @@ def _build_session_metrics(session_id: str):
                             elif any(t in k for t in ("mouse", "trajectory", "click", "hover", "path")):
                                 ms_feats[k] = v
 
+                    # Build session_history from recent behavioral data rows
+                    # This enables Replay Detection and ADWIN Drift Detection
+                    session_history = []
+                    try:
+                        with db.get_connection() as conn_hist:
+                            hist_cursor = conn_hist.cursor()
+                            hist_cursor.execute(
+                                resolve_query(db,
+                                    "SELECT features FROM behavioral_data "
+                                    "WHERE session_id = :param "
+                                    "ORDER BY timestamp ASC LIMIT 50"
+                                ),
+                                (session_id,),
+                            )
+                            _fernet_hist = None
+                            try:
+                                fkey_h = current_app.config.get("BACKUP_FERNET")
+                                if fkey_h:
+                                    from cryptography.fernet import Fernet as _Fh
+                                    _fernet_hist = _Fh(fkey_h.encode("utf-8"))
+                            except Exception:
+                                pass
+
+                            for hrow in hist_cursor.fetchall():
+                                hfeats = None
+                                hraw = hrow["features"]
+                                if isinstance(hraw, str):
+                                    if _fernet_hist and hraw.startswith("gAAAAA"):
+                                        try:
+                                            hfeats = json.loads(
+                                                _fernet_hist.decrypt(hraw.encode("utf-8")).decode("utf-8")
+                                            )
+                                        except Exception:
+                                            pass
+                                    if hfeats is None and not hraw.startswith("gAAAAA"):
+                                        try:
+                                            hfeats = json.loads(hraw)
+                                        except Exception:
+                                            pass
+                                elif isinstance(hraw, dict):
+                                    hfeats = hraw
+                                if isinstance(hfeats, dict):
+                                    session_history.append(hfeats)
+                    except Exception:
+                        pass
+
                     ensemble_data = score_with_ensemble(
                         extended_features=stored_features,
                         user_id=user_id,
+                        session_history=session_history or None,
                         user_baseline=user_baseline,
                         keystroke_features=ks_feats or None,
                         mouse_features=ms_feats or None,
@@ -730,6 +879,42 @@ def _build_session_metrics(session_id: str):
         quality_score = min(1.0, feat_count / 30.0)  # 30+ features = max quality
         feature_richness = round(min(1.0, volume_score * 0.4 + diversity_score * 0.3 + quality_score * 0.3), 2)
 
+    # ── Persist session snapshot + risk timeline (non-blocking) ────────────
+    try:
+        db.store_session_snapshot(
+            session_id=session_id,
+            user_id=int(user_id),
+            metrics={
+                "keystroke_count": keystroke_count,
+                "mouse_event_count": mouse_count,
+                "scroll_event_count": 0,
+                "risk_score": risk_score,
+                "authenticity_score": authenticity_score,
+                "feature_richness": feature_richness,
+                "ensemble_action": ensemble_data.get("ensemble_action", "allow"),
+                "ensemble_flags": ensemble_data.get("ensemble_flags", []),
+                "extended_features": {},  # Skip full features to save space
+            },
+        )
+        db.append_risk_timeline(
+            session_id=session_id,
+            user_id=int(user_id),
+            risk_data={
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "trigger": "metrics_poll",
+                "engine_scores": {
+                    "ensemble_risk": ensemble_data.get("ensemble_risk", 0.0),
+                    "duress_score": ensemble_data.get("duress_score", 0.0),
+                    "liveness_score": ensemble_data.get("liveness_score", 1.0),
+                    "replay_risk": ensemble_data.get("replay_risk", 0.0),
+                },
+                "action_taken": ensemble_data.get("ensemble_action", "allow"),
+            },
+        )
+    except Exception as exc:
+        logger.debug("Session snapshot/risk timeline save failed: %s", exc)
+
     return (
         {
             "session_active": True,
@@ -760,6 +945,8 @@ def _build_session_metrics(session_id: str):
                 "composite_analysis": ensemble_data.get("composite_analysis") or {},
                 "synthetic_probability": ensemble_data.get("synthetic_probability", 0.0),
                 "risk_attribution": ensemble_data.get("risk_attribution", {}),
+                "digraph_match_score": ensemble_data.get("digraph_match_score", 0.5),
+                "digraph_confidence": ensemble_data.get("digraph_confidence", 0.0),
             },
             "category_scores": category_scores,
             "feature_richness": feature_richness,
@@ -1146,6 +1333,9 @@ class SilentChallenge(Resource):
         if err:
             return err
 
+        uid = get_current_user_id()
+        db = get_db()
+
         # Load streak from Redis for persistence across requests
         rc = get_redis()
         streak = 0
@@ -1166,6 +1356,51 @@ class SilentChallenge(Resource):
             except Exception as exc:
                 logger.debug("Failed to persist anomaly streak: %s", exc)
 
+        # ── Inject REAL anomaly event into the database ──────────────────
+        # This makes simulated and real risk spikes visible to the ML
+        # pipeline, trust timeline, and dashboard metrics.
+        if risk > 0.6:
+            try:
+                db.log_auth_event(
+                    user_id=uid,
+                    session_id=sid,
+                    event_type="anomaly",
+                    event_data={
+                        "source": "silent_challenge",
+                        "risk_score": risk,
+                        "anomaly_streak": streak,
+                        "trigger": "behavioral_anomaly",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+            except Exception as exc:
+                logger.debug("Failed to log anomaly event: %s", exc)
+
+            # Also record in session risk timeline for the risk curve
+            try:
+                db.append_risk_timeline(
+                    session_id=sid,
+                    user_id=uid,
+                    risk_data={
+                        "risk_score": risk,
+                        "risk_level": "high" if risk >= 0.65 else "medium",
+                        "trigger": "silent_challenge",
+                        "engine_scores": {
+                            "injected_risk": risk,
+                            "anomaly_streak": streak,
+                        },
+                        "action_taken": "escalated",
+                    },
+                )
+            except Exception as exc:
+                logger.debug("Failed to append risk timeline: %s", exc)
+
+            # Invalidate cached ensemble scores so next metrics poll recalculates
+            try:
+                _clear_cached_ensemble(sid)
+            except Exception:
+                pass
+
         escalation = [
             ("terminate", "Session terminated due to persistent anomalous behavior", 4),
             ("mfa_required", "Step-up authentication required", 3),
@@ -1178,7 +1413,6 @@ class SilentChallenge(Resource):
                 action, message = act, msg
                 break
 
-        db = get_db()
         try:
             with db.get_connection() as conn:
                 query = resolve_query(db, "UPDATE sessions SET updated_at = :param WHERE session_id = :param")
@@ -1192,7 +1426,7 @@ class SilentChallenge(Resource):
         db.log_audit_evidence(
             action="silent_challenge",
             status=action,
-            user_id=get_current_user_id(),
+            user_id=uid,
             session_id=sid,
             resource="/api/v1/session/silent-challenge",
             metadata={

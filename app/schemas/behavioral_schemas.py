@@ -106,6 +106,7 @@ class BehavioralPayloadSchema(BaseModel):
     cognitive_events: Optional[List[CognitiveEventSchema]] = Field(default=[])
     motion_events: Optional[List[MotionEventSchema]] = Field(default=[])
     navigation_events: Optional[List[NavigationEventSchema]] = Field(default=[])
+    keystroke_profile: Optional[Any] = Field(default=None)
 
     @model_validator(mode="after")
     def limit_arrays(self) -> "BehavioralPayloadSchema":

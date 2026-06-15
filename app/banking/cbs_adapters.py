@@ -110,7 +110,7 @@ class CBSAdapter(ABC):
 
     def __init__(self, config: Dict):
         self.config = config
-        self.api_base_url = config.get("api_base_url", "http://localhost:8080")
+        self.api_base_url = config.get("api_base_url", "")
         self.api_key = config.get("api_key", "")
         self.timeout_ms = config.get("timeout_ms", 5000)
         self.connected = False

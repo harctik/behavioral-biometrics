@@ -177,6 +177,10 @@ class DatabaseManager:
                 cursor, "users", "mfa_enabled",
                 f"BOOLEAN DEFAULT {_bool_false}"
             )
+            self._safe_add_column(
+                cursor, "users", "typing_prompt",
+                "TEXT"
+            )
 
             # ── Sessions ────────────────────────────────────────────────────
             cursor.execute(
@@ -319,8 +323,239 @@ class DatabaseManager:
                 """
             )
 
+            # ── Session snapshots (heartbeat-level aggregates) ────────────────
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS session_snapshots (
+                    snapshot_id {_auto_pk},
+                    session_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    keystroke_count INTEGER DEFAULT 0,
+                    mouse_event_count INTEGER DEFAULT 0,
+                    scroll_event_count INTEGER DEFAULT 0,
+                    risk_score REAL,
+                    authenticity_score REAL,
+                    feature_richness REAL,
+                    ensemble_action TEXT,
+                    ensemble_flags TEXT,
+                    extended_features TEXT,
+                    FOREIGN KEY (session_id) REFERENCES sessions (session_id),
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # ── Keystroke events (granular per-key timing) ───────────────────
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS keystroke_events (
+                    event_id {_auto_pk},
+                    session_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    key_code TEXT,
+                    hold_time REAL,
+                    flight_time REAL,
+                    is_backspace BOOLEAN DEFAULT {_bool_false},
+                    pressure REAL,
+                    context TEXT DEFAULT 'SESSION',
+                    FOREIGN KEY (session_id) REFERENCES sessions (session_id),
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # ── Mouse events (downsampled trajectory segments) ───────────────
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS mouse_events (
+                    event_id {_auto_pk},
+                    session_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    velocity REAL,
+                    acceleration REAL,
+                    curvature REAL,
+                    dx REAL,
+                    dy REAL,
+                    event_type TEXT DEFAULT 'move',
+                    context TEXT DEFAULT 'SESSION',
+                    FOREIGN KEY (session_id) REFERENCES sessions (session_id),
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # ── Session risk timeline (time-series per session) ──────────────
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS session_risk_timeline (
+                    entry_id {_auto_pk},
+                    session_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    risk_score REAL NOT NULL,
+                    risk_level TEXT,
+                    trigger TEXT,
+                    engine_scores TEXT,
+                    action_taken TEXT DEFAULT 'allow',
+                    FOREIGN KEY (session_id) REFERENCES sessions (session_id),
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # ── Digraph profiles (persisted Bayesian posteriors) ─────────────
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS digraph_profiles (
+                    user_id INTEGER PRIMARY KEY,
+                    profile_data TEXT NOT NULL,
+                    updates_count INTEGER DEFAULT 1,
+                    confidence REAL DEFAULT 0.0,
+                    per_key_count INTEGER DEFAULT 0,
+                    per_digraph_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # ── Enrollment history (session-by-session progression) ──────────
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS enrollment_history (
+                    entry_id {_auto_pk},
+                    user_id INTEGER NOT NULL,
+                    session_id TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    phase TEXT NOT NULL,
+                    sessions_completed INTEGER DEFAULT 0,
+                    feature_count INTEGER DEFAULT 0,
+                    match_score REAL,
+                    action TEXT,
+                    message TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id),
+                    FOREIGN KEY (session_id) REFERENCES sessions (session_id)
+                )
+            """
+            )
+
+            # ── Enrollment state (durable passive enrollment profiles) ───────
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS enrollment_state (
+                    user_id INTEGER PRIMARY KEY,
+                    state_json TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+            )
+
+            # ── Device fingerprints (known devices per user) ─────────────────
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS device_fingerprints (
+                    device_id {_auto_pk},
+                    user_id INTEGER NOT NULL,
+                    device_hash TEXT NOT NULL,
+                    user_agent TEXT,
+                    screen_resolution TEXT,
+                    canvas_hash TEXT,
+                    webgl_renderer TEXT,
+                    timezone TEXT,
+                    language TEXT,
+                    platform TEXT,
+                    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    session_count INTEGER DEFAULT 1,
+                    trust_score REAL DEFAULT 0.5,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # ── Enhanced session columns ─────────────────────────────────────
+            self._safe_add_column(cursor, "sessions", "risk_score_final", "REAL")
+            self._safe_add_column(cursor, "sessions", "keystroke_count", "INTEGER DEFAULT 0")
+            self._safe_add_column(cursor, "sessions", "mouse_event_count", "INTEGER DEFAULT 0")
+            self._safe_add_column(cursor, "sessions", "enrollment_action", "TEXT")
+            self._safe_add_column(cursor, "sessions", "device_hash", "TEXT")
+
+            # ── Banking tables ────────────────────────────────────────────────
+
+            # Notifications
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    type TEXT NOT NULL DEFAULT 'info',
+                    title TEXT NOT NULL,
+                    message TEXT,
+                    is_read INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # Cards
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cards (
+                    id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    type TEXT NOT NULL,
+                    number TEXT NOT NULL,
+                    expiry TEXT NOT NULL,
+                    cvv_hash TEXT,
+                    status TEXT DEFAULT 'Active',
+                    daily_limit REAL DEFAULT 10000.0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # Beneficiaries
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS beneficiaries (
+                    id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    account_number TEXT NOT NULL,
+                    ifsc TEXT NOT NULL,
+                    trust_score REAL DEFAULT 0.5,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
+            # Investments
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS investments (
+                    id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    symbol TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    shares REAL DEFAULT 0,
+                    avg_price REAL DEFAULT 0,
+                    current_price REAL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """
+            )
+
             # ── Indexes ──────────────────────────────────────────────────────
             for stmt in [
+                # Existing indexes
                 "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
                 "CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON sessions(last_activity)",
                 "CREATE INDEX IF NOT EXISTS idx_behavioral_data_user_id ON behavioral_data(user_id)",
@@ -336,10 +571,41 @@ class DatabaseManager:
                 "CREATE INDEX IF NOT EXISTS idx_consent_user_id ON consent_records(user_id)",
                 "CREATE INDEX IF NOT EXISTS idx_otp_codes_user_id ON otp_codes(user_id)",
                 "CREATE INDEX IF NOT EXISTS idx_otp_codes_expires_at ON otp_codes(expires_at)",
+                # New session-aware indexes
+                "CREATE INDEX IF NOT EXISTS idx_snapshots_session ON session_snapshots(session_id)",
+                "CREATE INDEX IF NOT EXISTS idx_snapshots_user_ts ON session_snapshots(user_id, timestamp)",
+                "CREATE INDEX IF NOT EXISTS idx_ks_events_session ON keystroke_events(session_id)",
+                "CREATE INDEX IF NOT EXISTS idx_ks_events_user_ctx ON keystroke_events(user_id, context)",
+                "CREATE INDEX IF NOT EXISTS idx_ks_events_ts ON keystroke_events(timestamp)",
+                "CREATE INDEX IF NOT EXISTS idx_mouse_events_session ON mouse_events(session_id)",
+                "CREATE INDEX IF NOT EXISTS idx_mouse_events_user ON mouse_events(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_risk_timeline_session ON session_risk_timeline(session_id)",
+                "CREATE INDEX IF NOT EXISTS idx_risk_timeline_user_ts ON session_risk_timeline(user_id, timestamp)",
+                "CREATE INDEX IF NOT EXISTS idx_enrollment_user ON enrollment_history(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_enrollment_session ON enrollment_history(session_id)",
+                "CREATE INDEX IF NOT EXISTS idx_device_fp_user ON device_fingerprints(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_device_fp_hash ON device_fingerprints(user_id, device_hash)",
+                # Banking table indexes
+                "CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_cards_user ON cards(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_beneficiaries_user ON beneficiaries(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_investments_user ON investments(user_id)",
             ]:
                 cursor.execute(stmt)
 
             conn.commit()
+
+    def _safe_add_column(self, cursor, table: str, column: str, col_type: str):
+        """Add a column to an existing table if it doesn't already exist.
+
+        Swallows 'duplicate column' errors so this is idempotent — safe to
+        run on every startup without a migration framework.
+        """
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        except Exception:
+            # Column already exists — this is expected on subsequent startups
+            pass
 
     @contextmanager
     def get_connection(self):
@@ -551,7 +817,10 @@ class DatabaseManager:
             if not user:
                 # Constant-time: burn bcrypt cycles so response time is
                 # indistinguishable from a real user lookup.
-                bcrypt.checkpw(password.encode("utf-8"), _DUMMY_HASH)
+                try:
+                    bcrypt.checkpw(password.encode("utf-8"), _DUMMY_HASH)
+                except (ValueError, TypeError):
+                    pass  # Malformed password input — treat as invalid
                 return None
 
             # Check if account is locked (DB-side comparison avoids UTC/local mismatch)
@@ -567,7 +836,13 @@ class DatabaseManager:
             stored_hash = user["password_hash"]
             if isinstance(stored_hash, str):
                 stored_hash = stored_hash.encode("utf-8")
-            if bcrypt.checkpw(password.encode("utf-8"), stored_hash):
+            try:
+                password_valid = bcrypt.checkpw(password.encode("utf-8"), stored_hash)
+            except (ValueError, TypeError):
+                # Corrupted hash or malformed input — treat as invalid
+                logger.warning("bcrypt verification failed for user %s (invalid salt/hash)", user["username"])
+                password_valid = False
+            if password_valid:
                 # Reset failed attempts and update last login
                 cursor.execute(
                     """
@@ -683,6 +958,27 @@ class DatabaseManager:
             )
             conn.commit()
 
+    def set_typing_prompt(self, user_id: int, prompt: str):
+        """Store the user's assigned typing verification prompt."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET typing_prompt = ? WHERE user_id = ?",
+                (prompt, user_id),
+            )
+            conn.commit()
+
+    def get_typing_prompt(self, user_id: int) -> Optional[str]:
+        """Retrieve the user's assigned typing verification prompt."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT typing_prompt FROM users WHERE user_id = ?",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            return row["typing_prompt"] if row and row["typing_prompt"] else None
+
     def update_session_activity(self, session_id: str):
         """Update last activity timestamp for session"""
         with self.get_connection() as conn:
@@ -738,7 +1034,12 @@ class DatabaseManager:
             from cryptography.fernet import Fernet
 
             fernet_key = current_app.config.get("BACKUP_FERNET")
-            if fernet_key:
+            # Only encrypt if the key was explicitly set in .env (not ephemeral).
+            # Ephemeral keys (auto-generated on startup) cause data loss on restart.
+            import os
+            env_fernet = os.environ.get("BACKUP_FERNET", "")
+            if fernet_key and env_fernet:
+                # Key is persistent — safe to encrypt
                 fernet = Fernet(fernet_key.encode("utf-8"))
                 features_enc = fernet.encrypt(features_json.encode("utf-8")).decode(
                     "utf-8"
@@ -747,6 +1048,7 @@ class DatabaseManager:
                     stored_raw = fernet.encrypt(stored_raw.encode("utf-8")).decode(
                         "utf-8"
                     )
+            # else: store as plaintext JSON (dev mode with ephemeral key)
         except RuntimeError:
             # Outside Flask app context (e.g., background threads, tests).
             # Features are stored as plaintext JSON — acceptable for tests
@@ -1368,6 +1670,749 @@ class DatabaseManager:
     def get_user_statistics(self, user_id: int) -> Dict:
         """Backward-compatible alias for get_user_stats."""
         return self.get_user_stats(user_id)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SESSION SNAPSHOT METHODS
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def store_session_snapshot(
+        self,
+        session_id: str,
+        user_id: int,
+        metrics: Dict[str, Any],
+    ):
+        """Store a heartbeat-level session snapshot.
+
+        Called periodically (every 5-10s) during an active session to capture
+        a point-in-time view of behavioral metrics, risk scores, and feature
+        richness. These snapshots build the session's risk timeline.
+
+        Args:
+            session_id: Active session identifier.
+            user_id: Owner of the session.
+            metrics: Dict with keys like risk_score, authenticity_score,
+                     ensemble_action, ensemble_flags, extended_features, etc.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO session_snapshots
+                (session_id, user_id, keystroke_count, mouse_event_count,
+                 scroll_event_count, risk_score, authenticity_score,
+                 feature_richness, ensemble_action, ensemble_flags, extended_features)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    user_id,
+                    metrics.get("keystroke_count", 0),
+                    metrics.get("mouse_event_count", 0),
+                    metrics.get("scroll_event_count", 0),
+                    metrics.get("risk_score"),
+                    metrics.get("authenticity_score"),
+                    metrics.get("feature_richness"),
+                    metrics.get("ensemble_action"),
+                    json.dumps(metrics.get("ensemble_flags", [])),
+                    json.dumps(metrics.get("extended_features", {})),
+                ),
+            )
+            conn.commit()
+
+    def get_session_snapshots(
+        self, session_id: str, limit: int = 100
+    ) -> List[Dict]:
+        """Get chronological snapshots for a session — builds risk timeline.
+
+        Returns a list of snapshot dicts ordered by timestamp (oldest first),
+        useful for plotting risk curves and session replay.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM session_snapshots
+                WHERE session_id = ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+                """,
+                (session_id, limit),
+            )
+            rows = cursor.fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                try:
+                    item["ensemble_flags"] = json.loads(item.get("ensemble_flags") or "[]")
+                except Exception:
+                    item["ensemble_flags"] = []
+                try:
+                    item["extended_features"] = json.loads(item.get("extended_features") or "{}")
+                except Exception:
+                    item["extended_features"] = {}
+                result.append(item)
+            return result
+
+    def get_session_summary(self, session_id: str) -> Optional[Dict]:
+        """Get aggregated session summary from all snapshots.
+
+        Returns overall min/max/avg risk, total event counts, duration, etc.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    COUNT(*) as snapshot_count,
+                    MIN(timestamp) as first_snapshot,
+                    MAX(timestamp) as last_snapshot,
+                    AVG(risk_score) as avg_risk,
+                    MIN(risk_score) as min_risk,
+                    MAX(risk_score) as max_risk,
+                    AVG(authenticity_score) as avg_authenticity,
+                    MAX(keystroke_count) as total_keystrokes,
+                    MAX(mouse_event_count) as total_mouse_events,
+                    MAX(scroll_event_count) as total_scroll_events,
+                    MAX(feature_richness) as peak_feature_richness
+                FROM session_snapshots
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            )
+            row = cursor.fetchone()
+            if not row or row.get("snapshot_count", 0) == 0:
+                return None
+            return dict(row)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # GRANULAR EVENT STORAGE
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def store_keystroke_events(
+        self,
+        session_id: str,
+        user_id: int,
+        events: List[Dict],
+        context: str = "SESSION",
+    ):
+        """Batch insert individual keystroke timing records.
+
+        Each event dict should have: key_code, hold_time, flight_time.
+        Optionally: is_backspace, pressure, timestamp.
+
+        Args:
+            session_id: Active session.
+            user_id: User performing keystrokes.
+            events: List of keystroke event dicts.
+            context: Where the keystrokes occurred (LOGIN, CALIBRATION,
+                     TRANSFER, SESSION, etc.)
+        """
+        if not events:
+            return
+        # Cap at 500 events per batch to prevent memory pressure
+        events = events[:500]
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for evt in events:
+                cursor.execute(
+                    """
+                    INSERT INTO keystroke_events
+                    (session_id, user_id, key_code, hold_time, flight_time,
+                     is_backspace, pressure, context)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_id,
+                        user_id,
+                        evt.get("key") or evt.get("key_code", ""),
+                        evt.get("hold_time") or evt.get("holdTime"),
+                        evt.get("flight_time") or evt.get("flightTime"),
+                        evt.get("is_backspace", False),
+                        evt.get("pressure"),
+                        context,
+                    ),
+                )
+            conn.commit()
+
+    def store_mouse_events(
+        self,
+        session_id: str,
+        user_id: int,
+        events: List[Dict],
+        context: str = "SESSION",
+    ):
+        """Batch insert downsampled mouse trajectory segments.
+
+        Each event dict should have: velocity, acceleration, curvature.
+        Optionally: dx, dy, event_type (move/click/scroll).
+        """
+        if not events:
+            return
+        events = events[:500]
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            for evt in events:
+                cursor.execute(
+                    """
+                    INSERT INTO mouse_events
+                    (session_id, user_id, velocity, acceleration, curvature,
+                     dx, dy, event_type, context)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_id,
+                        user_id,
+                        evt.get("velocity"),
+                        evt.get("acceleration"),
+                        evt.get("curvature"),
+                        evt.get("dx"),
+                        evt.get("dy"),
+                        evt.get("event_type", "move"),
+                        context,
+                    ),
+                )
+            conn.commit()
+
+    def get_session_keystrokes(
+        self, session_id: str, limit: int = 500
+    ) -> List[Dict]:
+        """Retrieve keystroke events for a specific session."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM keystroke_events
+                WHERE session_id = ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+                """,
+                (session_id, limit),
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    def get_session_mouse_events(
+        self, session_id: str, limit: int = 500
+    ) -> List[Dict]:
+        """Retrieve mouse events for a specific session."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM mouse_events
+                WHERE session_id = ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+                """,
+                (session_id, limit),
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    def get_user_keystroke_stats(self, user_id: int) -> Dict:
+        """Get aggregated keystroke statistics across all sessions for a user."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    COUNT(*) as total_events,
+                    COUNT(DISTINCT session_id) as session_count,
+                    AVG(hold_time) as avg_hold_time,
+                    AVG(flight_time) as avg_flight_time,
+                    MIN(hold_time) as min_hold_time,
+                    MAX(hold_time) as max_hold_time,
+                    COUNT(DISTINCT key_code) as unique_keys,
+                    COUNT(CASE WHEN is_backspace = 1 THEN 1 END) as backspace_count
+                FROM keystroke_events
+                WHERE user_id = ? AND hold_time IS NOT NULL
+                """,
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else {}
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # RISK TIMELINE
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def append_risk_timeline(
+        self,
+        session_id: str,
+        user_id: int,
+        risk_data: Dict[str, Any],
+    ):
+        """Append a risk evaluation point to the session risk timeline.
+
+        Args:
+            risk_data: Dict with risk_score, risk_level, trigger,
+                       engine_scores, action_taken.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO session_risk_timeline
+                (session_id, user_id, risk_score, risk_level, trigger,
+                 engine_scores, action_taken)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    user_id,
+                    risk_data.get("risk_score", 0.0),
+                    risk_data.get("risk_level", "low"),
+                    risk_data.get("trigger", "heartbeat"),
+                    json.dumps(risk_data.get("engine_scores", {})),
+                    risk_data.get("action_taken", "allow"),
+                ),
+            )
+            conn.commit()
+
+    def get_risk_timeline(
+        self, session_id: str, limit: int = 200
+    ) -> List[Dict]:
+        """Get the full risk timeline for a session (chronological)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM session_risk_timeline
+                WHERE session_id = ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+                """,
+                (session_id, limit),
+            )
+            result = []
+            for row in cursor.fetchall():
+                item = dict(row)
+                try:
+                    item["engine_scores"] = json.loads(item.get("engine_scores") or "{}")
+                except Exception:
+                    item["engine_scores"] = {}
+                result.append(item)
+            return result
+
+    def get_user_risk_history(
+        self, user_id: int, limit: int = 50
+    ) -> List[Dict]:
+        """Get recent risk evaluations across all sessions for a user."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT session_id, timestamp, risk_score, risk_level,
+                       action_taken, trigger
+                FROM session_risk_timeline
+                WHERE user_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # DIGRAPH PROFILE PERSISTENCE
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def save_digraph_profile(
+        self,
+        user_id: int,
+        profile_data: Dict[str, Any],
+    ):
+        """Persist a Bayesian per-key/digraph profile to the database.
+
+        This is the canonical store. Redis acts as a fast cache; the DB is
+        the durable fallback that survives Redis restarts.
+        """
+        updates_count = profile_data.get("updates_count", 1)
+        confidence = profile_data.get("confidence", 0.0)
+        per_key_count = len(profile_data.get("per_key_hold", {}))
+        per_digraph_count = len(profile_data.get("per_digraph_flight", {}))
+        profile_json = json.dumps(profile_data)
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Upsert: try update first, then insert
+            if self.is_pg:
+                cursor.execute(
+                    """
+                    INSERT INTO digraph_profiles
+                    (user_id, profile_data, updates_count, confidence,
+                     per_key_count, per_digraph_count, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        profile_data = EXCLUDED.profile_data,
+                        updates_count = EXCLUDED.updates_count,
+                        confidence = EXCLUDED.confidence,
+                        per_key_count = EXCLUDED.per_key_count,
+                        per_digraph_count = EXCLUDED.per_digraph_count,
+                        last_updated = CURRENT_TIMESTAMP
+                    """,
+                    (user_id, profile_json, updates_count, confidence,
+                     per_key_count, per_digraph_count),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO digraph_profiles
+                    (user_id, profile_data, updates_count, confidence,
+                     per_key_count, per_digraph_count, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    (user_id, profile_json, updates_count, confidence,
+                     per_key_count, per_digraph_count),
+                )
+            conn.commit()
+
+    def load_digraph_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Load a Bayesian per-key/digraph profile from the database.
+
+        Called as fallback when Redis cache is empty (cold start, restart).
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT profile_data FROM digraph_profiles WHERE user_id = ?",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            try:
+                return json.loads(row["profile_data"])
+            except (json.JSONDecodeError, TypeError):
+                return None
+
+    def save_enrollment_event(
+        self,
+        user_id: int,
+        session_id: Optional[str],
+        enrollment_result: Dict[str, Any],
+    ):
+        """Log an enrollment progression event.
+
+        Captures: phase, sessions_completed, feature_count, match_score,
+        action, message — providing a full audit trail of how the
+        behavioral profile was built over time.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO enrollment_history
+                (user_id, session_id, phase, sessions_completed,
+                 feature_count, match_score, action, message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    session_id,
+                    enrollment_result.get("enrollment_phase", "unknown"),
+                    enrollment_result.get("sessions_completed", 0),
+                    enrollment_result.get("feature_count", 0),
+                    enrollment_result.get("match_score"),
+                    enrollment_result.get("action", ""),
+                    enrollment_result.get("message", ""),
+                ),
+            )
+            conn.commit()
+
+    def get_enrollment_history(
+        self, user_id: int, limit: int = 50
+    ) -> List[Dict]:
+        """Get enrollment progression history for a user."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM enrollment_history
+                WHERE user_id = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    def save_enrollment_state(
+        self,
+        user_id: int,
+        state: Dict[str, Any],
+    ):
+        """Persist passive enrollment state to the database.
+
+        This is the durable fallback when Redis is unavailable. Stores the full
+        enrollment state (profile, session count, enrolled flag) as JSON.
+        """
+        import json as _json
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            state_json = _json.dumps(state)
+            # Upsert: SQLite ON CONFLICT requires a unique constraint,
+            # so we do DELETE+INSERT
+            cursor.execute("DELETE FROM enrollment_state WHERE user_id = ?", (user_id,))
+            cursor.execute(
+                "INSERT INTO enrollment_state (user_id, state_json, updated_at) VALUES (?, ?, datetime('now'))",
+                (user_id, state_json),
+            )
+            conn.commit()
+
+    def load_enrollment_state(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Load passive enrollment state from the database."""
+        import json as _json
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT state_json FROM enrollment_state WHERE user_id = ? LIMIT 1",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+            if row and row["state_json"]:
+                try:
+                    return _json.loads(row["state_json"])
+                except Exception:
+                    return None
+        return None
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # DEVICE FINGERPRINTING
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def register_device(
+        self,
+        user_id: int,
+        device_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Register or update a device fingerprint for a user.
+
+        If the device_hash already exists, updates last_seen and increments
+        session_count. Otherwise creates a new entry.
+
+        Returns:
+            Dict with is_new (bool), trust_score, session_count, device_id.
+        """
+        device_hash = device_data.get("device_hash", "")
+        if not device_hash:
+            # Generate hash from available signals
+            sig = f"{device_data.get('user_agent', '')}|{device_data.get('screen_resolution', '')}|{device_data.get('platform', '')}"
+            device_hash = hashlib.sha256(sig.encode("utf-8")).hexdigest()[:16]
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Check if device exists
+            cursor.execute(
+                "SELECT device_id, session_count, trust_score FROM device_fingerprints WHERE user_id = ? AND device_hash = ?",
+                (user_id, device_hash),
+            )
+            existing = cursor.fetchone()
+
+            if existing:
+                new_count = existing["session_count"] + 1
+                # Trust grows with usage: asymptotic to 1.0
+                new_trust = min(1.0, 0.5 + (new_count * 0.1))
+                cursor.execute(
+                    """
+                    UPDATE device_fingerprints
+                    SET last_seen = CURRENT_TIMESTAMP,
+                        session_count = ?,
+                        trust_score = ?
+                    WHERE device_id = ?
+                    """,
+                    (new_count, new_trust, existing["device_id"]),
+                )
+                conn.commit()
+                return {
+                    "is_new": False,
+                    "device_id": existing["device_id"],
+                    "device_hash": device_hash,
+                    "trust_score": new_trust,
+                    "session_count": new_count,
+                }
+            else:
+                if self.is_pg:
+                    cursor.execute(
+                        """
+                        INSERT INTO device_fingerprints
+                        (user_id, device_hash, user_agent, screen_resolution,
+                         canvas_hash, webgl_renderer, timezone, language, platform)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        RETURNING device_id
+                        """,
+                        (
+                            user_id,
+                            device_hash,
+                            device_data.get("user_agent", ""),
+                            device_data.get("screen_resolution", ""),
+                            device_data.get("canvas_hash", ""),
+                            device_data.get("webgl_renderer", ""),
+                            device_data.get("timezone", ""),
+                            device_data.get("language", ""),
+                            device_data.get("platform", ""),
+                        ),
+                    )
+                    row = cursor.fetchone()
+                    device_id = row["device_id"] if row else None
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO device_fingerprints
+                        (user_id, device_hash, user_agent, screen_resolution,
+                         canvas_hash, webgl_renderer, timezone, language, platform)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            user_id,
+                            device_hash,
+                            device_data.get("user_agent", ""),
+                            device_data.get("screen_resolution", ""),
+                            device_data.get("canvas_hash", ""),
+                            device_data.get("webgl_renderer", ""),
+                            device_data.get("timezone", ""),
+                            device_data.get("language", ""),
+                            device_data.get("platform", ""),
+                        ),
+                    )
+                    device_id = cursor.lastrowid
+                conn.commit()
+                return {
+                    "is_new": True,
+                    "device_id": device_id,
+                    "device_hash": device_hash,
+                    "trust_score": 0.5,
+                    "session_count": 1,
+                }
+
+    def get_user_devices(self, user_id: int) -> List[Dict]:
+        """List all known devices for a user, ordered by last seen."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM device_fingerprints
+                WHERE user_id = ?
+                ORDER BY last_seen DESC
+                """,
+                (user_id,),
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    def is_known_device(self, user_id: int, device_hash: str) -> bool:
+        """Check if a device fingerprint is recognized for this user."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM device_fingerprints WHERE user_id = ? AND device_hash = ?",
+                (user_id, device_hash),
+            )
+            return cursor.fetchone() is not None
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ENHANCED SESSION LIFECYCLE
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def end_session_with_summary(
+        self,
+        session_id: str,
+        final_risk: float = None,
+        keystroke_count: int = 0,
+        mouse_event_count: int = 0,
+        enrollment_action: str = None,
+    ):
+        """End a session with a rich summary of behavioral data collected.
+
+        Updates the sessions table with final metrics and marks as inactive.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE sessions
+                SET is_active = 0,
+                    ended_at = CURRENT_TIMESTAMP,
+                    risk_score_final = ?,
+                    keystroke_count = ?,
+                    mouse_event_count = ?,
+                    enrollment_action = ?
+                WHERE session_id = ?
+                """,
+                (final_risk, keystroke_count, mouse_event_count,
+                 enrollment_action, session_id),
+            )
+            conn.commit()
+
+    def get_user_session_history(
+        self, user_id: int, limit: int = 20
+    ) -> List[Dict]:
+        """Get session history with behavioral metadata for a user."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT session_id, created_at, last_activity, ended_at,
+                       ip_address, user_agent, device_hash,
+                       risk_score_final, keystroke_count, mouse_event_count,
+                       enrollment_action, assurance_level
+                FROM sessions
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+    def get_active_session_metrics(self, session_id: str) -> Optional[Dict]:
+        """Get real-time metrics for an active session by aggregating
+        the latest snapshot and event counts."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Latest snapshot
+            cursor.execute(
+                """
+                SELECT risk_score, authenticity_score, feature_richness,
+                       ensemble_action, keystroke_count, mouse_event_count
+                FROM session_snapshots
+                WHERE session_id = ?
+                ORDER BY timestamp DESC LIMIT 1
+                """,
+                (session_id,),
+            )
+            snapshot = cursor.fetchone()
+
+            # Event counts from granular tables
+            cursor.execute(
+                "SELECT COUNT(*) as ks_count FROM keystroke_events WHERE session_id = ?",
+                (session_id,),
+            )
+            ks = cursor.fetchone()
+            cursor.execute(
+                "SELECT COUNT(*) as mouse_count FROM mouse_events WHERE session_id = ?",
+                (session_id,),
+            )
+            ms = cursor.fetchone()
+
+            # Risk timeline summary
+            cursor.execute(
+                """
+                SELECT COUNT(*) as risk_evals,
+                       AVG(risk_score) as avg_risk,
+                       MAX(risk_score) as peak_risk
+                FROM session_risk_timeline
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            )
+            risk_summary = cursor.fetchone()
+
+            return {
+                "snapshot": dict(snapshot) if snapshot else None,
+                "keystroke_events": ks["ks_count"] if ks else 0,
+                "mouse_events": ms["mouse_count"] if ms else 0,
+                "risk_evaluations": risk_summary["risk_evals"] if risk_summary else 0,
+                "avg_risk": risk_summary["avg_risk"] if risk_summary else None,
+                "peak_risk": risk_summary["peak_risk"] if risk_summary else None,
+            }
 
 
 # Database factory cache keyed by database path.

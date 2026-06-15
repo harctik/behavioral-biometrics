@@ -141,7 +141,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <TelemetryProvider>
-      <div className="flex h-[calc(100vh-48px)] overflow-hidden text-fg font-sans bg-black">
+      <div className="flex h-screen overflow-hidden text-fg font-sans bg-black">
         {/* Mobile overlay */}
         {mobileOpen && (
           <div

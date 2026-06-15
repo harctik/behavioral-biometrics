@@ -54,7 +54,8 @@ def log_audit_evidence_async(action, status, user_id, session_id, resource, meta
         from app.database import DatabaseManager
         from app.config import Settings
         
-        db = DatabaseManager(Settings.DATABASE_URI)
+        settings = Settings()
+        db = DatabaseManager(settings.SQLALCHEMY_DATABASE_URI)
         db.log_audit_evidence(
             action=action,
             status=status,
@@ -102,8 +103,9 @@ def train_user_models_async(self, user_id, force_phase=None):
         from app.config import Settings
         from app.training_orchestrator import TrainingOrchestrator
 
-        db = DatabaseManager(Settings.DATABASE_URI)
-        orchestrator = TrainingOrchestrator(db=db, models_dir="models")
+        settings = Settings()
+        db = DatabaseManager(settings.SQLALCHEMY_DATABASE_URI)
+        orchestrator = TrainingOrchestrator(db=db, models_dir=settings.MODELS_BASE_PATH)
         report = orchestrator.train_all(user_id=user_id, force_phase=force_phase)
 
         logger.info(
@@ -136,7 +138,8 @@ def retrain_all_users_async():
         from app.database import DatabaseManager
         from app.config import Settings
 
-        db = DatabaseManager(Settings.DATABASE_URI)
+        settings = Settings()
+        db = DatabaseManager(settings.SQLALCHEMY_DATABASE_URI)
         # Get all users who have completed calibration
         with db.get_connection() as conn:
             rows = conn.execute(

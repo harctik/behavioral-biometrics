@@ -3,11 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd frontend && npm install && npm run build"
-  },
-  "dependencies": {
-    "next": "^16.2.9",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "build": "cd frontend && npm install && npm run build",
+    "dev:frontend": "cd frontend && npm run dev",
+    "lint:frontend": "cd frontend && npm run lint"
   }
 }

@@ -8,11 +8,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { AuthButton, AuthInlineMessage, AuthInput } from "@/components/auth/AuthPrimitives";
-import { KeyRound, Timer, ArrowRight, Mail, Brain, RefreshCw } from "lucide-react";
+import { KeyRound, Timer, ArrowRight, Mail, Brain, RefreshCw, AlertTriangle, Copy, Check } from "lucide-react";
 import { normalizeOtp, isValidOtp } from "@/lib/otp";
 import { getCollector } from "@/lib/behavioral-collector";
 
-const OTP_TTL = 60; // seconds
+const DEFAULT_TTL = 120; // seconds — synced with backend OTP_TTL_SECONDS
 
 export default function OtpPage() {
   const router = useRouter();
@@ -21,10 +21,13 @@ export default function OtpPage() {
   
   const [info, setInfo] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [countdown, setCountdown] = useState(OTP_TTL);
+  const [countdown, setCountdown] = useState(DEFAULT_TTL);
   const [timerActive, setTimerActive] = useState(false);
   const [expired, setExpired] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [devMode, setDevMode] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [mlMetrics, setMlMetrics] = useState<{authenticityScore: number, riskLevel: string, manual: boolean, avgInterDigit: number} | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -38,10 +41,10 @@ export default function OtpPage() {
   }, []);
 
   // Start or restart the countdown timer
-  const startTimer = useCallback(() => {
+  const startTimer = useCallback((ttl: number = DEFAULT_TTL) => {
     // Clear any existing timer
     if (timerRef.current) clearInterval(timerRef.current);
-    setCountdown(OTP_TTL);
+    setCountdown(ttl);
     setExpired(false);
     setTimerActive(true);
 
@@ -75,13 +78,25 @@ export default function OtpPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sid }),
       });
+      const data = await res.json();
       if (res.ok) {
         setEmailSent(true);
-        setInfo("OTP code sent to your registered email address.");
-        ;
-        startTimer(); // START timer only when email is successfully sent
+
+        // Check if backend returned OTP in dev mode
+        if (data.dev_mode && data.otp_code) {
+          setDevMode(true);
+          setDevOtp(data.otp_code);
+          setInfo("Development mode — OTP code displayed below (no email service configured).");
+        } else {
+          setDevMode(false);
+          setDevOtp(null);
+          setInfo("OTP code sent to your registered email address.");
+        }
+
+        const ttl = data.ttl_seconds || DEFAULT_TTL;
+        startTimer(ttl);
       } else {
-        toast.error("Failed to send OTP. Please try again.");
+        toast.error(data.error || "Failed to send OTP. Please try again.");
       }
     } catch {
       toast.error("Network error. Please try again.");
@@ -161,6 +176,8 @@ export default function OtpPage() {
     ;
     setInfo("");
     setMlMetrics(null);
+    setDevOtp(null);
+    setCopied(false);
     if (sessionId) {
       setInfo("Sending new OTP...");
       setIsLoading(true);
@@ -168,23 +185,60 @@ export default function OtpPage() {
     }
   };
 
-  const countdownLow = countdown <= 10 && countdown > 0;
+  const handleCopyOtp = () => {
+    if (devOtp) {
+      navigator.clipboard.writeText(devOtp).then(() => {
+        setCopied(true);
+        setOtp(devOtp);
+        toast.success("OTP copied and auto-filled!");
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  };
+
+  const countdownLow = countdown <= 15 && countdown > 0;
   const minutes = String(Math.floor(countdown / 60)).padStart(2, '0');
   const seconds = String(countdown % 60).padStart(2, '0');
 
   return (
-    <AuthShell title="Verify OTP" subtitle="A 6-digit code has been sent to your registered email. Valid for 60 seconds.">
+    <AuthShell title="Verify OTP" subtitle="Enter the 6-digit code to continue. Your typing behavior is being analyzed.">
       <form onSubmit={handleSubmit} className="space-y-5">
         
         {info ? (
-          <div className="bg-accent-primary/10 border border-accent-primary/20 text-accent-primary px-4 py-3 rounded-xl text-xs flex items-center gap-2">
-            <Mail className="w-4 h-4" />
-            {info}
+          <div className={`${devMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-accent-primary/10 border-accent-primary/20 text-accent-primary'} border px-4 py-3 rounded-xl text-xs flex items-center gap-2`}>
+            {devMode ? <AlertTriangle className="w-4 h-4 flex-shrink-0" /> : <Mail className="w-4 h-4 flex-shrink-0" />}
+            <span>{info}</span>
           </div>
         ) : null}
 
+        {/* Dev mode OTP display — large, copy-able, prominent */}
+        {devMode && devOtp && !expired && (
+          <div className="relative bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/30 rounded-xl p-5 text-center">
+            <div className="text-[10px] uppercase tracking-widest font-bold text-amber-500/80 mb-2">
+              Development OTP Code
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyOtp}
+              className="group flex items-center justify-center gap-3 w-full"
+            >
+              <span className="text-3xl font-mono font-bold tracking-[0.5em] text-amber-400 group-hover:text-amber-300 transition-colors">
+                {devOtp}
+              </span>
+              {copied ? (
+                <Check className="w-5 h-5 text-emerald-400" />
+              ) : (
+                <Copy className="w-5 h-5 text-amber-500/50 group-hover:text-amber-400 transition-colors" />
+              )}
+            </button>
+            <div className="text-[10px] text-amber-500/60 mt-2 font-mono">
+              Click to copy & auto-fill · Configure MAIL_BACKEND in .env for email delivery
+            </div>
+          </div>
+        )}
+
         {/* Countdown timer */}
-        <div className={`flex items-center justify-center gap-2 py-3 border rounded-xl mb-4 transition-colors ${
+        <div className={`flex items-center justify-center gap-2 py-3 border rounded-xl transition-colors ${
           expired ? 'bg-red-500/10 border-red-500/30' :
           countdownLow ? 'bg-amber-500/10 border-amber-500/30' :
           'bg-black/20 border-border'

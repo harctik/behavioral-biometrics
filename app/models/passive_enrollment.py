@@ -93,7 +93,7 @@ class PassiveEnrollmentManager:
         - Profile confidence score (0.0–1.0)
     """
 
-    DEFAULT_MIN_SESSIONS = 5
+    DEFAULT_MIN_SESSIONS = 3
     DEFAULT_MIN_SAMPLES_PER_SESSION = 10
     PROFILE_UPDATE_ALPHA = 0.2  # EMA learning rate
 
@@ -118,6 +118,17 @@ class PassiveEnrollmentManager:
         except Exception:
             return None
 
+    def _get_db(self):
+        """Get database manager, returns None outside Flask app context."""
+        try:
+            from flask import has_app_context
+            if not has_app_context():
+                return None
+            from app.extensions import get_db
+            return get_db()
+        except Exception:
+            return None
+
     def _load_state(self, user_id: int):
         rc = self._get_redis()
         if rc:
@@ -129,22 +140,46 @@ class PassiveEnrollmentManager:
                     self._profiles_mem[user_id] = state.get("profile", {})
                     self._session_counts_mem[user_id] = state.get("sessions", 0)
                     self._enrollment_status_mem[user_id] = state.get("enrolled", False)
+                    return
             except Exception as e:
-                logger.error("Failed to load passive enrollment state: %s", e)
+                logger.error("Failed to load passive enrollment state from Redis: %s", e)
+
+        # Fallback: load from database when Redis is unavailable
+        if user_id not in self._profiles_mem:
+            db = self._get_db()
+            if db:
+                try:
+                    state = db.load_enrollment_state(user_id)
+                    if state:
+                        self._profiles_mem[user_id] = state.get("profile", {})
+                        self._session_counts_mem[user_id] = state.get("sessions", 0)
+                        self._enrollment_status_mem[user_id] = state.get("enrolled", False)
+                        logger.debug("Loaded enrollment state for user %d from DB (Redis miss)", user_id)
+                except Exception as e:
+                    logger.error("Failed to load enrollment state from DB: %s", e)
 
     def _save_state(self, user_id: int):
+        import json
+        state = {
+            "profile": self._profiles_mem.get(user_id, {}),
+            "sessions": self._session_counts_mem.get(user_id, 0),
+            "enrolled": self._enrollment_status_mem.get(user_id, False)
+        }
+
         rc = self._get_redis()
         if rc:
-            import json
             try:
-                state = {
-                    "profile": self._profiles_mem.get(user_id, {}),
-                    "sessions": self._session_counts_mem.get(user_id, 0),
-                    "enrolled": self._enrollment_status_mem.get(user_id, False)
-                }
                 rc.set(f"passive_enrollment:{user_id}", json.dumps(state))
             except Exception as e:
-                logger.error("Failed to save passive enrollment state: %s", e)
+                logger.error("Failed to save passive enrollment state to Redis: %s", e)
+
+        # Always persist to database for durability
+        db = self._get_db()
+        if db:
+            try:
+                db.save_enrollment_state(user_id, state)
+            except Exception as e:
+                logger.error("Failed to save enrollment state to DB: %s", e)
 
     def get_enrollment_status(self, user_id: int) -> Dict[str, Any]:
         """Check enrollment status for a user."""
@@ -248,6 +283,27 @@ class PassiveEnrollmentManager:
             result = self._process_authenticated(user_id, filtered, source, session_context)
             
         self._save_state(user_id)
+
+        # Log enrollment event to database for audit trail
+        db = self._get_db()
+        if db:
+            try:
+                session_id = (session_context or {}).get("session_id")
+                db.save_enrollment_event(
+                    user_id=user_id,
+                    session_id=session_id,
+                    enrollment_result={
+                        "enrollment_phase": "active" if enrolled else "collecting",
+                        "sessions_completed": self._session_counts_mem.get(user_id, 0),
+                        "feature_count": len(filtered),
+                        "match_score": result.get("match_score"),
+                        "action": result.get("action", ""),
+                        "message": result.get("message", ""),
+                    },
+                )
+            except Exception as e:
+                logger.error("Failed to log enrollment event: %s", e)
+
         return result
 
     def _process_enrollment(
@@ -348,8 +404,16 @@ class PassiveEnrollmentManager:
         match_score = self._compute_match_score(features, stats)
         match_score = max(0.0, match_score - context_penalty)
 
-        # Update profile with new data (EMA)
-        self._update_profile_ema(user_id, features, context_penalty)
+        # Only update profile from legit sessions (match >= 0.7)
+        # This prevents an attacker from slowly shifting the profile
+        # toward their own typing pattern over multiple weak-match sessions.
+        if match_score >= 0.7:
+            self._update_profile_ema(user_id, features, context_penalty)
+        else:
+            logger.info(
+                "Skipping profile update for user %d: match_score %.2f < 0.7 threshold",
+                user_id, match_score,
+            )
 
         # Determine action
         if match_score >= 0.7:
@@ -542,36 +606,141 @@ class PassiveEnrollmentManager:
     # ── Bayesian Per-Key/Digraph Profile System ───────────────────────────────
 
     def _load_digraph_state(self, user_id: int) -> Dict[str, Any]:
-        """Load the per-key/digraph Bayesian profile from Redis or memory."""
+        """Load the per-key/digraph Bayesian profile.
+
+        Priority: memory cache → Redis → database.
+        This ensures profiles survive Redis restarts and app redeployments.
+        """
         if not hasattr(self, "_digraph_profiles_mem"):
             self._digraph_profiles_mem: Dict[int, Dict[str, Any]] = {}
 
+        # 1. Check in-memory cache first
+        if user_id in self._digraph_profiles_mem:
+            return self._digraph_profiles_mem[user_id]
+
+        # 2. Try Redis cache
         rc = self._get_redis()
         if rc:
             import json
             try:
                 state_str = rc.get(f"digraph_profile:{user_id}")
                 if state_str:
-                    self._digraph_profiles_mem[user_id] = json.loads(state_str)
+                    profile = json.loads(state_str)
+                    self._digraph_profiles_mem[user_id] = profile
+                    return profile
             except Exception as e:
-                logger.error("Failed to load digraph profile: %s", e)
+                logger.error("Failed to load digraph profile from Redis: %s", e)
+
+        # 3. Fall back to database (durable store)
+        db = self._get_db()
+        if db:
+            try:
+                profile = db.load_digraph_profile(user_id)
+                if profile:
+                    self._digraph_profiles_mem[user_id] = profile
+                    # Warm the Redis cache for next time
+                    if rc:
+                        import json
+                        try:
+                            rc.set(f"digraph_profile:{user_id}", json.dumps(profile))
+                        except Exception:
+                            pass
+                    logger.info(
+                        "Loaded digraph profile for user %d from database (Redis miss)",
+                        user_id,
+                    )
+                    return profile
+            except Exception as e:
+                logger.error("Failed to load digraph profile from DB: %s", e)
 
         return self._digraph_profiles_mem.get(user_id, {})
 
     def _save_digraph_state(self, user_id: int, profile: Dict[str, Any]):
-        """Persist the per-key/digraph Bayesian profile."""
+        """Persist the per-key/digraph Bayesian profile to all stores.
+
+        Write order: memory → Redis (fast cache) → database (durable).
+        """
         if not hasattr(self, "_digraph_profiles_mem"):
             self._digraph_profiles_mem = {}
 
         self._digraph_profiles_mem[user_id] = profile
 
+        # Write to Redis cache
         rc = self._get_redis()
         if rc:
             import json
             try:
                 rc.set(f"digraph_profile:{user_id}", json.dumps(profile))
             except Exception as e:
-                logger.error("Failed to save digraph profile: %s", e)
+                logger.error("Failed to save digraph profile to Redis: %s", e)
+
+        # Write to database (durable)
+        db = self._get_db()
+        if db:
+            try:
+                db.save_digraph_profile(user_id, profile)
+            except Exception as e:
+                logger.error("Failed to save digraph profile to DB: %s", e)
+
+    def _compute_digraph_match_score(
+        self,
+        stored_profile: Dict[str, Any],
+        incoming_profile: Dict[str, Any],
+    ) -> float:
+        """Compute match score between stored Bayesian profile and incoming session profile.
+
+        For each overlapping per-key hold time and per-digraph flight time,
+        compute the z-score distance from the stored posterior distribution.
+        Return a score in [0, 1] where 1.0 = perfect match.
+
+        The z-score approach is Bayesian-native:
+            z = |observed - posterior_mean| / posterior_std
+            key_match = max(0, 1 - z/3)  # 3σ = 0% match
+        """
+        z_scores: list = []
+
+        # Per-key hold time matching
+        stored_keys = stored_profile.get("per_key_hold", {})
+        incoming_keys = incoming_profile.get("per_key_hold", {})
+        for key, incoming_data in incoming_keys.items():
+            if key not in stored_keys:
+                continue
+            stored_entry = stored_keys[key]
+            stored_mean = stored_entry.get("mean", 0)
+            stored_std = stored_entry.get("std", 50)
+            if stored_std < 1:
+                stored_std = 1
+
+            obs_mean = incoming_data.get("mean", 0) if isinstance(incoming_data, dict) else incoming_data
+            if obs_mean <= 0:
+                continue
+
+            z = abs(obs_mean - stored_mean) / stored_std
+            z_scores.append(max(0.0, 1.0 - z / 3.0))
+
+        # Per-digraph flight time matching
+        stored_digs = stored_profile.get("per_digraph_flight", {})
+        incoming_digs = incoming_profile.get("per_digraph_flight", {})
+        for dig, incoming_data in incoming_digs.items():
+            if dig not in stored_digs:
+                continue
+            stored_entry = stored_digs[dig]
+            stored_mean = stored_entry.get("mean", 0)
+            stored_std = stored_entry.get("std", 80)
+            if stored_std < 1:
+                stored_std = 1
+
+            obs_mean = incoming_data.get("mean", 0) if isinstance(incoming_data, dict) else incoming_data
+            if obs_mean <= 0:
+                continue
+
+            z = abs(obs_mean - stored_mean) / stored_std
+            z_scores.append(max(0.0, 1.0 - z / 3.0))
+
+        if not z_scores:
+            return 0.5  # Neutral when no overlapping keys
+
+        return round(sum(z_scores) / len(z_scores), 4)
 
     @staticmethod
     def _bayesian_update(

@@ -85,6 +85,7 @@ class BehavioralData(Resource):
         data_type = payload.get("type", "keystroke")
         event_count = payload.get("event_count", 1)
         raw_data = payload.get("events") or []
+        mouse_events_list = payload.get("mouse_events") or raw_data  # Frontend sends mouse_events, legacy sends events
         extended_features = payload.get("extended_features") or {}
         keystroke_events = payload.get("keystroke_events") or []
         touch_events = payload.get("touch_events") or []
@@ -99,7 +100,7 @@ class BehavioralData(Resource):
         touch_events = touch_events[:MAX_EVENTS_PER_ARRAY]
         scroll_events = scroll_events[:MAX_EVENTS_PER_ARRAY]
         cognitive_events = cognitive_events[:MAX_EVENTS_PER_ARRAY]
-        motion_events = motion_events[:MAX_EVENTS_PER_ARRAY]
+        mouse_events_list = mouse_events_list[:MAX_EVENTS_PER_ARRAY]
         navigation_events = navigation_events[:MAX_EVENTS_PER_ARRAY]
 
         if not session_id:
@@ -147,20 +148,33 @@ class BehavioralData(Resource):
 
         db = get_db()
         uid = get_current_user_id()
+
+        # Merge raw extended features with scoring results so ML engines
+        # can access actual feature values (nav_dwell_mean, scroll_velocity_std,
+        # hesitation_count, etc.) for bot/duress/cognitive detection.
+        stored_features = {
+            "event_count": normalized_count,
+            "extended_risk": ext_risk,
+            "touch_events": len(touch_events),
+            "scroll_events": len(scroll_events),
+            "cognitive_events": len(cognitive_events),
+            "motion_events": len(motion_events),
+            "nav_events": len(navigation_events),
+            "keystroke_event_count": len(keystroke_events),
+            "mouse_event_count": len(mouse_events_list),
+        }
+        # Include the actual frontend-computed extended features
+        if extended_features and isinstance(extended_features, dict):
+            stored_features.update(extended_features)
+        # Overlay scoring results (higher priority)
+        if ext_result and isinstance(ext_result, dict):
+            stored_features.update(ext_result)
+
         db.store_behavioral_data(
             user_id=uid,
             session_id=session_id,
             data_type=data_type,
-            features={
-                "event_count": normalized_count,
-                "extended_risk": ext_risk,
-                "touch_events": len(touch_events),
-                "scroll_events": len(scroll_events),
-                "cognitive_events": len(cognitive_events),
-                "motion_events": len(motion_events),
-                "nav_events": len(navigation_events),
-                **ext_result,
-            },
+            features=stored_features,
             raw_data={
                 "events": raw_data[:500],
                 "keystroke_events": keystroke_events[:500],
@@ -171,6 +185,28 @@ class BehavioralData(Resource):
             confidence_score=float(normalized_count),
             anomaly_score=ext_risk if ext_risk > 0 else None,
         )
+
+        # ── Granular session-aware storage (new tables) ──────────────────
+        try:
+            # Store individual keystroke events for per-session analysis
+            if keystroke_events:
+                db.store_keystroke_events(
+                    session_id=session_id,
+                    user_id=uid,
+                    events=keystroke_events,
+                    context="SESSION",
+                )
+            # Store mouse events for trajectory analysis
+            if mouse_events_list:
+                db.store_mouse_events(
+                    session_id=session_id,
+                    user_id=uid,
+                    events=mouse_events_list,
+                    context="SESSION",
+                )
+        except Exception as exc:
+            logger.warning("Granular event storage failed: %s", exc)
+
         db.log_audit_evidence(
             action="behavioral_ingest",
             status="ok",
@@ -218,11 +254,18 @@ class BehavioralData(Resource):
                     pass
 
             try:
+                # Merge per-key/digraph profile into keystroke features for ensemble digraph matching
+                ks_feats = {"events": keystroke_events}
+                incoming_profile = payload.get("keystroke_profile") or {}
+                if incoming_profile:
+                    ks_feats["per_key_hold"] = incoming_profile.get("per_key_hold", {})
+                    ks_feats["per_digraph_flight"] = incoming_profile.get("per_digraph_flight", {})
+
                 # Run synchronously to return the latest risk score immediately
                 res = score_with_ensemble(
                     extended_features=extended_features,
                     user_id=int(uid) if uid else None,
-                    keystroke_features={"events": keystroke_events},
+                    keystroke_features=ks_feats,
                     mouse_features={"events": raw_data},
                     user_baseline=baseline,
                 )

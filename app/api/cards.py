@@ -43,7 +43,7 @@ class CardsList(Resource):
         try:
             with db.get_connection() as conn:
                 rows = conn.execute(
-                    "SELECT id, type, number, expiry, status, daily_limit as limit, cvv_hash FROM cards WHERE user_id = ? ORDER BY created_at ASC",
+                    "SELECT id, type, number, expiry, status, daily_limit as card_limit, cvv_hash FROM cards WHERE user_id = ? ORDER BY created_at ASC",
                     (uid,)
                 ).fetchall()
                 
@@ -60,7 +60,7 @@ class CardsList(Resource):
                     conn.commit()
                     
                     rows = conn.execute(
-                        "SELECT id, type, number, expiry, status, daily_limit as limit, cvv_hash FROM cards WHERE user_id = ? ORDER BY created_at ASC",
+                        "SELECT id, type, number, expiry, status, daily_limit as card_limit, cvv_hash FROM cards WHERE user_id = ? ORDER BY created_at ASC",
                         (uid,)
                     ).fetchall()
 
@@ -68,6 +68,7 @@ class CardsList(Resource):
             for row in rows:
                 c = dict(row)
                 c.pop("cvv_hash", None)  # Never send encrypted CVV in list response
+                c["limit"] = c.pop("card_limit", 10000.0)  # Rename back for API response
                 c["spent"] = 0.0
                 c["brand"] = "Visa" if c["type"] == "Credit" else "Mastercard"
                 c["cvv"] = "•••"  # Masked placeholder

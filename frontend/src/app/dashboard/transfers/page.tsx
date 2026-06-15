@@ -27,17 +27,8 @@ interface Transfer {
   status: "completed" | "pending" | "failed";
 }
 
-const MOCK_BENEFICIARIES: Beneficiary[] = [
-  { id: "b1", name: "Priya Sharma", account: "XXXX4829", bank: "HDFC Bank", verified: true },
-  { id: "b2", name: "Cloud Services Inc.", account: "XXXX7156", bank: "ICICI Bank", verified: true },
-  { id: "b3", name: "Rahul Patel", account: "XXXX3021", bank: "SBI", verified: false },
-];
 
-const MOCK_HISTORY: Transfer[] = [
-  { id: "t1", to: "Priya Sharma", amount: 5000, date: "Today, 10:30 AM", status: "completed" },
-  { id: "t2", to: "Cloud Services Inc.", amount: 12050, date: "Yesterday, 14:30 PM", status: "completed" },
-  { id: "t3", to: "Rahul Patel", amount: 25000, date: "May 9, 09:15 AM", status: "pending" },
-];
+
 
 export default function TransfersPage() {
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);

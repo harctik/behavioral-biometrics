@@ -128,3 +128,151 @@ class AuthService:
             return len(rows) > 0
         except Exception:
             return False
+
+    # ── Two-Phase Login: Challenge Tokens ──────────────────────────────────
+
+    @staticmethod
+    def create_login_challenge(user_id: int) -> str:
+        """Generate a one-time challenge token for Phase 2 of login.
+
+        Stored in Redis with 120s TTL. Returns the token UUID.
+        """
+        import uuid
+        token = str(uuid.uuid4())
+        rc = get_redis()
+        if rc:
+            try:
+                # Store user_id keyed by challenge token, 120-second TTL
+                rc.setex(f"login_challenge:{token}", 120, str(user_id))
+            except Exception:
+                logger.error("Failed to store login challenge in Redis")
+        return token
+
+    @staticmethod
+    def validate_login_challenge(token: str) -> int | None:
+        """Validate and consume a login challenge token.
+
+        Returns user_id if valid, None if expired/invalid.
+        One-time use: token is deleted after validation.
+        """
+        rc = get_redis()
+        if not rc:
+            return None
+        try:
+            key = f"login_challenge:{token}"
+            user_id_str = rc.get(key)
+            if user_id_str:
+                rc.delete(key)  # One-time use
+                return int(user_id_str)
+        except Exception:
+            logger.error("Failed to validate login challenge")
+        return None
+
+    # ── Behavioral Decision Engine ─────────────────────────────────────────
+
+    @staticmethod
+    def evaluate_behavioral_decision(
+        match_score: float,
+        enrollment_phase: bool,
+        is_known_device: bool = False,
+    ) -> str:
+        """Evaluate behavioral match and return a decision.
+
+        Returns:
+            "grant"   — match >= 0.7, go straight to dashboard
+            "step_up" — match 0.4–0.7, require OTP
+            "block"   — match < 0.4, hard block
+            "enroll"  — still in enrollment phase, pass-through
+        """
+        if enrollment_phase:
+            return "enroll"
+        if match_score >= 0.7:
+            return "grant"
+        if match_score >= 0.4:
+            return "step_up"
+        # match < 0.4 — anomaly
+        return "block"
+
+    # ── User Blocking ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def block_user(user_id: int):
+        """Block a user due to behavioral anomaly. 24-hour TTL in Redis."""
+        rc = get_redis()
+        if rc:
+            try:
+                rc.setex(f"behavioral_block:{user_id}", 86400, "1")
+            except Exception:
+                pass
+
+    @staticmethod
+    def unblock_user(user_id: int):
+        """Remove behavioral block for a user."""
+        rc = get_redis()
+        if rc:
+            try:
+                rc.delete(f"behavioral_block:{user_id}")
+            except Exception:
+                pass
+
+    @staticmethod
+    def is_user_blocked(user_id: int) -> bool:
+        """Check if a user is currently blocked due to behavioral anomaly."""
+        rc = get_redis()
+        if not rc:
+            return False
+        try:
+            return bool(rc.get(f"behavioral_block:{user_id}"))
+        except Exception:
+            return False
+
+    # ── Account Recovery Tokens ────────────────────────────────────────────
+
+    @staticmethod
+    def create_recovery_token(user_id: int) -> str:
+        """Generate a recovery token for blocked accounts. 30-minute TTL."""
+        import uuid
+        token = str(uuid.uuid4())
+        rc = get_redis()
+        if rc:
+            try:
+                rc.setex(f"recovery_token:{token}", 1800, str(user_id))
+                # Track recovery attempts (max 3 per 24h)
+                attempts_key = f"recovery_attempts:{user_id}"
+                if not rc.exists(attempts_key):
+                    rc.setex(attempts_key, 86400, 0)
+            except Exception:
+                logger.error("Failed to create recovery token")
+        return token
+
+    @staticmethod
+    def validate_recovery_token(token: str) -> int | None:
+        """Validate a recovery token. Returns user_id if valid."""
+        rc = get_redis()
+        if not rc:
+            return None
+        try:
+            key = f"recovery_token:{token}"
+            user_id_str = rc.get(key)
+            if user_id_str:
+                user_id = int(user_id_str)
+                # Check attempts limit
+                attempts = int(rc.get(f"recovery_attempts:{user_id}") or 0)
+                if attempts >= 3:
+                    return None  # Max attempts exceeded
+                rc.incr(f"recovery_attempts:{user_id}")
+                return user_id
+        except Exception:
+            logger.error("Failed to validate recovery token")
+        return None
+
+    @staticmethod
+    def consume_recovery_token(token: str):
+        """Delete a recovery token after successful recovery."""
+        rc = get_redis()
+        if rc:
+            try:
+                rc.delete(f"recovery_token:{token}")
+            except Exception:
+                pass
+

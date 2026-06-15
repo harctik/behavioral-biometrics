@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     SESSION_INACTIVITY_TIMEOUT_MINUTES: int = 15  # RBI mandate for netbanking
     MAX_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_DURATION_MINUTES: int = 15
+    SUSPICIOUS_LOGIN_ALERT_THRESHOLD: int = 3  # Send alert email after this many failed attempts
     CSRF_ENABLED: bool = True
     CSRF_HEADER_NAME: str = "X-CSRF-Token"
     # Feature extraction configuration
@@ -134,6 +135,9 @@ class Settings(BaseSettings):
     SESSION_CACHE_TTL_SECONDS: int = 8 * 3600
     CORS_ORIGINS: str = ""
 
+    # ── Frontend URL (central source for all frontend-facing links) ────────
+    FRONTEND_URL: str = ""  # e.g. https://app.behaviorauth.com or http://localhost:3000
+
     # ── Email / Transactional Mail ──────────────────────────────────────────
     MAIL_SERVER: str = "localhost"
     MAIL_PORT: int = 587
@@ -146,7 +150,8 @@ class Settings(BaseSettings):
     )
     AWS_REGION: str = "us-east-1"
     RESEND_API_KEY: str = ""
-    RESET_URL_BASE: str = "http://localhost:3000/reset-password"
+    RESET_URL_BASE: str = ""  # Derived from FRONTEND_URL if empty
+    VERIFY_URL_BASE: str = ""  # Derived from FRONTEND_URL if empty
 
     @field_validator("JWT_SECRET_KEY", mode="before")
     @classmethod

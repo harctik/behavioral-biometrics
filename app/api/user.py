@@ -141,3 +141,60 @@ class UserPassword(Resource):
             
         return {"success": True, "message": "Password changed successfully"}, 200
 
+
+@user_ns.route("/security-hint")
+class SecurityHint(Resource):
+    @jwt_required()
+    @limiter.limit("10 per minute")
+    def get(self):
+        """Return a masked version of the user's recovery email as a security hint."""
+        uid = get_current_user_id()
+        db = get_db()
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT email FROM users WHERE user_id = ?", (uid,))
+            row = cursor.fetchone()
+            if not row or not row["email"]:
+                return {"hint": "No email configured"}, 200
+
+            email = row["email"]
+            local, domain = email.split("@", 1) if "@" in email else (email, "")
+            masked_local = local[0] + "***" + (local[-1] if len(local) > 1 else "")
+            return {"hint": f"{masked_local}@{domain}"}, 200
+
+
+@user_ns.route("/sessions")
+class UserSessions(Resource):
+    @jwt_required()
+    @limiter.limit("10 per minute")
+    def get(self):
+        """Return the user's active sessions."""
+        uid = get_current_user_id()
+        db = get_db()
+        try:
+            with db.get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT session_id, ip_address, user_agent, created_at, last_activity "
+                    "FROM sessions WHERE user_id = ? AND is_active = 1 "
+                    "ORDER BY last_activity DESC LIMIT 10",
+                    (uid,)
+                ).fetchall()
+
+            sessions = []
+            for row in rows:
+                s = dict(row)
+                ua = s.get("user_agent", "")
+                # Extract a human-readable browser label
+                if "Chrome" in ua:
+                    s["browser"] = "Chrome"
+                elif "Firefox" in ua:
+                    s["browser"] = "Firefox"
+                elif "Safari" in ua:
+                    s["browser"] = "Safari"
+                else:
+                    s["browser"] = "Unknown"
+                sessions.append(s)
+            return {"sessions": sessions}, 200
+        except Exception as e:
+            logger.error("Failed to fetch user sessions: %s", e)
+            return {"sessions": []}, 200

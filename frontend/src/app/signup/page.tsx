@@ -24,10 +24,6 @@ const TYPING_PROMPTS = [
   "How vexingly quick daft zebras jump",
 ];
 
-function getRandomPrompt() {
-  return TYPING_PROMPTS[Math.floor(Math.random() * TYPING_PROMPTS.length)];
-}
-
 function computeMatchAccuracy(typed: string, target: string): number {
   if (!typed || !target) return 0;
   const t = typed.trim().toLowerCase();
@@ -52,7 +48,11 @@ export default function SignUpPage() {
   const [isEnrolled, setIsEnrolled] = useState(false);
 
   // ── Behavioral Typing Prompt ──────────────────────────────────────────
-  const [typingPrompt] = useState(() => getRandomPrompt());
+  // Empty on server render to avoid hydration mismatch; randomized client-side.
+  const [typingPrompt, setTypingPrompt] = useState("");
+  useEffect(() => {
+    setTypingPrompt(TYPING_PROMPTS[Math.floor(Math.random() * TYPING_PROMPTS.length)]);
+  }, []);
   const [typedText, setTypedText] = useState("");
   const [pasteDetected, setPasteDetected] = useState(false);
   const typingRef = useRef<HTMLTextAreaElement>(null);
@@ -502,8 +502,8 @@ export default function SignUpPage() {
                     </p>
                   </div>
 
-                  <div className="bg-slate-900/60 border border-cyan-500/20 rounded-md px-3 py-2 font-mono text-[11px] leading-tight text-cyan-300 tracking-wide select-none">
-                    {typingPrompt}
+                  <div suppressHydrationWarning className="bg-slate-900/60 border border-cyan-500/20 rounded-md px-3 py-2 font-mono text-[11px] leading-tight text-cyan-300 tracking-wide select-none">
+                    {typingPrompt || "\u00A0"}
                   </div>
 
                   <div className="relative">

@@ -52,6 +52,12 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
       if (!isMounted) return;
       try {
         const freshCsrf = getCsrfToken();
+        // Skip stream connection when not authenticated
+        if (!freshCsrf || !document.cookie.includes("csrf_access_token=")) {
+          setTimeout(() => { if (isMounted) streamMetrics(); }, 5000);
+          return;
+        }
+
         const res = await fetch("/api/v1/session/metrics/stream", {
           headers: {
             "Content-Type": "application/json",
@@ -60,8 +66,17 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
           signal: abortController.signal
         });
         
-        if (!res.ok) throw new Error("Stream failed to connect");
-        if (!res.body) throw new Error("ReadableStream not yet supported in this browser.");
+        if (!res.ok) {
+          // Silently retry on auth failures (401/403) or server errors
+          setTimeout(() => {
+            if (isMounted) {
+              abortController = new AbortController();
+              streamMetrics();
+            }
+          }, 5000);
+          return;
+        }
+        if (!res.body) return;
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -111,7 +126,6 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err: any) {
         if (isMounted && err.name !== 'AbortError') {
-          console.error("Failed to read live metrics stream", err);
           setTimeout(() => { 
             if (isMounted) {
               abortController = new AbortController();
@@ -128,23 +142,23 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
       if (!isMounted) return;
       try {
         const csrf = getCsrfToken();
+        if (!csrf || !document.cookie.includes("csrf_access_token=")) return;
         const mRes = await fetch("/api/v1/session/metrics", { headers: { "X-CSRF-TOKEN": csrf } });
-        if (mRes.ok) {
-          const mData = await mRes.json();
-          setBackendMetrics(mData);
-          const val = mData.authenticity_score || 0;
-          setScore(val <= 1 ? Math.round(val * 100) : val);
-          if (mData.enrollment && mData.enrollment.enrollment_phase) {
-            setEnrollment({
-              enrolled: mData.enrollment.enrolled || false,
-              phase: mData.enrollment.enrollment_phase,
-              completed: mData.enrollment.sessions_completed || 0,
-              required: mData.enrollment.sessions_required || 5
-            });
-          }
-          if (mData.digraph_profile) {
-            setDigraphProfile(mData.digraph_profile);
-          }
+        if (!mRes.ok) return;
+        const mData = await mRes.json();
+        setBackendMetrics(mData);
+        const val = mData.authenticity_score || 0;
+        setScore(val <= 1 ? Math.round(val * 100) : val);
+        if (mData.enrollment && mData.enrollment.enrollment_phase) {
+          setEnrollment({
+            enrolled: mData.enrollment.enrolled || false,
+            phase: mData.enrollment.enrollment_phase,
+            completed: mData.enrollment.sessions_completed || 0,
+            required: mData.enrollment.sessions_required || 5
+          });
+        }
+        if (mData.digraph_profile) {
+          setDigraphProfile(mData.digraph_profile);
         }
       } catch {}
     }, 5000);

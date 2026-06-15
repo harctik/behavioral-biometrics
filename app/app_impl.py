@@ -30,7 +30,7 @@ from .error_handling import make_error_response, ErrorHandler
 
 logger = get_logger(__name__)
 
-DEFAULT_RATE_LIMIT = "5 per minute"
+DEFAULT_RATE_LIMIT = "60 per minute"
 
 
 def create_app(env: str = "development"):

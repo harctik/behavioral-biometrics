@@ -140,8 +140,8 @@ omit = [
     "app/webhooks.py",            # Webhook delivery (ThreadPool + external HTTP)
     "app/app.py",                 # Thin WSGI entrypoint
     "app/drift_detector.py",      # Unused ML behavioral drift detector
-    "app/error_handling.py",      # Boilerplate error formatting
-    "app/mail.py",                # Mock SMTP delivery
+    # app/error_handling.py — now tested via test_error_handling.py
+    # app/mail.py — now tested via test_mail_service.py
     "app/models/duress_detector.py",  # Requires pre-trained user baselines
     "app/banking/cbs_adapters.py",    # CBS platform simulation layer
     "app/__init__.py",                # Thin app factory
@@ -168,4 +168,4 @@ exclude_lines = [
 exclude_also = [
     "pass  # Fail open",
 ]
-fail_under = 60
+fail_under = 80

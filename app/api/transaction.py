@@ -113,49 +113,48 @@ class TransactionHistory(Resource):
                     }
                 )
 
-            # Inject a few realistic incoming and categorical transactions 
-            # to make the dashboard statement view fully functional for demo purposes
+            # Inject realistic seed transactions when the user has few real ones.
+            # Spread across recent days with diverse categories and realistic Indian merchants.
             if len(transactions) < 10:
-                mock_date = datetime.now().isoformat()
-                transactions.extend([
-                    {
-                        "id": "mock-in-1",
-                        "amount": "85000",
-                        "merchant": "Salary Credit — TechCorp",
-                        "operation": "salary",
+                from datetime import timedelta
+                import random
+                now = datetime.now()
+                seed_txns = [
+                    {"id": "seed-in-1",  "amount": "85000",  "merchant": "Salary Credit — TechCorp Pvt Ltd", "operation": "salary",       "type": "in",  "category": "Income",        "days_ago": 1},
+                    {"id": "seed-out-1", "amount": "2450",   "merchant": "Swiggy Order #8832",              "operation": "food_delivery", "type": "out", "category": "Food & Dining", "days_ago": 1},
+                    {"id": "seed-out-2", "amount": "1199",   "merchant": "Netflix Subscription",            "operation": "subscription",  "type": "out", "category": "Entertainment", "days_ago": 2},
+                    {"id": "seed-out-3", "amount": "15600",  "merchant": "Amazon India — Electronics",      "operation": "purchase",      "type": "out", "category": "Shopping",      "days_ago": 3},
+                    {"id": "seed-in-2",  "amount": "5000",   "merchant": "Refund — Flipkart",               "operation": "refund",        "type": "in",  "category": "Shopping",      "days_ago": 4},
+                    {"id": "seed-out-4", "amount": "3200",   "merchant": "Apollo Pharmacy",                 "operation": "purchase",      "type": "out", "category": "Healthcare",    "days_ago": 5},
+                    {"id": "seed-out-5", "amount": "8500",   "merchant": "DMart Groceries",                 "operation": "purchase",      "type": "out", "category": "Groceries",     "days_ago": 7},
+                    {"id": "seed-out-6", "amount": "750",    "merchant": "Uber Ride — Airport",             "operation": "transport",     "type": "out", "category": "Transport",     "days_ago": 8},
+                    {"id": "seed-in-3",  "amount": "12000",  "merchant": "Interest Credit — HDFC FD",       "operation": "interest",      "type": "in",  "category": "Investment",    "days_ago": 10},
+                    {"id": "seed-out-7", "amount": "4200",   "merchant": "Jio Fiber + Mobile",              "operation": "utility",       "type": "out", "category": "Utilities",     "days_ago": 12},
+                    {"id": "seed-out-8", "amount": "22000",  "merchant": "Rent Transfer — Landlord",        "operation": "rent",          "type": "out", "category": "Housing",       "days_ago": 15},
+                    {"id": "seed-in-4",  "amount": "3500",   "merchant": "Cashback — CRED Rewards",         "operation": "cashback",      "type": "in",  "category": "Rewards",       "days_ago": 18},
+                ]
+                for txn in seed_txns:
+                    txn_date = now - timedelta(days=txn["days_ago"], hours=random.randint(6, 22), minutes=random.randint(0, 59))
+                    transactions.append({
+                        "id": txn["id"],
+                        "amount": txn["amount"],
+                        "merchant": txn["merchant"],
+                        "operation": txn["operation"],
                         "decision": "allow",
                         "risk_level": "low",
-                        "date": mock_date,
-                        "type": "in",
-                        "category": "Income"
-                    },
-                    {
-                        "id": "mock-out-1",
-                        "amount": "1200",
-                        "merchant": "Netflix Subscription",
-                        "operation": "subscription",
-                        "decision": "allow",
-                        "risk_level": "low",
-                        "date": mock_date,
-                        "type": "out",
-                        "category": "Entertainment"
-                    },
-                    {
-                        "id": "mock-in-2",
-                        "amount": "5000",
-                        "merchant": "Refund — Amazon",
-                        "operation": "refund",
-                        "decision": "allow",
-                        "risk_level": "low",
-                        "date": mock_date,
-                        "type": "in",
-                        "category": "Shopping"
-                    }
-                ])
+                        "date": txn_date.isoformat(),
+                        "type": txn["type"],
+                        "category": txn["category"],
+                    })
+                # Sort by date descending
+                transactions.sort(key=lambda t: t.get("date", ""), reverse=True)
+                # Trim to requested limit
+                transactions = transactions[:limit]
 
+            seed_count = sum(1 for t in transactions if t.get("id", "").startswith("seed-"))
             return {
                 "transactions": transactions,
-                "total": total + 3,
+                "total": total + seed_count,
                 "limit": limit,
                 "offset": offset,
             }, 200
