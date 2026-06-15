@@ -159,60 +159,15 @@ class Register(Resource):
         user_id, mfa_secret = result
         logger.info("New user registered: %s (ID: %d)", data.username, user_id)
 
-        # ── Generate 6-digit email verification code ─────────────────────
-        import secrets as _secrets
-        verification_code = "".join([str(_secrets.choice(range(10))) for _ in range(6)])
-        VERIFY_OTP_TTL = 600  # 10 minutes
-        db.store_otp(user_id, verification_code, ttl_seconds=VERIFY_OTP_TTL)
-
-        # Determine if we have a working mail backend (verified sender domain)
-        mail_svc = current_app.extensions.get("mail_service")
-        mail_sender = current_app.config.get("MAIL_DEFAULT_SENDER", "")
-        sender_domain = mail_sender.split("@")[-1] if "@" in mail_sender else ""
-        placeholder_domains = ("behaviorauth.local", "localhost", "example.com", "")
-        has_real_mail = (
-            mail_svc
-            and getattr(mail_svc, "backend", "console") != "console"
-            and sender_domain not in placeholder_domains
-            and not sender_domain.endswith(".local")
-        )
-
-        if has_real_mail:
-            try:
-                subject = "Your Verification Code — AetherAuth"
-                body_text = (
-                    f"Hello {data.username},\n\n"
-                    f"Your email verification code is:\n\n"
-                    f"    {verification_code}\n\n"
-                    f"This code expires in 10 minutes.\n\n"
-                    f"If you did not register, please ignore this email.\n\n"
-                    f"\u2014 AetherAuth Security Team"
-                )
-                body_html = (
-                    f"<h2>Verify Your Email</h2>"
-                    f"<p>Hello <strong>{data.username}</strong>,</p>"
-                    f"<p>Your email verification code is:</p>"
-                    f"<div style='text-align:center;margin:24px 0'>"
-                    f"<span style='font-size:32px;font-family:monospace;letter-spacing:8px;"
-                    f"padding:16px 32px;background:#1e293b;color:#60a5fa;border-radius:12px;"
-                    f"display:inline-block'>{verification_code}</span></div>"
-                    f"<p><small>This code expires in 10 minutes.</small></p>"
-                    f"<p>If you did not register, ignore this email.</p>"
-                    f"<hr><p style='color:#888;font-size:12px'>AetherAuth Security Team</p>"
-                )
-                mail_svc.send(data.email, subject, body_text, body_html)
-            except Exception as exc:
-                logger.error("Failed to send verification email: %s", exc)
-        elif not current_app.config.get("TESTING"):
-            # No real mail backend — auto-verify so users aren't blocked
-            db.set_email_verified(user_id)
-            logger.info("Auto-verified email for user %d (no mail backend)", user_id)
+        # ── Auto-verify all users (email verification disabled) ────────────
+        db.set_email_verified(user_id)
 
         db.log_audit_evidence(
-            action="email_verification_issued",
+            action="user_registered",
             status="ok",
             user_id=user_id,
             resource="/api/v1/auth/register",
+            metadata={"username": data.username, "auto_verified": True},
             retention_tag="security",
         )
 
@@ -223,7 +178,6 @@ class Register(Resource):
             enrollment_seed = raw_json.get("enrollment_seed") or {}
             behavioral_data = raw_json.get("behavioral_data") or {}
 
-            # Extract keystroke features from enrollment seed
             keystroke_events = (
                 enrollment_seed.get("keystroke_events")
                 or behavioral_data.get("keystroke_events")
@@ -241,14 +195,6 @@ class Register(Resource):
                     behavioral_data=behavioral_data,
                     source="registration",
                 )
-                logger.info(
-                    "Session 0 enrollment seed for user %d: %d keystrokes, "
-                    "prompt_accuracy=%d%%, action=%s",
-                    user_id,
-                    len(keystroke_events),
-                    enrollment_seed.get("match_accuracy", 0),
-                    enrollment_result.get("action", "unknown"),
-                )
         except Exception:
             logger.error("Session 0 enrollment seed processing failed", exc_info=True)
 
@@ -259,24 +205,8 @@ class Register(Resource):
             typed_prompt = enrollment_seed.get("typed_prompt", "")
             if typed_prompt:
                 db.set_typing_prompt(user_id, typed_prompt)
-                logger.info("Saved typing prompt for user %d", user_id)
         except Exception:
             logger.error("Failed to save typing prompt", exc_info=True)
-
-        db.log_audit_evidence(
-            action="user_registered",
-            status="ok",
-            user_id=user_id,
-            resource="/api/v1/auth/register",
-            metadata={
-                "username": data.username,
-                "enrollment_seed": bool(enrollment_result),
-                "session_0_action": enrollment_result.get("action")
-                if enrollment_result
-                else None,
-            },
-            retention_tag="security",
-        )
 
         import pyotp
 
@@ -288,16 +218,11 @@ class Register(Resource):
 
         resp_data = {
             "user_id": user_id,
-            "requires_verification": has_real_mail,
+            "requires_verification": False,
             "email": data.email,
             "enrollment": enrollment_result,
+            "mfa_provisioning_uri": provisioning_uri,
         }
-
-        # Include MFA info only if auto-verified (no real mail backend)
-        if not has_real_mail:
-            resp_data["mfa_provisioning_uri"] = provisioning_uri
-            resp_data["verification_code"] = verification_code
-            resp_data["dev_mode"] = True
 
         return {"data": resp_data}, 200
 
