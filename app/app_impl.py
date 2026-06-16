@@ -384,6 +384,7 @@ def create_app(env: str = "development"):
         # and behavioral — MUST carry a valid CSRF token.
         exempt_routes = {
             "/api/v1/auth/login",
+            "/api/v1/auth/login/verify",
             "/api/v1/auth/register",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/password-reset/confirm",
@@ -394,6 +395,7 @@ def create_app(env: str = "development"):
             "/api/v1/auth/refresh",
             "/api/v1/auth/verify-email",
             "/api/v1/auth/resend-verification",
+            "/api/v1/auth/account-recovery/verify",
             "/api/v1/webhooks/cbs/callback",
         }
         logger.debug(
