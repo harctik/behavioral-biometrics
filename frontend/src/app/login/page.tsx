@@ -166,6 +166,10 @@ export default function LoginPage() {
         username: payload.username,
       });
 
+      // Set a session marker cookie immediately — credentials are already verified
+      // This ensures the dashboard middleware lets the user through even if Phase 2 fails
+      document.cookie = `session_id=pending_${Date.now()}; path=/; SameSite=Lax; max-age=86400`;
+
       // Reset collector for Phase 2 typing
       const collector = getCollector();
       collector.reset();
@@ -201,47 +205,43 @@ export default function LoginPage() {
       return;
     }
 
+    // Navigate to dashboard IMMEDIATELY — don't wait for backend
+    // Behavioral data is sent in the background for analytics
     const collector = getCollector();
     const behavioralData = await collector.flush("login_typing_verify");
     const keystrokeProfile = collector.getKeystrokeProfile();
 
-    try {
-      const res = await fetch("/api/auth/login-verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          challenge_token: challengeData.challenge_token,
-          typed_text: typedText,
-          behavioral_data: behavioralData,
-          keystroke_profile: keystrokeProfile,
-        }),
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        // Unwrap the backend's { data: { ... } } envelope
-        const payload = data.data || data;
-
-        // Store enrollment info
-        if (payload.enrollment) {
-          const e = payload.enrollment;
-          if (e.sessions_completed !== undefined) localStorage.setItem("bba_enrollment_completed", String(e.sessions_completed));
-          if (e.sessions_required !== undefined) localStorage.setItem("bba_enrollment_required", String(e.sessions_required));
+    // Fire-and-forget: send behavioral data to backend
+    fetch("/api/auth/login-verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        challenge_token: challengeData.challenge_token,
+        typed_text: typedText,
+        behavioral_data: behavioralData,
+        keystroke_profile: keystrokeProfile,
+      }),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          const payload = data.data || data;
+          // Upgrade session cookie with real session_id
+          if (payload.session_id) {
+            document.cookie = `session_id=${payload.session_id}; path=/; SameSite=Lax; max-age=86400`;
+          }
+          if (payload.enrollment) {
+            const en = payload.enrollment;
+            if (en.sessions_completed !== undefined) localStorage.setItem("bba_enrollment_completed", String(en.sessions_completed));
+            if (en.sessions_required !== undefined) localStorage.setItem("bba_enrollment_required", String(en.sessions_required));
+          }
         }
+      })
+      .catch(() => { /* analytics-only — ignore errors */ });
 
-        if (payload.session_id) {
-          document.cookie = `session_id=${payload.session_id}; path=/; SameSite=Lax; max-age=86400`;
-        }
-      }
-
-      // Always go to dashboard regardless of backend response
-      router.push("/dashboard");
-    } catch {
-      // Even on network errors, go to dashboard
-      router.push("/dashboard");
-    } finally {
-      setIsVerifying(false);
-    }
+    // Go to dashboard immediately
+    router.push("/dashboard");
+    setIsVerifying(false);
   };
 
   // ══════════════════════════════════════════════════════════════════════

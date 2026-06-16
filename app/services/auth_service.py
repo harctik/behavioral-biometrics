@@ -133,39 +133,35 @@ class AuthService:
 
     @staticmethod
     def create_login_challenge(user_id: int) -> str:
-        """Generate a one-time challenge token for Phase 2 of login.
+        """Generate a signed challenge token for Phase 2 of login.
 
-        Stored in Redis with 300s TTL. Returns the token UUID.
+        Uses itsdangerous to embed user_id in the token itself,
+        so Redis is NOT required. Token is valid for 5 minutes.
         """
-        import uuid
-        token = str(uuid.uuid4())
-        rc = get_redis()
-        if rc:
-            try:
-                # Store user_id keyed by challenge token, 5-minute TTL
-                rc.setex(f"login_challenge:{token}", 300, str(user_id))
-            except Exception:
-                logger.error("Failed to store login challenge in Redis")
+        from flask import current_app
+        from itsdangerous import URLSafeTimedSerializer
+        s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="login-challenge")
+        token = s.dumps({"uid": user_id})
         return token
 
     @staticmethod
     def validate_login_challenge(token: str) -> int | None:
-        """Validate and consume a login challenge token.
+        """Validate a signed login challenge token.
 
         Returns user_id if valid, None if expired/invalid.
-        One-time use: token is deleted after validation.
+        Token is valid for 5 minutes (300 seconds).
         """
-        rc = get_redis()
-        if not rc:
-            return None
+        from flask import current_app
+        from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+        s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="login-challenge")
         try:
-            key = f"login_challenge:{token}"
-            user_id_str = rc.get(key)
-            if user_id_str:
-                rc.delete(key)  # One-time use
-                return int(user_id_str)
+            data = s.loads(token, max_age=300)
+            return data.get("uid")
+        except (BadSignature, SignatureExpired):
+            return None
         except Exception:
             logger.error("Failed to validate login challenge")
+            return None
         return None
 
     # ── Behavioral Decision Engine ─────────────────────────────────────────
