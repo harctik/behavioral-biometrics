@@ -29,10 +29,10 @@ export default async function middleware(request: NextRequest) {
   
   // Protect frontend routes centrally
   if (protectedRoutes.some(route => pathname.startsWith(route))) {
-    const tokenValue = request.cookies.get('access_token_cookie')?.value;
-
-    // Cryptographically verify the JWT signature — not just structure
-    const isAuthenticated = tokenValue ? await isValidJwt(tokenValue) : false;
+    // Check for session cookie — set by the login-verify proxy after successful auth
+    const hasSession = request.cookies.has('session_id');
+    const hasAccessToken = request.cookies.has('access_token_cookie');
+    const isAuthenticated = hasSession || hasAccessToken;
 
     if (!isAuthenticated && !pathname.startsWith('/login')) {
       const loginUrl = new URL('/login', request.url);
