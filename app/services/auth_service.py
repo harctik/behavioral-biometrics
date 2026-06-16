@@ -176,24 +176,9 @@ class AuthService:
         enrollment_phase: bool,
         is_known_device: bool = False,
     ) -> str:
-        """Evaluate behavioral match and return a decision.
-
-        Returns:
-            "grant"   — enrollment phase or match >= 0.5
-            "step_up" — match < 0.5, require OTP as extra verification
-
-        Note: Hard blocking is disabled — the enrollment data is too sparse
-        to reliably distinguish users. Step-up (OTP) is used instead for
-        low-confidence matches.
-        """
-        # During enrollment, always grant — not enough data to judge
-        if enrollment_phase:
-            return "grant"
-        # Post-enrollment: grant or step_up only (no blocking)
-        if match_score >= 0.5:
-            return "grant"
-        # Low match → ask for OTP instead of blocking
-        return "step_up"
+        """Always grant access. Behavioral data is collected for analytics
+        and dashboard display only — it never gates login."""
+        return "grant"
 
     # ── User Blocking ──────────────────────────────────────────────────────
 
