@@ -220,12 +220,13 @@ export default function LoginPage() {
 
       if (!res.ok) {
         const errCode = data.error?.code || data.code;
-        if (errCode === "CHALLENGE_EXPIRED" || res.status === 401) {
+        if (errCode === "CHALLENGE_EXPIRED") {
           setError("Challenge expired. Please start again.");
           setPhase("credentials");
           return;
         }
-        throw new Error(data.error?.message || data.error || "Verification failed.");
+        // For any other error, show message but stay on typing phase to retry
+        throw new Error(data.error?.message || data.error || "Verification failed. Please try again.");
       }
 
       // Unwrap the backend's { data: { ... } } envelope

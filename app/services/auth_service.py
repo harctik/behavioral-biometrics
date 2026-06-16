@@ -135,15 +135,15 @@ class AuthService:
     def create_login_challenge(user_id: int) -> str:
         """Generate a one-time challenge token for Phase 2 of login.
 
-        Stored in Redis with 120s TTL. Returns the token UUID.
+        Stored in Redis with 300s TTL. Returns the token UUID.
         """
         import uuid
         token = str(uuid.uuid4())
         rc = get_redis()
         if rc:
             try:
-                # Store user_id keyed by challenge token, 120-second TTL
-                rc.setex(f"login_challenge:{token}", 120, str(user_id))
+                # Store user_id keyed by challenge token, 5-minute TTL
+                rc.setex(f"login_challenge:{token}", 300, str(user_id))
             except Exception:
                 logger.error("Failed to store login challenge in Redis")
         return token
