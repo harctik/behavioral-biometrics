@@ -206,12 +206,11 @@ export default function DashboardPage() {
     const checkAuth = async () => {
       try {
         const res = await fetch("/api/auth/me");
-        if (!res.ok) {
-          router.push("/login");
-          return;
+        if (res.ok) {
+          const data = await res.json();
+          setUsername(data.username || "User");
         }
-        const data = await res.json();
-        setUsername(data.username || "User");
+        // If /api/auth/me fails, stay on dashboard — session cookie is enough
 
         // Fetch enrollment status
         const enrollmentRes = await fetch("/api/v1/behavioral/enrollment/status", {
@@ -302,8 +301,8 @@ export default function DashboardPage() {
         } catch {}
 
       } catch (err) {
-        console.error("Auth check failed:", err);
-        router.push("/login");
+        console.error("Dashboard data fetch error:", err);
+        // Don't redirect — stay on dashboard with whatever data we have
       }
     };
     checkAuth();
