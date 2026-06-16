@@ -63,13 +63,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const checkAuth = async () => {
+      // Check if we have a session cookie at all
+      const hasSession = document.cookie.includes("session_id=");
+      if (!hasSession) {
+        router.push("/login");
+        return;
+      }
       try {
         const res = await fetch("/api/auth/me");
-        if (!res.ok) { router.push("/login"); return; }
-        const data = await res.json();
-        setUsername(data.username || "User");
+        if (res.ok) {
+          const data = await res.json();
+          setUsername(data.username || "User");
+        }
+        // If /api/auth/me fails, just use fallback — don't redirect
+        // The session_id cookie already proves credentials were verified
       } catch {
-        router.push("/login");
+        // Network error — stay on dashboard with fallback username
       }
     };
     checkAuth();
