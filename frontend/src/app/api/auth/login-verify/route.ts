@@ -31,7 +31,9 @@ export async function POST(request: Request) {
         ? errorField.message || JSON.stringify(errorField)
         : errorField || 'Verification failed';
       const errorCode = typeof errorField === 'object' ? errorField.code : undefined;
-      return NextResponse.json({ error: errorMsg, code: errorCode }, { status: res.status });
+      // Never forward 403 (behavioral block) — blocking is handled client-side by accuracy check
+      const safeStatus = res.status === 403 ? 401 : res.status;
+      return NextResponse.json({ error: errorMsg, code: errorCode }, { status: safeStatus });
     }
 
     const {
