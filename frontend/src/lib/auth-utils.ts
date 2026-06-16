@@ -59,10 +59,7 @@ export async function secureFetch(
     return secureFetch(url, options, retries - 1);
   }
 
-  // Handle 401 Unauthorized — redirect to login
-  if (res.status === 401 && typeof window !== "undefined" && !url.includes("/api/auth/")) {
-    window.location.href = "/login";
-  }
+  // 401 responses are handled by callers — no automatic redirect
 
   return res;
 }

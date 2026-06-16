@@ -84,9 +84,8 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
   const data = await response.json();
 
   if (!response.ok) {
-    // If still 401 after refresh, redirect to login
-    if (response.status === 401 && typeof window !== "undefined") {
-      window.location.href = "/login";
+    // 401 after refresh — don't redirect, just throw
+    if (response.status === 401) {
       throw new Error("Session expired");
     }
     

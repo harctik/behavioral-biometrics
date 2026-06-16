@@ -166,24 +166,16 @@ export function BehavioralProvider() {
 
         failureCountRef.current = 0;
 
+        // Session/metrics checks — log failures but NEVER redirect to login
+        // The session_id cookie is sufficient for dashboard access
         const statusRes = await fetch("/api/v1/session/status", { headers: { "X-CSRF-TOKEN": csrfToken } });
-        if (statusRes.status === 401 || statusRes.status === 422) {
-          // JWT expired or invalid (server restart) — redirect to login
-          window.location.href = "/login";
-          return;
-        }
-        if (statusRes.ok) {
-          const statusData = await statusRes.json();
-          if (!statusData.session_active) {
-            window.location.href = "/login";
-            return;
-          }
+        if (!statusRes.ok) {
+          console.warn("Session status check failed:", statusRes.status);
         }
 
         const metricsRes = await fetch("/api/v1/session/metrics", { headers: { "X-CSRF-TOKEN": csrfToken } });
-        if (metricsRes.status === 401 || metricsRes.status === 422) {
-          window.location.href = "/login";
-          return;
+        if (!metricsRes.ok) {
+          console.warn("Metrics check failed:", metricsRes.status);
         }
         if (metricsRes.ok) {
           const metrics = await metricsRes.json();
