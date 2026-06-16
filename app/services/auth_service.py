@@ -179,19 +179,21 @@ class AuthService:
         """Evaluate behavioral match and return a decision.
 
         Returns:
-            "grant"   — match >= 0.7, go straight to dashboard
-            "step_up" — match 0.4–0.7, require OTP
-            "block"   — match < 0.4, hard block
-            "enroll"  — still in enrollment phase, pass-through
+            "grant"   — enrollment phase or match >= 0.5
+            "step_up" — match < 0.5, require OTP as extra verification
+
+        Note: Hard blocking is disabled — the enrollment data is too sparse
+        to reliably distinguish users. Step-up (OTP) is used instead for
+        low-confidence matches.
         """
+        # During enrollment, always grant — not enough data to judge
         if enrollment_phase:
-            return "enroll"
-        if match_score >= 0.7:
             return "grant"
-        if match_score >= 0.4:
-            return "step_up"
-        # match < 0.4 — anomaly
-        return "block"
+        # Post-enrollment: grant or step_up only (no blocking)
+        if match_score >= 0.5:
+            return "grant"
+        # Low match → ask for OTP instead of blocking
+        return "step_up"
 
     # ── User Blocking ──────────────────────────────────────────────────────
 

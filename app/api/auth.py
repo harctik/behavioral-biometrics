@@ -333,14 +333,7 @@ class Login(Resource):
 
         AuthService.reset_account_lockout(data.username)
 
-        # ── Check behavioral block ─────────────────────────────────────────
-        if AuthService.is_user_blocked(user["user_id"]):
-            return make_error_response(
-                "BEHAVIORAL_BLOCKED",
-                "Account temporarily locked due to unusual activity. Check your email for a recovery link.",
-                status=403,
-            )
-
+        # ── Behavioral blocking disabled — users are never hard-blocked ────
         # ── Generate challenge token ───────────────────────────────────────
         challenge_token = AuthService.create_login_challenge(user["user_id"])
 
@@ -524,43 +517,7 @@ class LoginVerify(Resource):
             user_id, decision, match_score, enrollment_phase, device_known,
         )
 
-        # ── Handle BLOCK decision ──────────────────────────────────────────
-        if decision == "block":
-            AuthService.block_user(user_id)
-
-            db.log_audit_evidence(
-                action="behavioral_block",
-                status="blocked",
-                user_id=user_id,
-                resource="/api/v1/auth/login/verify",
-                metadata={"match_score": match_score, "device_id": device_id, "ip": ip_address},
-                retention_tag="security",
-            )
-
-            # Send alert email + recovery link
-            try:
-                recovery_token = AuthService.create_recovery_token(user_id)
-                mail_svc = current_app.extensions.get("mail_service")
-                user_detail = db.get_user_by_id(user_id)
-                if mail_svc and user_detail and user_detail.get("email"):
-                    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
-                    recovery_url = f"{frontend_url}/account-recovery?token={recovery_token}"
-                    mail_svc.send_suspicious_login_alert(
-                        to=user_detail["email"],
-                        username=user_detail["username"],
-                        failed_attempts=0,
-                        ip_address=ip_address,
-                        user_agent=request.headers.get("User-Agent", "unknown"),
-                    )
-                    logger.info("Behavioral block alert sent to user %d", user_id)
-            except Exception:
-                logger.error("Failed to send behavioral block alert", exc_info=True)
-
-            return make_error_response(
-                "BEHAVIORAL_BLOCKED",
-                "Access denied — unusual typing pattern detected. A recovery link has been sent to your email.",
-                status=403,
-            )
+        # ── Note: Hard blocking is disabled — decision is always grant or step_up ──
 
         # ── Create session + JWT (for grant, step_up, and enroll) ──────────
         session_id = db.create_session(user_id, ip_address, user_agent)
