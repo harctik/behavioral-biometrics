@@ -147,12 +147,7 @@ export default function LoginPage() {
           setLockoutUntil(Date.now() + 5 * 60 * 1000);
         }
 
-        // Check if behaviorally blocked (only for actual behavioral blocks, not email verification etc.)
-        const errCode = data.error?.code || data.code;
-        if (errCode === "BEHAVIORAL_BLOCKED") {
-          setPhase("blocked");
-          return;
-        }
+        // Behavioral blocking is disabled — no need to check for BEHAVIORAL_BLOCKED
 
         throw new Error(data.error?.message || data.error || data.message || "Invalid credentials.");
       }
@@ -199,6 +194,13 @@ export default function LoginPage() {
     setError("");
     setIsVerifying(true);
 
+    // ── Block if typed text accuracy is too low ──────────────────────
+    if (typingAccuracy < 40) {
+      setPhase("blocked");
+      setIsVerifying(false);
+      return;
+    }
+
     const collector = getCollector();
     const behavioralData = await collector.flush("login_typing_verify");
     const keystrokeProfile = collector.getKeystrokeProfile();
@@ -218,10 +220,6 @@ export default function LoginPage() {
 
       if (!res.ok) {
         const errCode = data.error?.code || data.code;
-        if (errCode === "BEHAVIORAL_BLOCKED" || res.status === 403) {
-          setPhase("blocked");
-          return;
-        }
         if (errCode === "CHALLENGE_EXPIRED" || res.status === 401) {
           setError("Challenge expired. Please start again.");
           setPhase("credentials");
@@ -673,7 +671,7 @@ export default function LoginPage() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* PHASE: BLOCKED                                                */}
+        {/* PHASE: BLOCKED (typing accuracy too low)                       */}
         {/* ═══════════════════════════════════════════════════════════════ */}
         {phase === "blocked" && (
           <motion.div
@@ -711,7 +709,7 @@ export default function LoginPage() {
 
               <div className="flex flex-col gap-3">
                 <button
-                  onClick={() => { setPhase("credentials"); setError(""); }}
+                  onClick={() => { setPhase("credentials"); setError(""); setTypedText(""); }}
                   className="w-full h-11 bg-white/5 hover:bg-white/10 border border-white/10 text-fg font-medium rounded-xl text-sm transition-colors"
                 >
                   ← Try again
