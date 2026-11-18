@@ -14,7 +14,7 @@ We take security seriously. If you discover a vulnerability in AetherAuth, pleas
 ### Responsible Disclosure Process
 
 1. **Do NOT open a public GitHub issue** for security vulnerabilities
-2. **Email**: Send details to the repository maintainer via GitHub private vulnerability reporting
+2. **Email**: Send details directly to maintainer at **harthikanand90@gmail.com**
 3. **Include**:
    - Description of the vulnerability
    - Steps to reproduce
