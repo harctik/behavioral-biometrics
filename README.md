@@ -2,11 +2,13 @@
 
 Enterprise-grade continuous authentication platform using keystroke dynamics, cursor trajectory analysis, and cognitive patterns to passively verify user identity without CAPTCHAs or OTP friction. Built to meet RBI Master Directions 2021, PCI DSS 4.0, and DPDP Act 2023 compliance requirements for financial systems.
 
+![AetherAuth Banner](banner.png)
+
 Live Application: https://frontend-dun-five-49.vercel.app
 
 ---
 
-## System Overview
+## Technical Overview
 
 Static credentials and point-in-time multi-factor authentication only verify user identity at the exact moment of login. Once an initial session token is granted, conventional banking systems remain vulnerable to session hijacking, automated bots, and unauthorized access.
 
@@ -56,10 +58,10 @@ The detection core combines nine machine learning engines into an ensemble that 
 
 The platform was designed around the strict compliance obligations mandated for Indian digital banking infrastructure.
 
-1. **RBI Master Directions 2021:** Enforces continuous session monitoring, payment rail risk multipliers (UPI, IMPS, NEFT, RTGS), transaction velocity limits, and automated incident alerting.
-2. **DPDP Act 2023 & GDPR:** Guarantees data minimization by storing behavioral features rather than raw input logs, supports automated data erasure, and records immutable consent hashes.
-3. **PCI DSS 4.0:** Protects data at rest using Fernet symmetric encryption with automated key rotation and secures transport via TLS 1.3.
-4. **Cryptographic Audit Trail:** All administrative operations and risk decisions are linked into an immutable SHA-256 hash-chained audit ledger to prevent retrospective tampering.
+1. RBI Master Directions 2021: Enforces continuous session monitoring, payment rail risk multipliers (UPI, IMPS, NEFT, RTGS), transaction velocity limits, and automated incident alerting.
+2. DPDP Act 2023 & GDPR: Guarantees data minimization by storing behavioral features rather than raw input logs, supports automated data erasure, and records immutable consent hashes.
+3. PCI DSS 4.0: Protects data at rest using Fernet symmetric encryption with automated key rotation and secures transport via TLS 1.3.
+4. Cryptographic Audit Trail: All administrative operations and risk decisions are linked into an immutable SHA-256 hash-chained audit ledger to prevent retrospective tampering.
 
 ---
 
