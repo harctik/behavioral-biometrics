@@ -12,3 +12,4 @@ Briefly describe the change and its motivation.
 - [ ] My code adheres to the project's style guidelines (`black`, `ruff`).
 - [ ] I have executed existing and new unit tests (`pytest`).
 - [ ] I have updated relevant documentation where appropriate.
+

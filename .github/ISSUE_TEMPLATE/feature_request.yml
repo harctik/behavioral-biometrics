@@ -19,3 +19,4 @@ body:
       description: Describe the solution or ML engine enhancement you would like to see.
     validations:
       required: true
+

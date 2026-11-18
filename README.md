@@ -1,3 +1,9 @@
+<div align="center">
+
+<img src="banner.png" alt="AetherAuth Banner" width="100%" />
+
+<br/><br/>
+
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Flask-3.x-000000?style=for-the-badge&logo=flask&logoColor=white" alt="Flask" />
@@ -18,7 +24,7 @@
   <img src="https://img.shields.io/badge/PCI_DSS-4.0-success?style=flat-square" alt="PCI DSS" />
 </p>
 
-# 🛡️ AetherAuth — Behavioral Biometrics Authentication
+#  AetherAuth — Behavioral Biometrics Authentication
 
 > **Enterprise-grade continuous authentication system** that uses keystroke dynamics, mouse movement analysis, and cognitive behavioral patterns to invisibly verify user identity — no CAPTCHAs, no friction.
 
@@ -26,7 +32,7 @@ Built to meet **RBI Master Directions 2021**, **PCI DSS 4.0**, and **DPDP Act 20
 
 ---
 
-## 📑 Table of Contents
+##  Table of Contents
 
 - [Features](#-features)
 - [Architecture Overview](#-architecture-overview)
@@ -55,41 +61,41 @@ Built to meet **RBI Master Directions 2021**, **PCI DSS 4.0**, and **DPDP Act 20
 
 ---
 
-## ✨ Features
+##  Features
 
 ### Core Authentication
-- 🔐 **Continuous behavioral authentication** — verify users by *how* they type & move, not just passwords
-- 🧠 **9-engine ML ensemble** — Cognitive Engine, Duress Detector, Liveness Detector, Invisible Challenges, Device Intelligence, Composite Signals, Passive Enrollment, Per-User Feature Selection, Transaction Baseline
-- ⌨️ **200+ behavioral features** — keystroke hold/flight time, typing rhythm, mouse velocity, curvature, acceleration, scroll patterns, and cognitive signals
-- 🔄 **Passive enrollment** — BioCatch-style silent profile building without user interaction
-- 🛑 **Duress detection** — 43-feature stress/coercion analysis to detect socially-engineered sessions
+-  **Continuous behavioral authentication** — verify users by *how* they type & move, not just passwords
+-  **9-engine ML ensemble** — Cognitive Engine, Duress Detector, Liveness Detector, Invisible Challenges, Device Intelligence, Composite Signals, Passive Enrollment, Per-User Feature Selection, Transaction Baseline
+-  **200+ behavioral features** — keystroke hold/flight time, typing rhythm, mouse velocity, curvature, acceleration, scroll patterns, and cognitive signals
+-  **Passive enrollment** — BioCatch-style silent profile building without user interaction
+-  **Duress detection** — 43-feature stress/coercion analysis to detect socially-engineered sessions
 
 ### Security
-- 🔑 **Multi-factor authentication** — TOTP, OTP via email, backup codes
-- 🛡️ **Step-up authentication** — risk-based MFA challenges only when anomalies are detected
-- 🔒 **Fernet encryption at rest** — all behavioral data encrypted with rotating keys
-- 📝 **Tamper-evident audit chain** — SHA-256 hash-linked audit logs (RBI 7-year retention)
-- 🚫 **Bot & RAT detection** — automated tool, emulator, and remote access detection
-- 🌐 **Geo-velocity anomaly detection** — impossible travel detection
-- ✍️ **Transaction signing** — HMAC-based transaction integrity verification
+-  **Multi-factor authentication** — TOTP, OTP via email, backup codes
+-  **Step-up authentication** — risk-based MFA challenges only when anomalies are detected
+-  **Fernet encryption at rest** — all behavioral data encrypted with rotating keys
+-  **Tamper-evident audit chain** — SHA-256 hash-linked audit logs (RBI 7-year retention)
+-  **Bot & RAT detection** — automated tool, emulator, and remote access detection
+-  **Geo-velocity anomaly detection** — impossible travel detection
+-  **Transaction signing** — HMAC-based transaction integrity verification
 
 ### Frontend
-- 🎨 **Premium dark UI** — glassmorphism, animations, responsive design with Framer Motion
-- 📊 **Real-time dashboards** — trust score timeline, risk gauges, keystroke heatmaps
-- 🔔 **Live behavioral overlay** — real-time biometric confidence visualization
-- 📱 **Mobile-responsive** — works on desktop, tablet, and mobile
-- ⚡ **Vercel Speed Insights** — performance monitoring built-in
+-  **Premium dark UI** — glassmorphism, animations, responsive design with Framer Motion
+-  **Real-time dashboards** — trust score timeline, risk gauges, keystroke heatmaps
+-  **Live behavioral overlay** — real-time biometric confidence visualization
+-  **Mobile-responsive** — works on desktop, tablet, and mobile
+-  **Vercel Speed Insights** — performance monitoring built-in
 
 ### Compliance
-- 🏦 **RBI Master Directions 2021** — full compliance with Indian banking regulations
-- 💳 **PCI DSS 4.0** — payment card industry security standards
-- 📋 **DPDP Act 2023** — data privacy, consent management, right-to-erasure
-- 🔍 **DSAR support** — automated Data Subject Access Request handling
-- 📊 **Explainability** — human-readable risk explanations for every decision
+-  **RBI Master Directions 2021** — full compliance with Indian banking regulations
+-  **PCI DSS 4.0** — payment card industry security standards
+-  **DPDP Act 2023** — data privacy, consent management, right-to-erasure
+-  **DSAR support** — automated Data Subject Access Request handling
+-  **Explainability** — human-readable risk explanations for every decision
 
 ---
 
-## 🏗️ Architecture Overview
+##  Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -128,7 +134,7 @@ Built to meet **RBI Master Directions 2021**, **PCI DSS 4.0**, and **DPDP Act 20
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
@@ -147,11 +153,11 @@ Built to meet **RBI Master Directions 2021**, **PCI DSS 4.0**, and **DPDP Act 20
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 behavioral-biometrics/
-├── app/                          # 🐍 Flask Backend
+├── app/                          #  Flask Backend
 │   ├── api/                      # API Endpoints (14 namespaces)
 │   │   ├── auth.py               #   Registration, login, logout, MFA, password reset
 │   │   ├── session.py            #   Session management, context binding
@@ -227,7 +233,7 @@ behavioral-biometrics/
 │   ├── metrics.py                # Prometheus metrics
 │   ├── alerts.py                 # Alert management
 │   └── error_handling.py         # Structured error responses
-├── frontend/                     # ⚛️ Next.js Frontend
+├── frontend/                     #  Next.js Frontend
 │   ├── src/
 │   │   ├── app/                  # App Router Pages
 │   │   │   ├── page.tsx          #   Landing page
@@ -284,7 +290,7 @@ behavioral-biometrics/
 │   ├── next.config.mjs           # Next.js config (CSP, rewrites, headers)
 │   ├── tailwind.config.ts        # TailwindCSS 4 configuration
 │   └── package.json              # Frontend dependencies
-├── tests/                        # 🧪 Test Suite (18 test files)
+├── tests/                        #  Test Suite (18 test files)
 │   ├── conftest.py               #   Pytest fixtures & app factory
 │   ├── test_comprehensive.py     #   Full system integration (36KB)
 │   ├── test_blueprints.py        #   API blueprint tests
@@ -330,7 +336,7 @@ behavioral-biometrics/
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
@@ -391,40 +397,40 @@ npm run dev
 
 ---
 
-## 🔐 Environment Variables
+##  Environment Variables
 
 Copy `.env.example` to `.env` and configure:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `SECRET_KEY` | ✅ | Flask secret key (32+ random bytes) |
-| `JWT_SECRET_KEY` | ✅ | JWT signing key (32+ random bytes) |
-| `BACKUP_FERNET` | ✅ | Fernet key for backup code encryption |
-| `DATABASE_PATH` | ❌ | SQLite path (default: `database/auth_system.db`) |
-| `REDIS_URL` | ⚠️ prod | Redis connection string |
-| `CORS_ORIGINS` | ⚠️ prod | Allowed frontend origins (comma-separated) |
-| `MAIL_SERVER` | ❌ | SMTP server for email delivery |
-| `MAIL_USERNAME` | ❌ | SMTP username |
-| `MAIL_PASSWORD` | ❌ | SMTP password |
-| `TXN_SIGNING_KEY` | ✅ | Transaction HMAC signing key |
-| `RATELIMIT_STORAGE_URI` | ⚠️ prod | Redis URI for rate limiting |
-| `FLASK_ENV` | ❌ | `development` / `production` / `testing` |
-| `RISK_HIGH_THRESHOLD` | ❌ | High risk threshold (default: 0.65) |
-| `RISK_MEDIUM_THRESHOLD` | ❌ | Medium risk threshold (default: 0.35) |
+| `SECRET_KEY` |  | Flask secret key (32+ random bytes) |
+| `JWT_SECRET_KEY` |  | JWT signing key (32+ random bytes) |
+| `BACKUP_FERNET` |  | Fernet key for backup code encryption |
+| `DATABASE_PATH` |  | SQLite path (default: `database/auth_system.db`) |
+| `REDIS_URL` |  prod | Redis connection string |
+| `CORS_ORIGINS` |  prod | Allowed frontend origins (comma-separated) |
+| `MAIL_SERVER` |  | SMTP server for email delivery |
+| `MAIL_USERNAME` |  | SMTP username |
+| `MAIL_PASSWORD` |  | SMTP password |
+| `TXN_SIGNING_KEY` |  | Transaction HMAC signing key |
+| `RATELIMIT_STORAGE_URI` |  prod | Redis URI for rate limiting |
+| `FLASK_ENV` |  | `development` / `production` / `testing` |
+| `RISK_HIGH_THRESHOLD` |  | High risk threshold (default: 0.65) |
+| `RISK_MEDIUM_THRESHOLD` |  | Medium risk threshold (default: 0.35) |
 
 Frontend variables (in `frontend/.env.local`):
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NEXT_PUBLIC_API_URL` | ✅ | Backend API URL |
-| `BACKEND_URL` | ❌ | Server-side backend URL (overrides NEXT_PUBLIC_API_URL) |
-| `JWT_SECRET_KEY` | ✅ | Must match backend JWT_SECRET_KEY |
+| `NEXT_PUBLIC_API_URL` |  | Backend API URL |
+| `BACKEND_URL` |  | Server-side backend URL (overrides NEXT_PUBLIC_API_URL) |
+| `JWT_SECRET_KEY` |  | Must match backend JWT_SECRET_KEY |
 
 > See [`.env.example`](.env.example) for the full list with detailed comments.
 
 ---
 
-## 📡 API Reference (14 Namespaces)
+##  API Reference (14 Namespaces)
 
 All endpoints are prefixed with `/api/v1/` and documented via Swagger at `/api/v1/`.
 
@@ -471,7 +477,7 @@ Register → Login → MFA Setup → Behavioral Enrollment
 
 ---
 
-## 🤖 Machine Learning Pipeline
+##  Machine Learning Pipeline
 
 ### 9-Engine Ensemble
 
@@ -530,7 +536,7 @@ python train_models.py
 
 ---
 
-## 💾 Database Schema
+##  Database Schema
 
 ### Core Tables
 
@@ -572,7 +578,7 @@ alembic downgrade -1
 
 ---
 
-## 🎨 Frontend Architecture
+##  Frontend Architecture
 
 ### Pages (17 routes)
 
@@ -615,7 +621,7 @@ The frontend uses a central API client (`lib/api-client.ts`) with:
 
 ---
 
-## 🏦 Banking Integration
+##  Banking Integration
 
 | Module | Purpose |
 |--------|---------|
@@ -633,7 +639,7 @@ Features:
 
 ---
 
-## 🔒 Security & Compliance
+##  Security & Compliance
 
 ### Authentication Security
 - **bcrypt** password hashing with configurable work factor
@@ -662,7 +668,7 @@ Features:
 
 ---
 
-## 🧪 Testing
+##  Testing
 
 ### Backend Tests
 
@@ -719,7 +725,7 @@ npx playwright test
 
 ---
 
-## 🚢 Deployment
+##  Deployment
 
 ### Vercel (Frontend)
 
@@ -795,7 +801,7 @@ helm install behavior-auth ./helm/behavior-auth \
 
 ---
 
-## 🔄 CI/CD Pipeline
+##  CI/CD Pipeline
 
 GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push to `main`/`develop`:
 
@@ -815,7 +821,7 @@ Push → Lint → Frontend Build → Test → Security → Docker Build
 
 ---
 
-## 🤝 Contributing
+##  Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
@@ -838,13 +844,26 @@ pytest --cov=app
 
 ---
 
-## 📄 License
+##  License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
 ---
 
 <p align="center">
-  <b>Built with ❤️ for next-generation banking security</b><br/>
+  <b>Engineered for next-generation banking security</b><br/>
   <sub>AetherAuthSecure — Authentication That Understands You</sub>
 </p>
+
+---
+
+## Engineering Attribution & Ownership
+
+All architecture, machine learning models, telemetry ingestion pipelines, compliance mapping, and full-stack software implementation in this repository were engineered end-to-end by **Avvari Naga Harthikanand (Harthik)**.
+
+- **Developer:** Avvari Naga Harthikanand
+- **LinkedIn:** https://www.linkedin.com/in/harthik
+- **GitHub:** https://github.com/harctik
+- **Email:** harthikanand90@gmail.com
+- **Live Demo:** https://frontend-dun-five-49.vercel.app
+- **License:** MIT License

@@ -32,3 +32,4 @@ body:
       placeholder: Python 3.10 / Chrome 120 / macOS / Docker 24.0
     validations:
       required: false
+
