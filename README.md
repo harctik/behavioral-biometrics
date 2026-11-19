@@ -26,7 +26,6 @@ The core banking interface displays account balances, recent transactions, and a
 ### Machine Learning Explainability Console
 The explainability dashboard visualizes real-time scoring distributions across eight behavioral signal categories. When a risk score increases, analysts and users can immediately inspect the specific deviations observed across typing cadence, pointer acceleration, and cognitive interaction timing.
 
-![ML Explainability Console](docs/screenshots/explainability.png)
 
 ### Adaptive Step-Up Challenge
 When the ensemble registers persistent behavioral deviation across consecutive evaluation intervals, the session is gated behind an automated step-up challenge. Resolving the challenge safely restores normal session privileges without terminating the user workflow.
