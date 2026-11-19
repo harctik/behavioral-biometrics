@@ -36,7 +36,6 @@ When the ensemble registers persistent behavioral deviation across consecutive e
 ### Regulatory Compliance & Consent Management
 The compliance portal implements explicit user consent controls aligned with the Digital Personal Data Protection (DPDP) Act 2023. Users maintain granular oversight over biometric data categories with full audit logging of consent grants and revocations.
 
-![Compliance and Consent Dashboard](docs/screenshots/compliance.png)
 
 ---
 
