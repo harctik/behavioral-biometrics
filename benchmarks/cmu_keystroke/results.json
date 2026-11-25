@@ -1,0 +1,101 @@
+{
+  "protocol": {
+    "dataset": "CMU Keystroke Dynamics (DSL-StrongPasswordData)",
+    "subjects": 51,
+    "tuning_subjects": 10,
+    "test_subjects": 41,
+    "train_per_subject": 200,
+    "genuine_test_per_subject": 200,
+    "impostor_test_per_subject": 250
+  },
+  "models": {
+    "Scaled Manhattan": {
+      "grid_size": 1,
+      "best_params": {},
+      "tuning_EER": 0.1322,
+      "default_EER": 0.0866,
+      "tuned_EER": 0.0866,
+      "tuned_EER_std": 0.0536,
+      "tuned_AUC": 0.9612
+    },
+    "Mahalanobis": {
+      "grid_size": 4,
+      "best_params": {
+        "shrink": 0.3
+      },
+      "tuning_EER": 0.1299,
+      "default_EER": 0.1039,
+      "tuned_EER": 0.1011,
+      "tuned_EER_std": 0.0532,
+      "tuned_AUC": 0.953
+    },
+    "k-NN distance": {
+      "grid_size": 5,
+      "best_params": {
+        "k": 3
+      },
+      "tuning_EER": 0.1149,
+      "default_EER": 0.0868,
+      "tuned_EER": 0.0864,
+      "tuned_EER_std": 0.0476,
+      "tuned_AUC": 0.9642
+    },
+    "Isolation Forest": {
+      "grid_size": 8,
+      "best_params": {
+        "n_estimators": 300,
+        "max_samples": 32
+      },
+      "tuning_EER": 0.1088,
+      "default_EER": 0.081,
+      "tuned_EER": 0.0718,
+      "tuned_EER_std": 0.0513,
+      "tuned_AUC": 0.9743
+    },
+    "One-Class SVM": {
+      "grid_size": 16,
+      "best_params": {
+        "nu": 0.2,
+        "gamma_mult": 1.0
+      },
+      "tuning_EER": 0.1355,
+      "default_EER": 0.098,
+      "tuned_EER": 0.098,
+      "tuned_EER_std": 0.0573,
+      "tuned_AUC": 0.9519
+    },
+    "Autoencoder (MLP)": {
+      "grid_size": 6,
+      "best_params": {
+        "hidden": [
+          16,
+          8,
+          16
+        ],
+        "alpha": 0.01
+      },
+      "tuning_EER": 0.1243,
+      "default_EER": 0.1129,
+      "tuned_EER": 0.0986,
+      "tuned_EER_std": 0.0536,
+      "tuned_AUC": 0.9561
+    }
+  },
+  "ensemble": {
+    "members": [
+      "Isolation Forest",
+      "k-NN distance"
+    ],
+    "tuning_EER_by_size": {
+      "2": 0.1095,
+      "3": 0.1128,
+      "4": 0.1156,
+      "5": 0.1194,
+      "6": 0.1205
+    },
+    "EER": 0.0729,
+    "EER_std": 0.0442,
+    "AUC": 0.9722
+  },
+  "runtime_s": 110
+}

@@ -1,3 +1,6 @@
+NOTE: This report is computed on a synthetic dataset (datasets/generate_dataset.py, seed 42).
+For real-data results see benchmarks/cmu_keystroke/README.md.
+
 ========================================================================
   BEHAVIORAL BIOMETRICS AUTHENTICATION — MODEL EVALUATION REPORT
 ========================================================================
