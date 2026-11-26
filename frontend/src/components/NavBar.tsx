@@ -5,11 +5,12 @@ import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Wordmark } from "@/components/Mark";
 import { Shield, BarChart3, FileCheck, Lock, Brain, Book, Zap } from "lucide-react";
 
 const navItems = [
   { href: "/demo", label: "Live Demo", icon: <Zap size={16} /> },
-  { href: "/dashboard", label: "SOC Dashboard", icon: <BarChart3 size={16} /> },
+  { href: "/dashboard", label: "Dashboard", icon: <BarChart3 size={16} /> },
   { href: "/compliance", label: "Compliance", icon: <FileCheck size={16} /> },
   { href: "/privacy", label: "Privacy", icon: <Lock size={16} /> },
   { href: "/explainability", label: "Explainability", icon: <Brain size={16} /> },
@@ -56,10 +57,10 @@ function TrustIndicator() {
       : "text-red-400 bg-red-500/10 border-red-500/30";
 
   const dotColor = riskScore < 0.2
-    ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]"
+    ? "bg-emerald-400"
     : riskScore < 0.5
-      ? "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.7)]"
-      : "bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.7)]";
+      ? "bg-amber-400"
+      : "bg-red-400";
 
   return (
     <div
@@ -82,10 +83,9 @@ export function NavBar() {
 
   return (
     <nav className="flex items-center gap-1 px-4 py-2 border-b border-white/10 bg-slate-950/90 backdrop-blur-md overflow-x-auto">
-      <Shield size={18} className="text-blue-500 mr-1.5 shrink-0" />
-      <span className="font-bold text-[0.85rem] mr-4 text-slate-100 shrink-0">
-        BCA
-      </span>
+      <Link href="/" aria-label="AetherAuth home" className="mr-5 shrink-0">
+        <Wordmark />
+      </Link>
 
       {navItems.map((item) => {
         const isActive = pathname === item.href;

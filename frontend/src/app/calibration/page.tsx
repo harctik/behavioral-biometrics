@@ -168,8 +168,6 @@ export default function CalibrationPage() {
   return (
     <div className="w-full relative overflow-hidden flex items-center justify-center p-6">
       {/* Background orbs */}
-      <div className="absolute top-1/4 -left-64 w-[500px] h-[500px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-64 w-[500px] h-[500px] bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Animated rings */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] pointer-events-none opacity-15">
@@ -193,7 +191,6 @@ export default function CalibrationPage() {
       >
         <div className="glass-panel-glow rounded-2xl p-8 relative overflow-hidden">
           {/* Top edge glow */}
-          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-violet-500 to-transparent opacity-50" />
 
           <AnimatePresence mode="wait">
             {/* ─── INTRO STAGE ─── */}
@@ -240,7 +237,7 @@ export default function CalibrationPage() {
                     setStage("typing");
                     setTimeout(() => textareaRef.current?.focus(), 100);
                   }}
-                  className="w-full relative overflow-hidden bg-violet-600 hover:bg-violet-500 text-white font-medium h-11 rounded-lg shadow-[0_0_15px_rgba(124,58,237,0.2)] hover:shadow-[0_0_25px_rgba(124,58,237,0.4)] transition-all duration-300 flex items-center justify-center gap-2 border border-violet-400/20 cursor-pointer"
+                  className="w-full relative overflow-hidden bg-violet-600 hover:bg-violet-500 text-black font-medium h-11 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 border border-violet-400/20 cursor-pointer"
                 >
                   Begin Enrollment
                   <ArrowRight size={16} />
@@ -304,7 +301,7 @@ export default function CalibrationPage() {
                   </div>
                   <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400"
+                      className="h-full rounded-full bg-violet-600"
                       animate={{ width: `${keystrokeProgress}%` }}
                       transition={{ duration: 0.3 }}
                     />
@@ -385,7 +382,7 @@ export default function CalibrationPage() {
                   </div>
                   <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400"
+                      className="h-full rounded-full bg-cyan-600"
                       animate={{ width: `${mouseProgress}%` }}
                       transition={{ duration: 0.3 }}
                     />
@@ -513,7 +510,7 @@ export default function CalibrationPage() {
 
                 <button
                   onClick={() => router.push("/dashboard")}
-                  className="w-full relative overflow-hidden bg-emerald-600 hover:bg-emerald-500 text-white font-medium h-11 rounded-lg shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-all duration-300 flex items-center justify-center gap-2 border border-emerald-400/20 cursor-pointer"
+                  className="w-full relative overflow-hidden bg-emerald-600 hover:bg-emerald-500 text-white font-medium h-11 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 border border-emerald-400/20 cursor-pointer"
                 >
                   Continue to Dashboard
                   <ArrowRight size={16} />

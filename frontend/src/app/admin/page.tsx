@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   ShieldAlert, Activity, Users, AlertTriangle, Keyboard, MousePointer2,
-  BrainCircuit, Search, Bell, ShieldBan, MoreHorizontal, Terminal, Download,
+  ShieldBan, Terminal, Download,
   CheckCircle2, XCircle, FileCheck, UserCog, Wifi, HeartPulse
 } from "lucide-react";
 import { apiClient, getCsrfToken } from "@/lib/api-client";
@@ -198,7 +198,7 @@ export default function AdminPage() {
               setLiveSessions(tl.timeline.map((t: any) => ({
                 id: "current_user",
                 risk: t.risk_score,
-                keystroke: 0.9, pointer: 0.9, 
+                keystroke: null, pointer: null,
                 status: t.risk_level,
                 time: new Date(t.timestamp).toLocaleTimeString(),
                 ip: "127.0.0.1"
@@ -222,9 +222,9 @@ export default function AdminPage() {
         if (res.ok) {
           const data = await res.json();
           const risk = data.risk_score ?? 0;
-          let status = "✓ Normal";
-          if (risk > 0.6) status = "🛑 Critical";
-          else if (risk > 0.3) status = "⚠ Elevated";
+          let status = "Normal";
+          if (risk > 0.6) status = "Critical";
+          else if (risk > 0.3) status = "Elevated";
           
           if (data.cognitive_anomaly) status += " — cognitive anomaly";
 
@@ -298,73 +298,54 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="flex h-full overflow-hidden bg-bg text-fg font-sans bg-grid-pattern">
+    <div className="flex flex-col md:flex-row h-full overflow-hidden bg-bg text-fg font-sans">
       {/* Sidebar */}
-      <aside className="w-64 bg-surface/80 backdrop-blur-xl border-r border-border flex flex-col shrink-0 z-10">
+      <aside className="w-full md:w-64 bg-surface/80 backdrop-blur-xl border-b md:border-b-0 md:border-r border-border flex flex-col shrink-0 z-10">
         <div className="h-16 border-b border-border flex items-center px-6 gap-3">
           <div className="w-8 h-8 rounded-lg bg-accent-primary/20 flex items-center justify-center border border-accent-primary/30">
             <ShieldAlert className="w-4 h-4 text-accent-primary" />
           </div>
           <span className="font-bold tracking-tight text-lg">SOC Console</span>
         </div>
-        <div className="flex-1 py-6 px-3 flex flex-col gap-1 overflow-y-auto">
-          <div className="px-3 text-[10px] uppercase tracking-wider text-muted font-bold mb-2">Operations</div>
+        <div className="flex-1 py-2 md:py-6 px-3 flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-y-auto whitespace-nowrap">
+          <div className="hidden md:block px-3 text-[10px] uppercase tracking-wider text-muted font-bold mb-2">Operations</div>
           <div onClick={() => setActiveTab('telemetry')}><SidebarItem icon={Activity} label="Live Telemetry" active={activeTab==='telemetry'} /></div>
           <div onClick={() => { setActiveTab('audit'); fetchAuditEvidence(); }}><SidebarItem icon={FileCheck} label="Audit Evidence" active={activeTab==='audit'} /></div>
           <div onClick={() => setActiveTab('roles')}><SidebarItem icon={UserCog} label="User Roles" active={activeTab==='roles'} /></div>
           
-          <div className="px-3 text-[10px] uppercase tracking-wider text-muted font-bold mb-2 mt-6">Banking</div>
+          <div className="hidden md:block px-3 text-[10px] uppercase tracking-wider text-muted font-bold mb-2 mt-6">Banking</div>
           <div onClick={() => { setActiveTab('cbs'); fetchCBSHealth(); }}><SidebarItem icon={HeartPulse} label="CBS Health" active={activeTab==='cbs'} /></div>
           <div onClick={() => setActiveTab('banking')}><SidebarItem icon={ShieldAlert} label="Fraud & Duress" active={activeTab==='banking'} /></div>
           
-          <div className="px-3 text-[10px] uppercase tracking-wider text-muted font-bold mb-2 mt-6">Models</div>
-          <SidebarItem icon={Keyboard} label="Keystroke Dynamics" />
-          <SidebarItem icon={MousePointer2} label="Pointer Biometrics" />
-          <SidebarItem icon={BrainCircuit} label="Ensemble Output" />
         </div>
-        <div className="p-4 border-t border-border">
+        <div className="hidden md:block p-4 border-t border-border">
           <div className="flex items-center gap-3 bg-surface-2 p-3 rounded-xl border border-border">
             <div className="w-10 h-10 rounded-lg bg-black/40 flex items-center justify-center font-mono text-xs border border-border">OP</div>
             <div className="flex flex-col">
-              <span className="text-sm font-medium">L. SecOps</span>
-              <span className="text-xs text-muted">Admin Role</span>
+              <span className="text-sm font-medium">Administrator</span>
+              <span className="text-xs text-muted">Admin role</span>
             </div>
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 relative z-0">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 relative z-0">
         {/* Topbar */}
-        <header className="h-16 border-b border-border flex items-center justify-between px-8 bg-surface/50 backdrop-blur-md shrink-0 z-10">
-          <div className="flex items-center gap-4 w-96 bg-black/20 border border-border rounded-lg px-4 py-2">
-            <Search className="w-4 h-4 text-muted" />
-            <input 
-              type="text" 
-              placeholder="Search user ID, IP, or hash..." 
-              className="bg-transparent border-none outline-none text-sm text-fg w-full font-mono placeholder:text-muted"
-            />
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 bg-accent-success/10 px-3 py-1.5 rounded-full border border-accent-success/20">
-              <span className="w-2 h-2 rounded-full bg-accent-success animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
-              <span className="text-xs text-accent-success font-mono font-medium">SYSTEM NORMAL</span>
-            </div>
-            <div className="w-px h-6 bg-border"></div>
-            <Bell className="w-5 h-5 text-muted hover:text-fg cursor-pointer transition-colors" />
-          </div>
+        <header className="h-16 border-b border-border flex items-center justify-between px-4 md:px-8 bg-surface/50 backdrop-blur-md shrink-0 z-10">
+          <span className="text-sm font-medium text-muted">Security operations</span>
         </header>
 
         {/* Content Scrollable */}
-        <div className="flex-1 overflow-auto p-8 flex flex-col gap-8">
+        <div className="flex-1 overflow-auto p-4 md:p-8 flex flex-col gap-8">
           
           {/* Header Title */}
-          <div className="flex justify-between items-end">
+          <div className="flex flex-wrap justify-between items-end gap-4">
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-fg">Live Telemetry</h1>
               <p className="text-sm text-muted mt-1">Continuous behavioral authentication metrics across all active channels.</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               <button 
                 onClick={handleComplianceExport}
                 disabled={isExporting}
@@ -379,29 +360,16 @@ export default function AdminPage() {
               >
                 <Download className="w-4 h-4" /> Trust CSV
               </button>
-              <button 
-                onClick={async () => {
-                  const btn = document.getElementById('deploy-btn');
-                  if (btn) btn.innerText = "Deploying...";
-                  await new Promise(r => setTimeout(r, 1500));
-                  if (btn) btn.innerText = "Rules Deployed ✓";
-                  setTimeout(() => { if (btn) btn.innerText = "Deploy Rules"; }, 3000);
-                }}
-                id="deploy-btn"
-                className="px-4 py-2 text-sm font-medium bg-accent-primary text-white hover:bg-blue-600 transition-colors rounded-lg"
-              >
-                Deploy Rules
-              </button>
             </div>
           </div>
 
           {activeTab === 'telemetry' && (<>
           {/* KPIs Grid */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <StatCard title="Active Sessions" value={stats?.active_protected_sessions ?? "24,192"} sub="+12% /hr" icon={Users} />
-            <StatCard title="System Trust" value={`${stats?.system_trust_score?.toFixed(1) ?? "98.5"}%`} sub="Overall" icon={Keyboard} />
-            <StatCard title="High Risk Anomalies" value={stats?.anomalies_prevented_24h ?? "142"} sub="Last 24h" icon={AlertTriangle} />
-            <StatCard title="Duress Alerts" value={stats?.duress_alerts ?? "18"} sub="Requires action" icon={ShieldBan} />
+            <StatCard title="Active Sessions" value={stats?.active_protected_sessions ?? "--"} sub="Last 15 min" icon={Users} />
+            <StatCard title="System Trust" value={stats ? `${stats.system_trust_score.toFixed(1)}%` : "--"} sub="Overall" icon={Keyboard} />
+            <StatCard title="High Risk Anomalies" value={stats?.anomalies_prevented_24h ?? "--"} sub="Last 24h" icon={AlertTriangle} />
+            <StatCard title="Duress Alerts" value={stats?.duress_alerts ?? "--"} sub="Requires action" icon={ShieldBan} />
           </div>
 
           {/* Charts & Tables Area */}
@@ -415,7 +383,6 @@ export default function AdminPage() {
                     <Activity className="w-4 h-4 text-accent-primary animate-pulse" />
                     <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Live Alert Feed</h2>
                   </div>
-                  <MoreHorizontal className="w-4 h-4 text-muted cursor-pointer hover:text-fg" />
                 </div>
                 <div className="overflow-y-auto p-4 space-y-1 font-mono text-xs text-muted font-medium bg-black/40">
                   {liveAlerts.length === 0 ? (
@@ -440,7 +407,6 @@ export default function AdminPage() {
               <div className="glass-panel rounded-2xl flex flex-col overflow-hidden">
                 <div className="p-4 border-b border-border flex justify-between items-center bg-surface-2/50">
                   <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Session Evaluation Stream</h2>
-                  <MoreHorizontal className="w-4 h-4 text-muted cursor-pointer hover:text-fg" />
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm whitespace-nowrap">
@@ -466,8 +432,8 @@ export default function AdminPage() {
                               {(s.risk * 100).toFixed(1)}%
                             </span>
                           </td>
-                          <td className="px-6 py-4 tabular-nums">{(s.keystroke * 100).toFixed(1)}%</td>
-                          <td className="px-6 py-4 tabular-nums">{(s.pointer * 100).toFixed(1)}%</td>
+                          <td className="px-6 py-4 tabular-nums">{s.keystroke == null ? "--" : `${(s.keystroke * 100).toFixed(1)}%`}</td>
+                          <td className="px-6 py-4 tabular-nums">{s.pointer == null ? "--" : `${(s.pointer * 100).toFixed(1)}%`}</td>
                           <td className="px-6 py-4">
                             <div className={`inline-flex items-center px-3 py-1 rounded-md border ${
                               s.status === 'Verified' ? 'bg-accent-success/10 border-accent-success/30 text-accent-success' :
@@ -490,7 +456,8 @@ export default function AdminPage() {
             <div className="flex flex-col gap-6">
               {/* Model Performance */}
               <div className="glass-panel rounded-2xl p-6">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-6">Ensemble Confidence</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-1">Ensemble Confidence</h2>
+                <p className="text-xs text-muted mb-5">Sample values, not measured from this deployment.</p>
                 <div className="space-y-5">
                   <div>
                     <div className="flex justify-between text-xs mb-2 font-mono">
@@ -549,7 +516,7 @@ export default function AdminPage() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-fg">Audit Evidence Chain</h2>
-              <button onClick={verifyAuditChain} className="px-4 py-2 text-sm bg-accent-primary text-white rounded-lg hover:bg-blue-600 flex items-center gap-2">
+              <button onClick={verifyAuditChain} className="px-4 py-2 text-sm bg-accent-primary text-black rounded-lg hover:opacity-90 flex items-center gap-2">
                 <FileCheck className="w-4 h-4" /> Verify Chain Integrity
               </button>
             </div>
@@ -607,7 +574,7 @@ export default function AdminPage() {
                   <option value="admin">Admin</option>
                 </select>
               </div>
-              <button id="role-btn" onClick={setUserRole} className="px-6 py-2 bg-accent-primary text-white rounded-lg text-sm hover:bg-blue-600">
+              <button id="role-btn" onClick={setUserRole} className="px-6 py-2 bg-accent-primary text-black rounded-lg text-sm hover:opacity-90">
                 {roleStatus === "updating" ? "Updating..." : roleStatus === "success" ? "Updated ✓" : roleStatus === "failed" ? "Failed" : "Update Role"}
               </button>
             </div>

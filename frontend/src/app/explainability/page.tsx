@@ -25,7 +25,7 @@ interface ShapExplanation {
   timestamp: string;
 }
 
-/* ── Mock SHAP Data Generator ──────────────────────────── */
+/* ── Sample data, shown until enrollment weights load ─── */
 function generateShapData(): ShapExplanation {
   const featurePool: Array<{ name: string; category: string }> = [
     { name: "hold_time_mean", category: "keystroke" },
@@ -50,11 +50,13 @@ function generateShapData(): ShapExplanation {
     { name: "jerk_smoothness", category: "mouse" },
   ];
 
-  const features: FeatureContribution[] = featurePool.map((f) => ({
+  // Fixed values, so the server and browser render the same markup.
+  const weights = [7.1, 6.2, -5.4, 4.8, 4.1, -3.7, 3.3, 2.9, -2.5, 2.2, 1.9, -1.7, 1.5, 1.3, -1.1, 0.9, 0.8, -0.6, 0.4, 0.3];
+  const features: FeatureContribution[] = featurePool.map((f, i) => ({
     feature: f.name,
-    value: Math.random() * 2 - 0.5,
-    contribution: (Math.random() - 0.4) * 0.15,
-    baseline: Math.random() * 0.5 + 0.3,
+    value: 0,
+    contribution: weights[i] / 100,
+    baseline: 0,
   }));
 
   // Sort by absolute contribution
@@ -65,12 +67,12 @@ function generateShapData(): ShapExplanation {
   const authScore = Math.max(0, Math.min(1, baseValue + totalContribution));
 
   return {
-    session_id: `sess_${Date.now().toString(36)}`,
+    session_id: "sample",
     authenticity_score: authScore,
     base_value: baseValue,
     features,
     risk_decision: authScore > 0.7 ? "ALLOW" : authScore > 0.4 ? "MONITOR" : "CHALLENGE",
-    timestamp: new Date().toISOString(),
+    timestamp: "",
   };
 }
 
@@ -124,12 +126,12 @@ function ForceBar({ feature, maxContrib }: { feature: FeatureContribution; maxCo
             ...(isPositive
               ? {
                   left: "50%",
-                  background: "linear-gradient(90deg, rgba(34,197,94,0.6), rgba(34,197,94,0.3))",
+                  background: "rgba(34,197,94,0.5)",
                   border: "1px solid rgba(34,197,94,0.4)",
                 }
               : {
                   right: "50%",
-                  background: "linear-gradient(270deg, rgba(239,68,68,0.6), rgba(239,68,68,0.3))",
+                  background: "rgba(239,68,68,0.5)",
                   border: "1px solid rgba(239,68,68,0.4)",
                 }),
           }}
@@ -155,7 +157,7 @@ function ForceBar({ feature, maxContrib }: { feature: FeatureContribution; maxCo
 
 /* ── Main SHAP Page ────────────────────────────────────── */
 export default function ExplainabilityPage() {
-  const [explanation, setExplanation] = useState<ShapExplanation>(generateShapData());
+  const [explanation, setExplanation] = useState<ShapExplanation>(generateShapData);
   const [showAll, setShowAll] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
@@ -232,12 +234,17 @@ export default function ExplainabilityPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <div>
           <h1 style={{ fontSize: "1.5rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "10px" }}>
-            <Brain size={24} style={{ color: "#8b5cf6" }} />
+            <Brain size={24} style={{ color: "#a8a8a3" }} />
             SHAP Explainability Dashboard
           </h1>
           <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "4px" }}>
-            Feature contributions to authentication decisions · Real-time analysis
+            Feature contributions to authentication decisions
           </p>
+          {explanation.session_id === "sample" && (
+            <p style={{ display: "inline-block", marginTop: "8px", padding: "3px 10px", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "0.75rem", color: "var(--fg)" }}>
+              Sample data. Your own feature weights appear here after enrollment.
+            </p>
+          )}
         </div>
         <button
           onClick={() => setAutoRefresh(!autoRefresh)}
@@ -251,7 +258,7 @@ export default function ExplainabilityPage() {
             cursor: "pointer",
           }}
         >
-          {autoRefresh ? "● Live" : "○ Paused"}
+          {autoRefresh ? "● Auto-refresh on" : "○ Auto-refresh off"}
         </button>
       </div>
 
@@ -349,19 +356,21 @@ export default function ExplainabilityPage() {
       {/* Explanation Info */}
       <div style={{
         padding: "16px", borderRadius: "var(--radius-md)",
-        background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.15)",
+        background: "rgba(244,244,242,0.06)", border: "1px solid rgba(244,244,242,0.15)",
         display: "flex", gap: "10px", alignItems: "flex-start",
       }}>
-        <Info size={16} style={{ color: "#3b82f6", marginTop: "2px", flexShrink: 0 }} />
+        <Info size={16} style={{ color: "#e9e9e6", marginTop: "2px", flexShrink: 0 }} />
         <div style={{ fontSize: "0.8rem", color: "var(--muted)", lineHeight: 1.6 }}>
-          <strong style={{ color: "var(--fg)" }}>How to read this chart:</strong> Each bar shows how much a
+          <strong style={{ color: "var(--fg)" }}>How to read this chart:</strong>{" "}
+          Each bar shows how much a
           behavioral feature contributes to the authentication decision. Green bars push the score toward
           &quot;genuine user&quot; (higher authenticity), while red bars push toward &quot;impostor&quot; (lower authenticity).
           The base value ({(explanation.base_value * 100).toFixed(0)}%) represents the expected score without
           any behavioral data. Features are ranked by absolute contribution magnitude.
           <br />
-          <strong style={{ color: "var(--fg)" }}>RBI Compliance:</strong> This explainability layer satisfies
-          RBI Master Direction 2021 requirements for transparent risk scoring in automated decision systems.
+          <strong style={{ color: "var(--fg)" }}>RBI context:</strong>{" "}
+          This explainability layer was designed with
+          RBI Master Direction 2021 expectations for transparent automated risk scoring in mind.
         </div>
       </div>
     </div>

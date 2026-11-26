@@ -116,7 +116,7 @@ export default function ForgotPasswordPage() {
 
         {/* ── Behavioral Profiling Status Bar ── */}
         <div className="mt-6 flex items-center justify-center gap-2.5 text-[10px] text-muted font-mono bg-black/20 border border-border/50 rounded-lg p-3">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           <span>Minimal capture — helps detect bots</span>
         </div>
       </form>

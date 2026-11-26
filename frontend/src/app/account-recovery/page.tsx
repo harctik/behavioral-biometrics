@@ -69,7 +69,7 @@ function AccountRecoveryInner() {
           <p className="text-sm text-muted mb-4">This recovery link is missing or expired.</p>
           <button
             onClick={() => router.push("/login")}
-            className="bg-accent-primary hover:bg-blue-600 text-white font-medium rounded-xl px-6 py-3 text-sm transition-colors"
+            className="bg-accent-primary hover:bg-blue-600 text-black font-medium rounded-xl px-6 py-3 text-sm transition-colors"
           >
             Back to Login
           </button>
@@ -142,7 +142,7 @@ function AccountRecoveryInner() {
             animate={{ opacity: 1, scale: 1 }}
             className="z-10 w-full max-w-md bg-surface/40 backdrop-blur-xl border border-emerald-500/20 rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="h-1 bg-gradient-to-r from-emerald-500 to-green-500" />
+            <div className="h-1 bg-emerald-500" />
             <div className="p-8 text-center">
               <div className="w-16 h-16 mx-auto mb-6 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center">
                 <CheckCircle className="w-8 h-8 text-emerald-400" />
@@ -167,7 +167,7 @@ function AccountRecoveryInner() {
             animate={{ opacity: 1, scale: 1 }}
             className="z-10 w-full max-w-md bg-surface/40 backdrop-blur-xl border border-red-500/20 rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="h-1 bg-gradient-to-r from-red-500 to-orange-500" />
+            <div className="h-1 bg-red-500" />
             <div className="p-8 text-center">
               <div className="w-16 h-16 mx-auto mb-6 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center">
                 <AlertTriangle className="w-8 h-8 text-red-400" />
@@ -197,7 +197,7 @@ function AccountRecoveryInner() {
             animate={{ opacity: 1, y: 0 }}
             className="z-10 w-full max-w-lg bg-surface/40 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
+            <div className="h-1 bg-amber-500" />
             <div className="p-8 lg:p-10">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center">
@@ -271,7 +271,7 @@ function AccountRecoveryInner() {
                 <button
                   type="submit"
                   disabled={isVerifying || typedText.length < 10}
-                  className="w-full h-12 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-medium rounded-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full h-12 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {isVerifying ? (
                     <>

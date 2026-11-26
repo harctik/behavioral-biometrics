@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Schibsted_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { NavBar } from "@/components/NavBar";
@@ -12,8 +12,8 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Footer } from "@/components/Footer";
 import { Toaster } from "sonner";
 
-const inter = Inter({
-  variable: "--font-inter",
+const schibsted = Schibsted_Grotesk({
+  variable: "--font-schibsted",
   subsets: ["latin"],
 });
 
@@ -23,11 +23,11 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BCA - Behavioral Biometrics Authentication",
+  title: "AetherAuth · Behavioral authentication",
   description:
-    "Banking-grade continuous authentication using keystroke dynamics, mouse behavior, and ensemble ML models.",
+    "A banking demo that keeps checking who is at the keyboard, using typing and pointer behaviour.",
   other: {
-    "theme-color": "#030712",
+    "theme-color": "#000000",
   },
 };
 
@@ -39,9 +39,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
+      className={`${schibsted.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
     >
-      <body className="min-h-full flex flex-col relative bg-grid-pattern">
+      <body className="min-h-full flex flex-col relative">
         <a href="#main-content" className="skip-to-content">Skip to main content</a>
         <ServiceWorkerRegistration />
         <BehavioralProvider />

@@ -3,6 +3,8 @@ import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
 
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
+import { Wordmark } from "@/components/Mark";
 import { motion } from "framer-motion";
 import { getCollector } from "@/lib/behavioral-collector";
 import {
@@ -62,7 +64,7 @@ const dataCategories: DataCategory[] = [
     icon: <Shield size={18} />,
     description: "Login events, MFA verifications, risk scores",
     records: 89,
-    retention: "7 years (RBI mandate)",
+    retention: "7 years (design target)",
     purpose: "Compliance & audit trail",
     deletable: false,
   },
@@ -71,8 +73,8 @@ const dataCategories: DataCategory[] = [
     icon: <Eye size={18} />,
     description: "Hash-chained compliance records, DSAR exports",
     records: 234,
-    retention: "7 years (RBI mandate)",
-    purpose: "Regulatory compliance",
+    retention: "7 years (design target)",
+    purpose: "Audit record keeping",
     deletable: false,
   },
 ];
@@ -167,6 +169,11 @@ export default function PrivacyPage() {
 
   return (
     <div style={{ minHeight: "100vh", padding: "24px", maxWidth: "960px", margin: "0 auto" }}>
+      <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", paddingBottom: "20px", marginBottom: "28px", borderBottom: "1px solid var(--border)" }}>
+        <Link href="/" aria-label="AetherAuth home"><Wordmark /></Link>
+        <Link href="/login" style={{ fontSize: "0.85rem", color: "var(--muted)" }}>Sign in</Link>
+      </nav>
+
       {/* Header */}
       <div style={{ marginBottom: "24px" }}>
         <h1 style={{ fontSize: "1.5rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "10px" }}>
@@ -174,12 +181,12 @@ export default function PrivacyPage() {
           My Data &amp; Privacy
         </h1>
         <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "4px" }}>
-          DPDP Act 2023 Compliant · Your data, your control
+          Controls modelled on the DPDP Act 2023 · Your data, your control
         </p>
       </div>
 
       {/* Summary Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "16px", marginBottom: "24px" }}>
         <div style={{ padding: "16px", borderRadius: "var(--radius-md)", background: "var(--surface)", border: "1px solid var(--border)", textAlign: "center" }}>
           <div style={{ fontSize: "1.8rem", fontWeight: 800 }}>{totalRecords.toLocaleString()}</div>
           <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Total Records</div>
@@ -213,11 +220,11 @@ export default function PrivacyPage() {
             alignItems: "center",
           }}
         >
-          <div style={{ color: "#3b82f6" }}>{cat.icon}</div>
+          <div style={{ color: "#e9e9e6" }}>{cat.icon}</div>
           <div>
             <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{cat.type}</div>
             <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "2px" }}>{cat.description}</div>
-            <div style={{ display: "flex", gap: "16px", marginTop: "6px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginTop: "6px" }}>
               <span style={{ fontSize: "0.7rem", color: "var(--muted-2)" }}>Records: {cat.records.toLocaleString()}</span>
               <span style={{ fontSize: "0.7rem", color: "var(--muted-2)" }}>Retention: {cat.retention}</span>
               <span style={{ fontSize: "0.7rem", color: "var(--muted-2)" }}>Purpose: {cat.purpose}</span>
@@ -230,7 +237,7 @@ export default function PrivacyPage() {
               </span>
             ) : (
               <span style={{ fontSize: "0.65rem", color: "#f59e0b", padding: "2px 8px", borderRadius: "4px", background: "rgba(245,158,11,0.1)" }}>
-                Regulatory Hold
+                Retained
               </span>
             )}
           </div>
@@ -286,15 +293,15 @@ export default function PrivacyPage() {
       </div>
 
       {/* Action Buttons */}
-      <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "24px" }}>
         <button
           onClick={handleDownload}
           style={{
             padding: "12px 24px",
             borderRadius: "8px",
-            background: "rgba(59,130,246,0.15)",
-            border: "1px solid rgba(59,130,246,0.3)",
-            color: "#60a5fa",
+            background: "rgba(244,244,242,0.15)",
+            border: "1px solid rgba(244,244,242,0.3)",
+            color: "#d9d9d4",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
@@ -356,7 +363,7 @@ export default function PrivacyPage() {
             </div>
             <p style={{ fontSize: "0.85rem", color: "var(--muted)", lineHeight: 1.6, marginBottom: "16px" }}>
               This will permanently delete all your keystroke dynamics, mouse behavior patterns, and behavioral embeddings.
-              Authentication events and audit evidence are retained for 7 years per RBI mandate. This action cannot be undone.
+              Authentication events and audit evidence are kept, with a 7-year retention target. This action cannot be undone.
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
               <button

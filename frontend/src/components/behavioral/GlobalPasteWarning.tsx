@@ -116,7 +116,7 @@ export function GlobalPasteWarning() {
       border: "rgba(239, 68, 68, 0.6)",
       text: "#ef4444",
       glow: "0 0 50px rgba(239, 68, 68, 0.25)",
-      label: "⚠ CLIPBOARD ABUSE DETECTED",
+      label: "REPEATED PASTE DETECTED",
     },
   };
 
@@ -150,14 +150,6 @@ export function GlobalPasteWarning() {
           boxShadow: c.glow,
         }}
       >
-        {/* Animated scanline */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `linear-gradient(90deg, transparent, ${c.text}15, transparent)`,
-            animation: "scanline 2s ease-in-out infinite",
-          }}
-        />
 
         <div className="relative px-4 py-3 flex items-start gap-3">
           {/* Icon */}
@@ -225,7 +217,7 @@ export function GlobalPasteWarning() {
         </div>
 
         {/* Severity bar at bottom */}
-        <div className="h-0.5 w-full" style={{ background: `linear-gradient(90deg, transparent, ${c.text}, transparent)` }} />
+        <div className="h-0.5 w-full" style={{ background: c.text }} />
       </div>
     </div>
   );

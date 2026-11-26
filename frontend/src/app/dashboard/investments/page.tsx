@@ -167,9 +167,9 @@ export default function InvestmentsPage() {
                       >
                         {allocation.map((entry, index) => {
                           const tailwindColorClass = TYPE_COLORS[entry.type];
-                          let hexColor = "#94a3b8"; // default slate-400
-                          if (tailwindColorClass.includes("blue")) hexColor = "#60a5fa";
-                          if (tailwindColorClass.includes("purple")) hexColor = "#c084fc";
+                          let hexColor = "#9a9a96"; // default slate-400
+                          if (tailwindColorClass.includes("blue")) hexColor = "#d9d9d4";
+                          if (tailwindColorClass.includes("purple")) hexColor = "#cfcfca";
                           if (tailwindColorClass.includes("amber")) hexColor = "#fbbf24";
                           if (tailwindColorClass.includes("emerald")) hexColor = "#34d399";
                           return <Cell key={`cell-${index}`} fill={hexColor} />;
@@ -177,7 +177,7 @@ export default function InvestmentsPage() {
                       </Pie>
                       <Tooltip 
                         formatter={(value: any) => `₹${Number(value).toLocaleString()}`}
-                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
+                        contentStyle={{ backgroundColor: '#0b0b0b', borderColor: '#333331', borderRadius: '8px' }}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -307,7 +307,7 @@ export default function InvestmentsPage() {
 
           {/* Behavioral notice */}
           <div className="flex items-center gap-2 text-[10px] text-muted font-mono bg-black/20 border border-border/50 rounded-lg p-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.5)]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Investment page browsing patterns captured — portfolio interaction telemetry active
           </div>
         </div>

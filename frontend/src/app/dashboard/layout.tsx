@@ -3,10 +3,11 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import { Wordmark } from "@/components/Mark";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import {
   LayoutGrid, ArrowLeftRight, CreditCard, PieChart, FileText,
-  Settings, LogOut, Menu, X, Shield, Activity, Fingerprint, Brain
+  Settings, LogOut, Menu, X, Activity, Fingerprint, Brain
 } from "lucide-react";
 import { TelemetryProvider, useTelemetry } from "@/components/TelemetryProvider";
 
@@ -38,10 +39,10 @@ const GlobalTrustWidget = () => {
       </div>
       <div className="flex items-end justify-between">
         <span className="text-xl font-medium tracking-tighter tabular-nums text-fg">
-          {score !== null ? `${score}%` : <div className="h-6 w-12 bg-black/20 animate-pulse rounded"></div>}
+          {score !== null ? `${score}%` : <span className="text-muted">--</span>}
         </span>
         <span className="text-[10px] text-muted">
-          {enrollment && !enrollment.enrolled ? `Learning (${Math.round((enrollment.completed/enrollment.required)*100)}%)` : 'Secured'}
+          {enrollment && !enrollment.enrolled ? `Learning (${Math.round((enrollment.completed/enrollment.required)*100)}%)` : score === null ? 'Waiting for data' : 'Monitoring'}
         </span>
       </div>
       <div className="mt-2 h-1 w-full bg-black/40 rounded-full overflow-hidden">
@@ -100,10 +101,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <>
       {/* Logo */}
       <div className="h-16 px-6 flex items-center gap-3 border-b border-border shrink-0">
-        <div className="w-8 h-8 bg-accent-primary/20 rounded-lg flex items-center justify-center border border-accent-primary/30">
-          <Shield className="w-4 h-4 text-accent-primary" />
-        </div>
-        <span className="font-semibold tracking-tight text-lg">AetherAuth</span>
+        <Wordmark />
       </div>
 
       {/* Navigation */}

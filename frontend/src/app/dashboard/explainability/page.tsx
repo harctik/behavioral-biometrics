@@ -239,7 +239,7 @@ export default function ExplainabilityPage() {
             <div className="text-center">
               <div className="text-[10px] text-muted uppercase tracking-wider font-bold mb-2">Signal Strength</div>
               <div className="text-2xl font-bold text-fg">{Math.round(featureRichness * 100)}%</div>
-              <ScoreBar value={featureRichness} color="bg-gradient-to-r from-violet-500 to-blue-400" />
+              <ScoreBar value={featureRichness} color="bg-violet-500" />
             </div>
             <div className="text-center">
               <div className="text-[10px] text-muted uppercase tracking-wider font-bold mb-2">Active Flags</div>
@@ -292,13 +292,8 @@ export default function ExplainabilityPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {Object.entries(categoryScores).map(([key, val]) => {
-                  const icons: Record<string, any> = {
-                    mouse_anomaly: '🖱️', keystroke_anomaly: '⌨️', cognitive_risk: '🧠',
-                    physiological_anomaly: '🫀', temporal_rhythm_risk: '⏱️', challenge_bot_risk: '🤖',
-                  };
                   return (
                     <div key={key} className="flex items-center gap-2 bg-black/20 rounded-lg p-3 border border-border/30">
-                      <span className="text-base">{icons[key] || '📊'}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-[9px] text-muted uppercase truncate">{key.replace(/_/g, ' ')}</div>
                         <ScoreBar value={val} color={val > 0.5 ? 'bg-red-500' : val > 0.2 ? 'bg-amber-500' : 'bg-emerald-500'} />

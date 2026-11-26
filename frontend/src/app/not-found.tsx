@@ -20,7 +20,6 @@ export default function NotFound() {
         <p className="text-xl font-semibold text-white/80 mb-2">Page Not Found</p>
         <p className="text-slate-400 text-sm mb-8">
           The page you&apos;re looking for doesn&apos;t exist or has been moved.
-          This request has been logged for security monitoring.
         </p>
 
         <div className="space-y-3">

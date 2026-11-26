@@ -1,4 +1,5 @@
 "use client";
+import { Wordmark } from "@/components/Mark";
 
 import { FormEvent, useState, useEffect, useRef } from "react";
 import Link from "next/link";
@@ -265,16 +266,12 @@ export default function LoginPage() {
             transition={{ duration: 0.5, ease: "easeOut" }}
             className="z-10 w-full max-w-md bg-surface/40 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="h-1 bg-gradient-to-r from-accent-primary to-accent-secondary" />
             <div className="p-8 lg:p-10 relative flex flex-col justify-center">
               <div className="w-full mx-auto">
                 {/* Branding */}
-                <div className="flex items-center gap-2.5 mb-6">
-                  <div className="w-8 h-8 bg-accent-primary/10 border border-accent-primary/30 rounded-lg flex items-center justify-center text-accent-primary">
-                    <ShieldCheck size={18} />
-                  </div>
-                  <span className="text-lg font-bold tracking-tight text-fg">AetherAuth</span>
-                </div>
+                <Link href="/" aria-label="AetherAuth home" className="inline-flex mb-6 text-fg">
+                  <Wordmark />
+                </Link>
 
                 <div className="mb-5">
                   <h2 className="text-2xl font-bold text-fg tracking-tight mb-1">Netbanking Login</h2>
@@ -402,7 +399,7 @@ export default function LoginPage() {
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full bg-accent-primary hover:bg-blue-600 text-white font-medium rounded-xl mt-2 transition-colors relative overflow-hidden group disabled:opacity-90 disabled:cursor-not-allowed"
+                    className="w-full bg-accent-primary hover:bg-blue-600 text-black font-medium rounded-xl mt-2 transition-colors relative overflow-hidden group disabled:opacity-90 disabled:cursor-not-allowed"
                   >
                     {isLoading ? (
                       <div className="w-full relative h-12 flex items-center justify-center gap-3">
@@ -449,7 +446,7 @@ export default function LoginPage() {
             transition={{ duration: 0.5, ease: "easeOut" }}
             className="z-10 w-full max-w-lg bg-surface/40 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="h-1 bg-gradient-to-r from-cyan-500 to-blue-500" />
+            <div className="h-1 bg-cyan-500" />
             <div className="p-8 lg:p-10">
               {/* Header */}
               <div className="flex items-center gap-3 mb-6">
@@ -513,7 +510,7 @@ export default function LoginPage() {
                             key={i}
                             className={`w-2 h-2 rounded-full transition-all duration-500 ${
                               i < completed
-                                ? isEnrolled ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]" : "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.5)]"
+                                ? isEnrolled ? "bg-emerald-400" : "bg-cyan-400"
                                 : i === completed && isCollecting
                                   ? "bg-cyan-400/60 animate-pulse"
                                   : "bg-white/10"
@@ -554,7 +551,6 @@ export default function LoginPage() {
                     Type the following text exactly
                   </label>
                   <div className="bg-black/30 border border-cyan-500/20 rounded-xl p-4 font-mono text-sm text-cyan-300 leading-relaxed select-none relative overflow-hidden">
-                    <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 20px, rgba(6, 182, 212, 0.1) 20px, rgba(6, 182, 212, 0.1) 21px)" }} />
                     <span className="relative z-10">{challengeData.typing_prompt}</span>
                   </div>
                 </div>
@@ -618,7 +614,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={isVerifying || typedText.length < 10}
-                  className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-medium rounded-xl transition-all relative overflow-hidden group disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full bg-cyan-600 hover:bg-cyan-500 text-black font-medium rounded-xl transition-all relative overflow-hidden group disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isVerifying ? (
                     <div className="w-full relative h-12 flex items-center justify-center gap-3">
@@ -645,7 +641,7 @@ export default function LoginPage() {
               {/* Footer */}
               <div className="mt-4 flex items-center justify-between">
                 <div className="flex items-center gap-2.5 text-[10px] text-muted font-mono">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.6)]"></span>
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
                   <span>Behavioral profiling active</span>
                 </div>
                 <button
@@ -671,7 +667,7 @@ export default function LoginPage() {
             transition={{ duration: 0.5, ease: "easeOut" }}
             className="z-10 w-full max-w-md bg-surface/40 backdrop-blur-xl border border-red-500/20 rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="h-1 bg-gradient-to-r from-red-500 to-orange-500" />
+            <div className="h-1 bg-red-500" />
             <div className="p-8 lg:p-10 text-center">
               <div className="w-16 h-16 mx-auto mb-6 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center">
                 <AlertTriangle className="w-8 h-8 text-red-400" />

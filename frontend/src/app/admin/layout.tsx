@@ -15,45 +15,21 @@ export default async function AdminLayout({
     redirect("/login");
   }
 
-  // Verify role with backend
+  // The admin stats endpoint checks the role. redirect() works by throwing,
+  // so choose the destination here and redirect outside the try block.
+  let destination: string | null = null;
   try {
-    const backendUrl = getBackendUrl();
-    const res = await fetch(`${backendUrl}/api/v1/session/metrics?session_id=${sessionId}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const res = await fetch(`${getBackendUrl()}/api/v1/admin/dashboard-stats`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
     });
-
-    if (!res.ok) {
-      redirect("/login");
-    }
-
-    // Note: The backend metrics doesn't return the role directly, 
-    // but the backend admin endpoints DO check for the role.
-    // However, to satisfy the "verify role before rendering" requirement,
-    // we should ideally have a 'me' or 'status' endpoint that returns the role.
-    // Since we don't have one that's easily usable, we'll assume that if 
-    // we can get metrics, the session is at least valid.
-    
-    // Actually, let's check the admin/dashboard-stats as a proxy for admin role
-    const adminRes = await fetch(`${backendUrl}/api/v1/admin/dashboard-stats`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    if (adminRes.status === 403) {
-      redirect("/dashboard");
-    }
-    
-    if (!adminRes.ok) {
-      redirect("/login");
-    }
-
+    if (res.status === 403) destination = "/dashboard";
+    else if (!res.ok) destination = "/login";
   } catch (error) {
     console.error("Admin verification failed:", error);
-    redirect("/login");
+    destination = "/login";
   }
+  if (destination) redirect(destination);
 
   return <>{children}</>;
 }

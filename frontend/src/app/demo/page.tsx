@@ -66,6 +66,7 @@ function RiskBar({ label, value, color }: { label: string; value: number; color:
       <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
         <motion.div
           className={`h-full rounded-full ${color}`}
+          initial={{ width: 0 }}
           animate={{ width: `${value}%` }}
           transition={{ duration: 0.3 }}
         />
@@ -80,6 +81,9 @@ export default function DemoPage() {
   const [decision, setDecision] = useState<"normal" | "elevated" | "critical" | null>(null);
   const [simLabel, setSimLabel] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Device values only exist in the browser, so show them after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const collector = getCollector();
@@ -151,7 +155,7 @@ export default function DemoPage() {
     }, 3000); // 3 second hesitation before paste
   }, []);
 
-  const compositeColor = risks.composite > 60 ? "from-red-600 to-red-400" : risks.composite > 30 ? "from-amber-600 to-amber-400" : "from-emerald-600 to-emerald-400";
+  const compositeColor = risks.composite > 60 ? "bg-red-500" : risks.composite > 30 ? "bg-amber-500" : "bg-emerald-500";
 
   return (
     <div className="min-h-screen p-8 max-w-7xl mx-auto">
@@ -176,7 +180,7 @@ export default function DemoPage() {
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-4">
               <Keyboard className="w-5 h-5 text-blue-400" />
-              <h2 className="text-lg font-bold text-white">Section A — Signal Capture</h2>
+              <h2 className="text-lg font-bold text-white">Signal capture</h2>
               <span className="ml-auto text-[10px] font-mono text-slate-500 bg-slate-800 px-2 py-0.5 rounded">CONTEXT: DEMO</span>
             </div>
             <p className="text-xs text-slate-500 mb-4">Type the phrase below (or anything you like) to see live behavioral signal capture, risk scoring, and decision output.</p>
@@ -218,7 +222,7 @@ export default function DemoPage() {
 
             {/* Status bar */}
             <div className="mt-4 flex items-center gap-2 text-[10px] text-slate-500 font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.6)]" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               Behavioral profiling active — {risks.totalKeystrokes} keystrokes · {risks.totalMouse} pointer events captured
             </div>
           </div>
@@ -227,7 +231,7 @@ export default function DemoPage() {
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-4">
               <Zap className="w-5 h-5 text-amber-400" />
-              <h2 className="text-lg font-bold text-white">Section C — Decision Simulator</h2>
+              <h2 className="text-lg font-bold text-white">Decision simulator</h2>
             </div>
             <p className="text-xs text-slate-500 mb-5">Click a simulation to inject synthetic behavioral patterns and watch the risk engine respond.</p>
             
@@ -289,11 +293,11 @@ export default function DemoPage() {
             </div>
 
             <div className="space-y-4">
-              <RiskBar label="Keystroke Rhythm" value={risks.keystrokeRisk} color="from-blue-600 to-blue-400 bg-gradient-to-r" />
-              <RiskBar label="Mouse Smoothness" value={risks.mouseRisk} color="from-cyan-600 to-cyan-400 bg-gradient-to-r" />
-              <RiskBar label="Correction Rate" value={risks.correctionRisk} color="from-amber-600 to-amber-400 bg-gradient-to-r" />
-              <RiskBar label="Copy-Paste Risk" value={risks.copyPasteRisk} color="from-red-600 to-red-400 bg-gradient-to-r" />
-              <RiskBar label="Hesitation Risk" value={risks.hesitationRisk} color="from-violet-600 to-violet-400 bg-gradient-to-r" />
+              <RiskBar label="Keystroke Rhythm" value={risks.keystrokeRisk} color="bg-blue-600" />
+              <RiskBar label="Mouse Smoothness" value={risks.mouseRisk} color="bg-cyan-600" />
+              <RiskBar label="Correction Rate" value={risks.correctionRisk} color="bg-amber-600" />
+              <RiskBar label="Copy-Paste Risk" value={risks.copyPasteRisk} color="bg-red-600" />
+              <RiskBar label="Hesitation Risk" value={risks.hesitationRisk} color="bg-violet-600" />
             </div>
 
             {/* Composite Score */}
@@ -306,7 +310,8 @@ export default function DemoPage() {
               </div>
               <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden">
                 <motion.div
-                  className={`h-full rounded-full bg-gradient-to-r ${compositeColor}`}
+                  className={`h-full rounded-full ${compositeColor}`}
+                  initial={{ width: 0 }}
                   animate={{ width: `${risks.composite}%` }}
                   transition={{ duration: 0.3 }}
                 />
@@ -318,14 +323,14 @@ export default function DemoPage() {
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Device Intelligence</h3>
             <div className="space-y-2 text-[11px] font-mono text-slate-500">
-              <div className="flex justify-between"><span>Screen</span><span className="text-slate-300">{typeof screen !== 'undefined' ? `${screen.width}×${screen.height}` : '--'}</span></div>
-              <div className="flex justify-between"><span>Color Depth</span><span className="text-slate-300">{typeof screen !== 'undefined' ? screen.colorDepth : '--'}-bit</span></div>
-              <div className="flex justify-between"><span>CPU Cores</span><span className="text-slate-300">{typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : '--'}</span></div>
-              <div className="flex justify-between"><span>Touch Points</span><span className="text-slate-300">{typeof navigator !== 'undefined' ? navigator.maxTouchPoints : '--'}</span></div>
-              <div className="flex justify-between"><span>Timezone</span><span className="text-slate-300">{typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : '--'}</span></div>
-              <div className="flex justify-between"><span>Language</span><span className="text-slate-300">{typeof navigator !== 'undefined' ? navigator.language : '--'}</span></div>
-              <div className="flex justify-between"><span>Platform</span><span className="text-slate-300">{typeof navigator !== 'undefined' ? (navigator as any).userAgentData?.platform || navigator.platform : '--'}</span></div>
-              <div className="flex justify-between"><span>Pixel Ratio</span><span className="text-slate-300">{typeof window !== 'undefined' ? window.devicePixelRatio : '--'}x</span></div>
+              <div className="flex justify-between"><span>Screen</span><span className="text-slate-300">{mounted ? `${screen.width}×${screen.height}` : '--'}</span></div>
+              <div className="flex justify-between"><span>Color Depth</span><span className="text-slate-300">{mounted ? screen.colorDepth : '--'}-bit</span></div>
+              <div className="flex justify-between"><span>CPU Cores</span><span className="text-slate-300">{mounted ? navigator.hardwareConcurrency : '--'}</span></div>
+              <div className="flex justify-between"><span>Touch Points</span><span className="text-slate-300">{mounted ? navigator.maxTouchPoints : '--'}</span></div>
+              <div className="flex justify-between"><span>Timezone</span><span className="text-slate-300">{mounted ? Intl.DateTimeFormat().resolvedOptions().timeZone : '--'}</span></div>
+              <div className="flex justify-between"><span>Language</span><span className="text-slate-300">{mounted ? navigator.language : '--'}</span></div>
+              <div className="flex justify-between"><span>Platform</span><span className="text-slate-300">{mounted ? (navigator as any).userAgentData?.platform || navigator.platform : '--'}</span></div>
+              <div className="flex justify-between"><span>Pixel Ratio</span><span className="text-slate-300">{mounted ? window.devicePixelRatio : '--'}x</span></div>
             </div>
           </div>
         </div>

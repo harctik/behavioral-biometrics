@@ -1,4 +1,5 @@
 "use client";
+import { Mark } from "@/components/Mark";
 
 import { FormEvent, useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
@@ -410,25 +411,7 @@ export default function SignUpPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center p-4 lg:p-8 bg-bg bg-grid-pattern">
-      {/* Background Orbs */}
-      <div className="absolute top-1/4 -left-64 w-[500px] h-[500px] bg-accent-primary/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-64 w-[500px] h-[500px] bg-accent-success/10 rounded-full blur-[120px] pointer-events-none" />
-
-      {/* Cyber-ring Scanner Animation */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] pointer-events-none opacity-20">
-        <motion.div
-          className="absolute inset-0 rounded-full border-[1px] border-accent-primary/20"
-          animate={{ rotate: 360, scale: [1, 1.05, 1] }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-        />
-        <motion.div
-          className="absolute inset-8 rounded-full border-[1px] border-accent-success/20 border-dashed"
-          animate={{ rotate: -360, scale: [1, 0.95, 1] }}
-          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-        />
-      </div>
-
+    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center p-4 lg:p-8 bg-bg">
       <BiometricScanner isVisible={isLoading} status="Encrypting enrollment seed..." />
 
       {isEnrolled ? (
@@ -438,9 +421,6 @@ export default function SignUpPage() {
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="w-full max-w-md relative z-10 glass-panel-glow rounded-3xl p-8 overflow-hidden"
         >
-          {/* Top Edge Glow line */}
-          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-accent-primary to-transparent opacity-50" />
-          
           <div className="space-y-6 text-center">
             <div className="mx-auto w-16 h-16 bg-emerald-500/10 flex items-center justify-center rounded-full border border-emerald-500/20">
               <ShieldCheck className="w-8 h-8 text-emerald-400" />
@@ -491,7 +471,6 @@ export default function SignUpPage() {
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="w-full max-w-md relative z-10 glass-panel-glow rounded-3xl p-8 overflow-hidden"
         >
-          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-50" />
           <div className="space-y-6 text-center">
             <div className="mx-auto w-16 h-16 bg-cyan-500/10 flex items-center justify-center rounded-full border border-cyan-500/20">
               <Mail className="w-8 h-8 text-cyan-400" />
@@ -555,20 +534,15 @@ export default function SignUpPage() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="w-full max-w-[1000px] h-[calc(100vh-2rem)] max-h-[760px] relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-stretch"
+          className="w-full max-w-[1000px] lg:h-[calc(100vh-2rem)] lg:max-h-[760px] relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-stretch"
         >
           {/* ── Left Column: Form ── */}
-          <div className="lg:col-span-5 glass-panel-glow rounded-3xl p-5 lg:p-7 relative overflow-hidden flex flex-col h-full bg-slate-950/60 border border-white/5">
-            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-accent-primary to-transparent opacity-50" />
+          <div className="lg:col-span-5 glass-panel-glow rounded-3xl p-5 lg:p-7 relative overflow-hidden flex flex-col lg:h-full bg-slate-950/60 border border-white/5">
             
             <div className="flex items-center gap-3 mb-5 shrink-0">
-              <motion.div 
-                className="w-10 h-10 rounded-xl bg-black/40 border border-border flex items-center justify-center text-accent-primary relative overflow-hidden shrink-0"
-                whileHover={{ scale: 1.05 }}
-              >
-                <div className="absolute inset-0 bg-accent-primary/10" />
-                <ShieldCheck size={20} className="relative z-10" />
-              </motion.div>
+              <Link href="/" aria-label="AetherAuth home" className="shrink-0 text-fg">
+                <Mark className="h-7 w-auto" />
+              </Link>
               <div>
                 <h1 className="text-xl font-bold tracking-tight text-fg">Create account</h1>
                 <p className="text-muted text-xs leading-relaxed">
@@ -762,7 +736,7 @@ export default function SignUpPage() {
           </div>
 
           {/* ── Right Column: Behavioral Profile ── */}
-          <div className="lg:col-span-7 glass-panel-glow rounded-3xl p-5 lg:p-7 relative overflow-hidden bg-slate-950/60 border border-white/5 flex flex-col h-full">
+          <div className="lg:col-span-7 glass-panel-glow rounded-3xl p-5 lg:p-7 relative overflow-hidden bg-slate-950/60 border border-white/5 flex flex-col lg:h-full">
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10 shrink-0">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-cyan-400" />
@@ -827,8 +801,8 @@ export default function SignUpPage() {
                   <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden">
                     <motion.div
                       className={`h-full rounded-full ${
-                        liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "bg-gradient-to-r from-emerald-500 to-emerald-400" :
-                        liveStats.keystrokes >= 20 ? "bg-gradient-to-r from-yellow-500 to-yellow-400" : "bg-gradient-to-r from-red-500 to-red-400"
+                        liveStats.keystrokes >= 40 && liveStats.digraphCount >= 15 ? "bg-emerald-500" :
+                        liveStats.keystrokes >= 20 ? "bg-yellow-500" : "bg-red-500"
                       }`}
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.min(100, ((liveStats.keystrokes / 40) * 50) + ((liveStats.digraphCount / 15) * 50))}%` }}

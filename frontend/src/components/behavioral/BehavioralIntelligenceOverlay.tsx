@@ -28,22 +28,21 @@ interface LiveStats {
 
 interface PageContextInfo {
   label: string;
-  icon: string;
   riskFocus: string;
   color: string;
 }
 
 const PAGE_CONTEXT_MAP: Record<string, PageContextInfo> = {
-  "/login":           { label: "Login",          icon: "🔐", riskFocus: "Credential stuffing detection",   color: "text-blue-400" },
-  "/signup":          { label: "Sign Up",        icon: "📝", riskFocus: "Bot registration detection",     color: "text-cyan-400" },
-  "/otp":             { label: "OTP Verify",     icon: "🔑", riskFocus: "Session hijack detection",       color: "text-amber-400" },
-  "/forgot-password": { label: "Password Reset", icon: "🔄", riskFocus: "Account takeover detection",     color: "text-orange-400" },
-  "/reset-password":  { label: "Reset Password", icon: "🔒", riskFocus: "Social engineering detection",   color: "text-red-400" },
-  "/dashboard":       { label: "Dashboard",      icon: "📊", riskFocus: "Session continuity verification",color: "text-emerald-400" },
-  "/challenge":       { label: "Challenge",      icon: "⚡", riskFocus: "Step-up authentication",         color: "text-violet-400" },
-  "/calibration":     { label: "Calibration",    icon: "🎯", riskFocus: "Baseline profile collection",    color: "text-sky-400" },
-  "/compliance":      { label: "Compliance",     icon: "📋", riskFocus: "Audit trail monitoring",         color: "text-slate-400" },
-  "/explainability":  { label: "Explainability", icon: "🧠", riskFocus: "Model transparency",             color: "text-purple-400" },
+  "/login":           { label: "Login",          riskFocus: "Credential stuffing detection",   color: "text-blue-400" },
+  "/signup":          { label: "Sign Up",        riskFocus: "Bot registration detection",     color: "text-cyan-400" },
+  "/otp":             { label: "OTP Verify",     riskFocus: "Session hijack detection",       color: "text-amber-400" },
+  "/forgot-password": { label: "Password Reset", riskFocus: "Account takeover detection",     color: "text-orange-400" },
+  "/reset-password":  { label: "Reset Password", riskFocus: "Social engineering detection",   color: "text-red-400" },
+  "/dashboard":       { label: "Dashboard",      riskFocus: "Session continuity verification",color: "text-emerald-400" },
+  "/challenge":       { label: "Challenge",      riskFocus: "Step-up authentication",         color: "text-violet-400" },
+  "/calibration":     { label: "Calibration",    riskFocus: "Baseline profile collection",    color: "text-sky-400" },
+  "/compliance":      { label: "Compliance",     riskFocus: "Audit trail monitoring",         color: "text-slate-400" },
+  "/explainability":  { label: "Explainability", riskFocus: "Model transparency",             color: "text-purple-400" },
 };
 
 function getPageContext(pathname: string): PageContextInfo {
@@ -53,7 +52,7 @@ function getPageContext(pathname: string): PageContextInfo {
   for (const [key, val] of Object.entries(PAGE_CONTEXT_MAP)) {
     if (pathname.startsWith(key)) return val;
   }
-  return { label: "App", icon: "🌐", riskFocus: "Passive behavioral monitoring", color: "text-muted" };
+  return { label: "App", riskFocus: "Passive behavioral monitoring", color: "text-muted" };
 }
 
 // ── Hold time color ─────────────────────────────────────────────────────────
@@ -111,7 +110,7 @@ function MiniKeyboard({ keyStats }: { keyStats: Record<string, { mean: number; c
 }
 
 // ── Sparkline SVG ───────────────────────────────────────────────────────────
-function Sparkline({ data, color = "rgba(139,92,246,0.8)" }: { data: number[]; color?: string }) {
+function Sparkline({ data, color = "rgba(189,189,184,0.8)" }: { data: number[]; color?: string }) {
   if (data.length < 3) return null;
   const max = Math.max(...data, 1);
   const min = Math.min(...data, 0);
@@ -148,6 +147,8 @@ export function BehavioralIntelligenceOverlay() {
   useAutoPageContext();
   
   // Panel state
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const [visible, setVisible] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [minimized, setMinimized] = useState(false);
@@ -397,7 +398,8 @@ export function BehavioralIntelligenceOverlay() {
 
   // ── Minimized pill ────────────────────────────────────────────────────
   // Default position: bottom-right with 16px margin
-  const resolvedPos = panelPos ?? { x: typeof window !== "undefined" ? window.innerWidth - 336 : 16, y: typeof window !== "undefined" ? window.innerHeight - 60 : 16 };
+  if (!mounted) return null;
+  const resolvedPos = panelPos ?? { x: window.innerWidth - (visible ? 336 : 40), y: window.innerHeight - (visible && !minimized ? 420 : 48) };
 
   if (visible && minimized) {
     return (
@@ -410,7 +412,7 @@ export function BehavioralIntelligenceOverlay() {
       >
         <div className={`w-2 h-2 rounded-full ${
           riskLevel === "high" ? "bg-red-500" : riskLevel === "medium" ? "bg-amber-500" : "bg-emerald-500"
-        } shadow-[0_0_6px] animate-pulse`} />
+        } animate-pulse`} />
         <span className="text-[9px] font-mono text-muted group-hover:text-fg transition-colors">
           BIO {trustScore !== null ? `${trustScore}%` : "--"}
         </span>
@@ -448,10 +450,10 @@ export function BehavioralIntelligenceOverlay() {
       style={{
         left: resolvedPos.x,
         top: resolvedPos.y,
-        background: "linear-gradient(135deg, rgba(10,10,15,0.95), rgba(15,15,25,0.95))",
+        background: "rgba(10,10,10,0.96)",
         backdropFilter: "blur(24px) saturate(1.5)",
         border: `1px solid ${riskLevel === "high" ? "rgba(239,68,68,0.3)" : riskLevel === "medium" ? "rgba(245,158,11,0.3)" : "rgba(16,185,129,0.15)"}`,
-        boxShadow: `0 0 40px ${riskLevel === "high" ? "rgba(239,68,68,0.08)" : riskLevel === "medium" ? "rgba(245,158,11,0.05)" : "rgba(16,185,129,0.05)"}, 0 25px 50px rgba(0,0,0,0.5)`,
+        boxShadow: "0 24px 48px rgba(0,0,0,0.5)",
         maxHeight: "calc(100vh - 32px)",
       }}
     >
@@ -466,10 +468,10 @@ export function BehavioralIntelligenceOverlay() {
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${
             riskLevel === "high" ? "bg-red-500" : riskLevel === "medium" ? "bg-amber-500" : "bg-emerald-500"
-          } shadow-[0_0_8px] animate-pulse`} />
+          } animate-pulse`} />
           <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-fg">Behavioral Intel</span>
           <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-mono ${pageCtx.color} bg-white/5 border border-white/5`}>
-            {pageCtx.icon} {pageCtx.label}
+            {pageCtx.label}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -536,12 +538,10 @@ export function BehavioralIntelligenceOverlay() {
             <div className="relative overflow-hidden rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2"
               style={{ animation: "pulse 2s ease-in-out infinite" }}
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-red-500/5 via-red-500/10 to-red-500/5" 
-                style={{ animation: "shimmer 2s ease-in-out infinite" }} />
               <div className="relative flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" style={{ animation: "pulse 1s ease-in-out infinite" }} />
                 <div>
-                  <div className="text-[10px] font-bold text-red-300 uppercase tracking-wider">⚠ Paste Detected</div>
+                  <div className="text-[10px] font-bold text-red-300 uppercase tracking-wider">Paste detected</div>
                   <div className="text-[8px] text-red-400/80 mt-0.5">
                     {pasteWarning.count}× clipboard paste{pasteWarning.charLen > 0 ? ` (${pasteWarning.charLen} chars)` : ""} — behavioral risk elevated
                   </div>
@@ -559,30 +559,30 @@ export function BehavioralIntelligenceOverlay() {
                 ? "bg-slate-500/10 border border-slate-500/20 text-slate-400"
                 : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
             }`}>
-              {totalActivity === 0 ? "Awaiting input…" : "Active ✓"}
+              {totalActivity === 0 ? "Awaiting input…" : "Active"}
             </span>
             <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono ${pageCtx.color} bg-white/5 border border-white/5`}>
               {pageCtx.riskFocus}
             </span>
             {liveStats.hesitation && (
               <span className="px-1.5 py-0.5 rounded text-[8px] font-mono bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                ⏸ Hesitation ×{liveStats.hesitationCount}
+                Hesitation ×{liveStats.hesitationCount}
               </span>
             )}
             {liveStats.copyPaste && (
               <span className="px-1.5 py-0.5 rounded text-[8px] font-mono bg-red-500/10 border border-red-500/20 text-red-400"
                 style={{ animation: "pulse 2s ease-in-out infinite" }}>
-                📋 Paste ×{liveStats.pasteCount} ⚠
+                Paste ×{liveStats.pasteCount}
               </span>
             )}
             {liveStats.tabSwitches > 0 && (
               <span className="px-1.5 py-0.5 rounded text-[8px] font-mono bg-violet-500/10 border border-violet-500/20 text-violet-400">
-                🔄 Tab ×{liveStats.tabSwitches}
+                Tab switch ×{liveStats.tabSwitches}
               </span>
             )}
             {liveStats.scrollReversals > 3 && (
               <span className="px-1.5 py-0.5 rounded text-[8px] font-mono bg-orange-500/10 border border-orange-500/20 text-orange-400">
-                ↕ Anxiety ×{liveStats.scrollReversals}
+                Scroll reversals ×{liveStats.scrollReversals}
               </span>
             )}
           </div>
@@ -607,7 +607,7 @@ export function BehavioralIntelligenceOverlay() {
           {expanded && backendMetrics?.ensemble && (
             <div className="pt-2 border-t border-border/30">
               <div className="text-[8px] text-muted uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                <span>ML Engine Scores (12)</span>
+                <span>Engine scores</span>
                 <span className={`text-[8px] font-mono px-1 py-0.5 rounded ${
                   backendMetrics.ensemble.ensemble_action === "allow" ? "bg-emerald-500/10 text-emerald-400" :
                   backendMetrics.ensemble.ensemble_action === "block" ? "bg-red-500/10 text-red-400" :
@@ -681,7 +681,7 @@ export function BehavioralIntelligenceOverlay() {
           onClick={() => router.push("/challenge?reason=behavioral_anomaly&score=0.88")}
           className="text-[7px] font-mono text-red-500/60 hover:text-red-400 transition-colors"
         >
-          ⚡ Simulate Risk
+          Simulate risk
         </button>
       </div>
     </div>

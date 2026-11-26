@@ -252,7 +252,6 @@ class AdminDashboardStats(Resource):
         db = get_db()
         from datetime import datetime as _dt, timedelta, timezone
         _now = _dt.now(timezone.utc)
-        cutoff_15m = (_now - timedelta(minutes=15)).isoformat()
         cutoff_1d = (_now - timedelta(days=1)).isoformat()
         
         with db.get_connection() as conn:
@@ -260,8 +259,9 @@ class AdminDashboardStats(Resource):
 
             # Active Sessions (last 15 mins)
             cursor.execute(
-                "SELECT COUNT(*) as count FROM sessions WHERE updated_at > ?",
-                (cutoff_15m,)
+                "SELECT COUNT(*) as count FROM sessions WHERE is_active AND last_activity > ?",
+                # last_activity is stored as "YYYY-MM-DD HH:MM:SS" in UTC
+                ((_now - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S"),)
             )
             active_sessions = cursor.fetchone()["count"]
 

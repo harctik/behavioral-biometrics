@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { UserPlus, LogIn, Activity, Send, ShieldAlert, Shield, CheckCircle2 } from "lucide-react";
 import { getCollector } from "@/lib/behavioral-collector";
+import Link from "next/link";
+import { Mark, Wordmark } from "@/components/Mark";
 
 // Map string icon names from artifact to actual Lucide components
 const IconMap: Record<string, any> = {
@@ -20,7 +22,7 @@ const PHASES = [
     id: 1,
     title: "Registration & Passive Enrollment",
     icon: "user-plus",
-    desc: "Unlike existing systems that require a tedious calibration phase, this system uses passive enrollment. The customer never knows their behavior is being profiled - zero friction.",
+    desc: "Unlike existing systems that require a tedious calibration phase, this system uses passive enrollment. The profile builds in the background during normal sign-ins.",
     code: `POST /auth/register {username, password}
 -> create_user() + generate MFA secret
 -> log_audit_evidence("user_registered")
@@ -105,7 +107,7 @@ const COMPARISON = [
   { feature: "Duress/Coercion", old: "Completely invisible to system", new: "43 stress markers detect coerced users silently" },
   { feature: "MFA Friction", old: "Always required → user fatigue", new: "Adaptive - skipped when behavior matches" },
   { feature: "Bot Attacks", old: "Rely on CAPTCHA (bypassable)", new: "Behavioral liveness - bots have zero timing variance" },
-  { feature: "Compliance", old: "Manual audit logs", new: "Automated RBI, CERT-In, PCI DSS evidence" }
+  { feature: "Compliance", old: "Manual audit logs", new: "Audit events logged automatically for review" }
 ];
 
 export default function ArchitectureDocsPage() {
@@ -121,25 +123,12 @@ export default function ArchitectureDocsPage() {
     <>
       <style dangerouslySetInnerHTML={{__html: `
         .docs-theme {
-          --bg: transparent;
-          --surface: rgba(10, 10, 10, 0.6);
-          --surface-hover: rgba(23, 23, 23, 0.8);
-          --fg: oklch(98% 0.005 250);
-          --muted: oklch(65% 0.01 250);
-          --border: rgba(255, 255, 255, 0.1);
-          --accent: oklch(65% 0.16 145);
-          --accent-muted: oklch(65% 0.16 145 / 0.15);
-          
-          --font-display: 'Inter', system-ui, sans-serif;
-          --font-body: 'Inter', system-ui, sans-serif;
-          --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-
-          background-color: var(--bg);
+          --surface-hover: rgba(244, 244, 242, 0.04);
+          --accent: #f4f4f2;
+          --accent-muted: rgba(244, 244, 242, 0.08);
           color: var(--fg);
-          font-family: var(--font-body);
         }
 
-        .docs-theme .font-mono { font-family: var(--font-mono); }
         .docs-theme ::-webkit-scrollbar { width: 6px; height: 6px; }
         .docs-theme ::-webkit-scrollbar-track { background: var(--bg); }
         .docs-theme ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -150,14 +139,14 @@ export default function ArchitectureDocsPage() {
         .docs-theme .prose p { color: var(--muted); line-height: 1.6; margin-bottom: 1rem; font-size: 0.9375rem; }
       `}} />
 
-      <div className="docs-theme flex h-full overflow-hidden text-[var(--fg)] bg-[var(--bg)]">
+      <div className="docs-theme flex h-screen overflow-hidden text-[var(--fg)] bg-[var(--bg)]">
         {/* Sidebar Nav */}
-        <aside className="w-64 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col shrink-0">
+        <aside className="hidden md:flex w-64 bg-[var(--surface)] border-r border-[var(--border)] flex-col shrink-0">
           <div className="h-16 px-6 flex items-center gap-3 border-b border-[var(--border)]">
-            <div className="w-6 h-6 bg-[var(--accent)] rounded flex items-center justify-center">
-              <Shield className="w-3 h-3 text-[var(--bg)]" />
-            </div>
-            <span className="font-semibold tracking-tight text-sm">Platform Docs</span>
+            <Link href="/" aria-label="AetherAuth home" className="text-[var(--fg)]">
+              <Mark className="h-5 w-auto" />
+            </Link>
+            <span className="font-semibold tracking-tight text-sm">Platform docs</span>
           </div>
           <div className="p-4 flex flex-col gap-1 overflow-y-auto">
             <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] font-bold mb-2 px-3 mt-2">Architecture</div>
@@ -183,21 +172,25 @@ export default function ArchitectureDocsPage() {
 
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto bg-[var(--bg)]">
-          <div className="max-w-4xl mx-auto px-12 py-16 prose">
+          <div className="max-w-4xl mx-auto px-5 md:px-12 py-10 md:py-16 prose">
             
+            <Link href="/" aria-label="AetherAuth home" className="md:hidden inline-flex mb-8 text-[var(--fg)]">
+              <Wordmark />
+            </Link>
+
             {/* Header */}
             <div className="mb-12">
               <div className="flex items-center gap-2 text-[var(--accent)] text-sm font-mono mb-4">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>RBI Master Direction 2021 Compliant</span>
+                <span>Designed around RBI Master Direction 2021</span>
               </div>
               <h1 className="text-4xl font-bold tracking-tight text-[var(--fg)] mb-4" id="overview">Behavior-Based Authentication</h1>
               <p className="text-lg text-[var(--muted)]">
                 Unlike traditional systems that authenticate once at login, this system silently monitors user behavior throughout the entire net-banking session using keystroke dynamics, mouse movements, and cognitive behavioral patterns.
               </p>
-              <div className="flex gap-3 mt-6" id="cbs">
+              <div className="flex flex-wrap gap-3 mt-6" id="cbs">
                 {['Finacle', 'BaNCS', 'FLEXCUBE', 'T24'].map(cbs => (
-                  <span key={cbs} className="px-3 py-1 text-xs font-mono bg-[var(--surface)] border border-[var(--border)] rounded-full text-[var(--muted)]">{cbs} Adapter</span>
+                  <span key={cbs} className="px-3 py-1 text-xs font-mono bg-[var(--surface)] border border-[var(--border)] rounded-full text-[var(--muted)]">{cbs} adapter (simulated)</span>
                 ))}
               </div>
             </div>
@@ -206,10 +199,10 @@ export default function ArchitectureDocsPage() {
 
             {/* Interactive Flow */}
             <h2 id="flow">Complete Working Flow</h2>
-            <p>Select a phase below to see how the continuous authentication lifecycle operates in real-time across the banking environment.</p>
+            <p>Select a phase below to see how continuous authentication works from registration to escalation.</p>
 
             <div className="bg-[var(--surface)] border border-[var(--border)] rounded-xl overflow-hidden mt-8 flex flex-col md:flex-row">
-              <div className="w-full md:w-1/3 bg-[var(--bg)] border-r border-[var(--border)] p-4 flex flex-col gap-2">
+              <div className="w-full md:w-1/3 bg-[var(--bg)] border-b md:border-b-0 md:border-r border-[var(--border)] p-4 flex flex-col gap-2">
                 {PHASES.map(p => {
                   const IconComp = IconMap[p.icon];
                   return (
@@ -223,13 +216,13 @@ export default function ArchitectureDocsPage() {
                       </div>
                       <div>
                         <div className={`text-sm font-medium ${activePhase === p.id ? 'text-[var(--fg)]' : 'text-[var(--muted)]'}`}>Phase {p.id}</div>
-                        <div className={`text-xs mt-0.5 ${activePhase === p.id ? 'text-[var(--muted)]' : 'text-[var(--muted)] opacity-50'}`}>{p.title}</div>
+                        <div className={`text-xs mt-0.5 ${activePhase === p.id ? 'text-[var(--muted)]' : 'text-[var(--muted)] opacity-80'}`}>{p.title}</div>
                       </div>
                     </button>
                   );
                 })}
               </div>
-              <div className="w-full md:w-2/3 p-8 flex flex-col">
+              <div className="w-full md:w-2/3 min-w-0 p-5 md:p-8 flex flex-col">
                 {PHASES.map(p => {
                   if (p.id !== activePhase) return null;
                   const IconComp = IconMap[p.icon];
@@ -254,8 +247,8 @@ export default function ArchitectureDocsPage() {
             <hr className="border-t border-[var(--border)] my-16" />
 
             {/* Ensemble Section */}
-            <h2 id="ensemble">10-Engine ML Pipeline</h2>
-            <p>The system utilizes a weighted fusion of 10 distinct machine learning engines to produce a single 0.0–1.0 risk score in real-time.</p>
+            <h2 id="ensemble">10-engine scoring pipeline</h2>
+            <p>The system utilizes a weighted fusion of 10 engines (rules, statistics and models) to produce a single 0.0–1.0 risk score in real-time.</p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
               {ENGINES.map((engine, i) => (
@@ -279,10 +272,10 @@ export default function ArchitectureDocsPage() {
 
             {/* Comparison Table */}
             <h2 id="comparison">Existing System vs. This System</h2>
-            <p>How continuous behavioral biometrics bridges the security gaps left by traditional one-time authentication systems.</p>
+            <p>Where continuous behavioral checks differ from one-time authentication.</p>
 
-            <div className="mt-8 border border-[var(--border)] rounded-lg overflow-hidden bg-[var(--surface)]">
-              <table className="w-full text-left text-sm">
+            <div className="mt-8 border border-[var(--border)] rounded-lg overflow-x-auto bg-[var(--surface)]">
+              <table className="w-full min-w-[560px] text-left text-sm">
                 <thead className="bg-[var(--bg)] border-b border-[var(--border)]">
                   <tr>
                     <th className="px-6 py-4 font-medium text-[var(--muted)] w-1/4">Aspect</th>
