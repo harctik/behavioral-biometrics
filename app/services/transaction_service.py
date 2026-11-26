@@ -55,11 +55,7 @@ class TransactionService:
         now = datetime.now(timezone.utc)
         cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
         
-        try:
-            from app.database_pg import DatabaseManager as PostgresDatabaseManager
-            is_pg = isinstance(db, PostgresDatabaseManager)
-        except ImportError:
-            is_pg = False
+        is_pg = db.is_pg
 
         try:
             with db.get_connection() as conn:

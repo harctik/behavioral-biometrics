@@ -24,6 +24,7 @@ from app.utils import (
 )
 from app.services.transaction_service import TransactionService
 
+logger = logging.getLogger(__name__)
 
 transaction_ns = Namespace(
     "transaction", description="Transaction security and behavioral scoring"

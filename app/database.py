@@ -7,10 +7,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Tuple
 import os
-import re
 import logging
 from contextlib import contextmanager
-from typing import Optional, List, Dict, Any, Union
+from typing import Any, Union
 from app.config import Settings
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
@@ -709,7 +708,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             row = conn.execute(
                 "SELECT user_id, username, email, role, is_active, calibration_complete, "
-                "created_at, last_login, failed_attempts, locked_until, mfa_secret "
+                "created_at, last_login, failed_attempts, locked_until, mfa_secret, mfa_enabled "
                 "FROM users WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
@@ -728,46 +727,6 @@ class DatabaseManager:
                 except Exception:
                     pass
             return user
-
-    # ── Real-time OTP (database-backed) ──────────────────────────────────
-
-    def store_otp(self, user_id: int, otp_code: str, ttl_seconds: int = 60) -> str:
-        """Generate and store a random OTP code in the database."""
-        expires_at = datetime.now() + timedelta(seconds=ttl_seconds)
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE otp_codes SET used_at = CURRENT_TIMESTAMP "
-                "WHERE user_id = ? AND used_at IS NULL",
-                (user_id,),
-            )
-            cursor.execute(
-                "INSERT INTO otp_codes (user_id, otp_code, expires_at) VALUES (?, ?, ?)",
-                (user_id, otp_code, expires_at),
-            )
-            conn.commit()
-        return otp_code
-
-    def verify_otp(self, user_id: int, otp_code: str) -> bool:
-        """Verify an OTP code against the database."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT otp_id FROM otp_codes "
-                "WHERE user_id = ? AND otp_code = ? "
-                "AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP "
-                "ORDER BY created_at DESC LIMIT 1",
-                (user_id, otp_code),
-            )
-            row = cursor.fetchone()
-            if not row:
-                return False
-            cursor.execute(
-                "UPDATE otp_codes SET used_at = CURRENT_TIMESTAMP WHERE otp_id = ?",
-                (row["otp_id"],),
-            )
-            conn.commit()
-            return True
 
     def create_user(
         self, username: str, email: str, password: str

@@ -6,6 +6,7 @@ Covers:
 - T-2: Account lockout enforcement (6th attempt with correct password is rejected)
 - CSRF token endpoint
 """
+from conftest import full_login
 import hashlib
 import uuid
 import pytest
@@ -80,15 +81,15 @@ class TestPasswordResetEndToEnd:
         assert confirm.status_code == 200, f"Reset confirm failed: {confirm.get_json()}"
 
         # 5. Login with OLD password should fail
-        old_login = client.post(
-            "/api/v1/auth/login",
+        old_login = full_login(
+            client,
             json={"username": "resetfull", "password": "OldPassword123!"},
         )
         assert old_login.status_code == 401
 
         # 6. Login with NEW password should succeed
-        new_login = client.post(
-            "/api/v1/auth/login",
+        new_login = full_login(
+            client,
             json={"username": "resetfull", "password": "NewPassword456!"},
         )
         assert new_login.status_code == 200
@@ -191,15 +192,15 @@ class TestAccountLockoutEnforcement:
 
         # Trigger 5 failed login attempts
         for i in range(5):
-            resp = client.post(
-                "/api/v1/auth/login",
+            resp = full_login(
+                client,
                 json={"username": "locktest", "password": "WrongPassword!"},
             )
             assert resp.status_code == 401, f"Attempt {i+1} should fail"
 
         # 6th attempt with CORRECT password should STILL fail (locked)
-        resp = client.post(
-            "/api/v1/auth/login",
+        resp = full_login(
+            client,
             json={"username": "locktest", "password": password},
         )
         assert resp.status_code == 401, (
@@ -223,14 +224,14 @@ class TestAccountLockoutEnforcement:
 
         # 3 failed attempts (below lockout threshold)
         for _ in range(3):
-            client.post(
-                "/api/v1/auth/login",
+            full_login(
+                client,
                 json={"username": "resetcount", "password": "WrongPassword!"},
             )
 
         # Successful login should reset the counter
-        resp = client.post(
-            "/api/v1/auth/login",
+        resp = full_login(
+            client,
             json={"username": "resetcount", "password": password},
         )
         assert resp.status_code == 200
@@ -238,14 +239,14 @@ class TestAccountLockoutEnforcement:
         # Another 3 failed attempts should NOT trigger lockout
         # (counter was reset to 0 by the successful login)
         for _ in range(3):
-            client.post(
-                "/api/v1/auth/login",
+            full_login(
+                client,
                 json={"username": "resetcount", "password": "WrongPassword!"},
             )
 
         # Should still be able to login (only 3 failed, not 5)
-        resp = client.post(
-            "/api/v1/auth/login",
+        resp = full_login(
+            client,
             json={"username": "resetcount", "password": password},
         )
         assert resp.status_code == 200
@@ -271,8 +272,8 @@ class TestCSRFTokenEndpoint:
 
         # Now make an API call with CSRF enabled
         app.config["CSRF_ENABLED"] = True
-        resp = client.post(
-            "/api/v1/auth/login",
+        resp = full_login(
+            client,
             json={"username": "noone", "password": "nopass"},
             headers={"X-CSRF-Token": token},
         )

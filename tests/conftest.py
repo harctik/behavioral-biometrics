@@ -32,6 +32,31 @@ _TEST_FERNET_KEY = "A6m3vqcXQ20GUuSCGELx79Za0lz16K2qtq72KA3xQuw="
 _TEST_DB_URI = os.environ.get("TEST_DATABASE_URL", "")
 
 
+def full_login(client, json, headers=None):
+    """Sign in through both steps: password first, then the typing check.
+
+    Returns the second response, or the first one if the password step failed.
+    """
+    first = client.post("/api/v1/auth/login", json=json, headers=headers)
+    if first.status_code != 200:
+        return first
+    return client.post(
+        "/api/v1/auth/login/verify",
+        json={"challenge_token": first.get_json()["data"]["challenge_token"]},
+        headers=headers,
+    )
+
+
+def enable_mfa(app, user_id):
+    """Switch authenticator-app MFA on, as an enrolled user would have it."""
+    from app.extensions import get_db
+
+    with app.app_context():
+        with get_db().get_connection() as conn:
+            conn.execute("UPDATE users SET mfa_enabled = ? WHERE user_id = ?", (True, user_id))
+            conn.commit()
+
+
 @pytest.fixture
 def app():
     """Create a fresh test application with a SQLite in-memory test database."""
@@ -136,8 +161,8 @@ def registered_user(client):
 @pytest.fixture
 def logged_in_user(client, registered_user):
     """Log in a registered user and return auth context."""
-    resp = client.post(
-        "/api/v1/auth/login",
+    resp = full_login(
+        client,
         json={
             "username": registered_user["username"],
             "password": registered_user["password"],
@@ -171,6 +196,7 @@ def mfa_logged_in_user(client, logged_in_user):
     mfa_secret = logged_in_user["mfa_secret"]
     assert mfa_secret, "MFA secret is missing — cannot elevate to aal=mfa"
 
+    enable_mfa(client.application, logged_in_user["user_id"])
     otp = pyotp.TOTP(mfa_secret).now()
     resp = client.post(
         "/api/v1/auth/mfa/verify",

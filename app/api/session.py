@@ -972,11 +972,7 @@ def _build_trust_timeline(session_id: str, window_minutes: int, severity: str):
     user_id = session["user_id"]
     from datetime import datetime as _dt, timedelta, timezone
 
-    try:
-        from app.database_pg import DatabaseManager as PostgresDatabaseManager
-        is_pg = isinstance(db, PostgresDatabaseManager)
-    except ImportError:
-        is_pg = False
+    is_pg = db.is_pg
 
     cutoff_dt = _dt.now(timezone.utc) - timedelta(minutes=window_minutes)
     cutoff = cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")

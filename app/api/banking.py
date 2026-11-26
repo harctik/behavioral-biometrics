@@ -34,11 +34,7 @@ class AccountBalance(Resource):
         db = get_db()
 
         # Detect database backend
-        try:
-            from app.database_pg import DatabaseManager as PostgresDatabaseManager
-            is_pg = isinstance(db, PostgresDatabaseManager)
-        except ImportError:
-            is_pg = False
+        is_pg = db.is_pg
 
         # Real deployment: query the Core Banking System (CBS)
         try:
@@ -227,11 +223,7 @@ class AccountStatements(Resource):
         uid = get_current_user_id()
         db = get_db()
         statements = []
-        try:
-            from app.database_pg import PostgresDatabaseManager
-            is_pg = isinstance(db, PostgresDatabaseManager)
-        except ImportError:
-            is_pg = False
+        is_pg = db.is_pg
         try:
             with db.get_connection() as conn:
                 if is_pg:

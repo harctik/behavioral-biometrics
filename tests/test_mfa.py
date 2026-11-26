@@ -1,4 +1,5 @@
 """MFA end-to-end flow test using shared conftest fixtures."""
+from conftest import full_login
 import pyotp
 from freezegun import freeze_time
 
@@ -36,8 +37,8 @@ def test_mfa_flow(client):
     assert secret is not None
 
     # Login
-    login_resp = client.post(
-        "/api/v1/auth/login",
+    login_resp = full_login(
+        client,
         json={"username": "mfa_user", "password": "StrongPass123!"},
     )
     assert login_resp.status_code == 200

@@ -5,6 +5,7 @@ This module contains unit tests for database operations, authentication flow,
 and configuration validation.
 """
 
+from conftest import enable_mfa, full_login
 import pytest
 import os
 from datetime import datetime
@@ -34,8 +35,8 @@ def _register_login_mfa(client, username, email, password, ua="pytest-agent"):
         if user_record:
             mfa_secret = user_record["mfa_secret"]
 
-    login = client.post(
-        "/api/v1/auth/login",
+    login = full_login(
+        client,
         json={"username": username, "password": password},
         headers={"User-Agent": ua},
     )
@@ -43,6 +44,7 @@ def _register_login_mfa(client, username, email, password, ua="pytest-agent"):
     ld = login.get_json()["data"]
     token, sid = ld["access_token"], ld["session_id"]
 
+    enable_mfa(client.application, user_id)
     otp = pyotp.TOTP(mfa_secret).now()
     mfa_resp = client.post(
         "/api/v1/auth/mfa/verify",
@@ -297,8 +299,8 @@ class TestAuthenticationFlow:
         )
 
         # Login
-        response = client.post(
-            "/api/v1/auth/login",
+        response = full_login(
+            client,
             json={"username": "loginuser", "password": "LoginPassword123!"},
         )
 
@@ -321,8 +323,8 @@ class TestAuthenticationFlow:
         )
 
         # Try wrong password
-        response = client.post(
-            "/api/v1/auth/login",
+        response = full_login(
+            client,
             json={"username": "failuser", "password": "WrongPassword"},
         )
 
@@ -390,8 +392,8 @@ class TestAuthenticationFlow:
                 "password": "MetricsPassword123!",
             },
         )
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "metricsuser", "password": "MetricsPassword123!"},
         )
         login_data = login.get_json()["data"]
@@ -423,8 +425,8 @@ class TestAuthenticationFlow:
                 "password": "StreamPassword123!",
             },
         )
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "streamuser", "password": "StreamPassword123!"},
         )
         session_id = login.get_json()["data"]["session_id"]
@@ -463,8 +465,8 @@ class TestAuthenticationFlow:
                 "password": "TimelinePassword123!",
             },
         )
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "timelineuser", "password": "TimelinePassword123!"},
         )
         login_data = login.get_json()["data"]
@@ -519,8 +521,8 @@ class TestAuthenticationFlow:
                 "password": "CsvPassword123!",
             },
         )
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "csvuser", "password": "CsvPassword123!"},
         )
         login_data = login.get_json()["data"]
@@ -600,8 +602,8 @@ class TestAuthenticationFlow:
                 "password": "GdprPassword123!",
             },
         )
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "gdpruser", "password": "GdprPassword123!"},
             headers={"User-Agent": "pytest-agent"},
         )
@@ -629,12 +631,13 @@ class TestAuthenticationFlow:
                 "password": "EventPassword123!",
             },
         )
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "eventuser", "password": "EventPassword123!"},
         )
         token = login.get_json()["data"]["access_token"]
 
+        client.delete_cookie("session_id")  # otherwise it supplies the session
         resp = client.post(
             "/api/v1/behavioral/data",
             json={},
@@ -652,8 +655,8 @@ class TestAuthenticationFlow:
                 "password": "EventPassword123!",
             },
         )
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "eventok", "password": "EventPassword123!"},
         )
         data = login.get_json()["data"]
@@ -686,8 +689,8 @@ class TestAuthenticationFlow:
         )
         assert reg.status_code == 200
 
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "calibuser", "password": "CalibPassword123!"},
         )
         assert login.status_code == 200
@@ -802,8 +805,8 @@ class TestAuthenticationFlow:
                 "password": "BlockPassword123!",
             },
         )
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={"username": "blockuser", "password": "BlockPassword123!"},
             headers={"User-Agent": "pytest-agent"},
         )

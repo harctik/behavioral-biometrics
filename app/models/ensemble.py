@@ -4,12 +4,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 from app.models.sequence_models import GRUSequenceModel
-from app.models.anomaly_detectors import AutoencoderAnomalyDetector, OneClassSVMDetector
-from app.models.incremental_classifiers import IncrementalKNNClassifier
+from app.models.anomaly_detectors import (
+    AutoencoderAnomalyDetector,
+    IsolationForestDetector,
+    OneClassSVMDetector,
+)
+from app.models.incremental_classifiers import (
+    IncrementalKNNClassifier,
+    PassiveAggressiveDetector,
+)
 from app.models.analytics_and_security import BehavioralAnalytics, SessionSecurityMonitor, AuditLogger
 from sklearn.preprocessing import StandardScaler
 import os
+from datetime import datetime
+
 import joblib
+
+
 class EnsembleBehavioralClassifier:
     """Banking-grade ensemble of behavioral models for robust authentication.
 
