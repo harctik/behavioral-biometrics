@@ -119,6 +119,21 @@ AetherAuth/
 
 4. The backend API will be available at `http://localhost:5000` and the frontend interface at `http://localhost:3000`.
 
+### Test sign-in (local only)
+
+For testing on your own computer, `admin` / `admin` can open a separate test account with the admin role. It is off by default. Set these for the backend:
+
+```bash
+DEMO_LOGIN=1
+FLASK_ENV=development
+```
+
+It works only for requests from this computer, and never in production, on a hosting service or through a proxy. The Next.js app forwards sign-ins to the backend from its own server, so anyone who can reach the frontend would count as local. Keep the frontend on this computer too:
+
+```bash
+cd frontend && npm run dev -- -H 127.0.0.1
+```
+
 ### Executing the Test Suite
 
 ```bash
