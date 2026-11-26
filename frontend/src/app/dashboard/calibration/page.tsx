@@ -41,7 +41,10 @@ export default function CalibrationPage() {
   const [mouseHits, setMouseHits] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [phraseAccuracies, setPhraseAccuracies] = useState<number[]>([]);
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef(0);
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+  }, []);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Generate random mouse targets

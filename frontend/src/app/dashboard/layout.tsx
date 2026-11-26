@@ -1,5 +1,6 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
@@ -20,7 +21,7 @@ const navItems = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
-const SidebarItem = ({ icon: Icon, label, active, href }: { icon: any; label: string; active?: boolean; href: string }) => (
+const SidebarItem = ({ icon: Icon, label, active, href }: { icon: LucideIcon; label: string; active?: boolean; href: string }) => (
   <Link href={href} className="no-underline">
     <div className={`flex items-center gap-3 px-3 py-2 text-sm rounded-md cursor-pointer transition-colors ${active ? 'bg-surface-2 text-fg font-medium' : 'text-muted hover:text-fg hover:bg-surface-2'}`}>
       <Icon className="w-4 h-4" />
@@ -86,7 +87,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [router]);
 
   // Close mobile sidebar on route change
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  const [lastPath, setLastPath] = useState(pathname);
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
+    setMobileOpen(false);
+  }
 
   const handleLogout = async () => {
     setLoggingOut(true);

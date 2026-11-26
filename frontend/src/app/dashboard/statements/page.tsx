@@ -1,5 +1,6 @@
 "use client";
 
+import type { ApiTransaction } from "@/lib/api-types";
 import { useState, useEffect } from "react";
 import {
   FileText, Download, Calendar, Filter, Search,
@@ -59,13 +60,13 @@ export default function StatementsPage() {
           const txns = data.transactions || [];
           
           // Sort newest-first to compute running balance correctly
-          txns.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          txns.sort((a: ApiTransaction, b: ApiTransaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
           
           let runningBalance = currentBalance;
-          const mapped = txns.map((t: any) => {
-            const isDebit = t.transaction_type === "debit" || t.type === "out" || t.type === "transfer" || t.type === "debit" || (t.amount < 0);
+          const mapped = txns.map((t: ApiTransaction) => {
+            const isDebit = t.transaction_type === "debit" || t.type === "out" || t.type === "transfer" || t.type === "debit" || (Number(t.amount) < 0);
             const rowBalance = runningBalance;
-            const absAmount = Math.abs(t.amount);
+            const absAmount = Math.abs(Number(t.amount));
             
             // Walk backward: current row = runningBalance, then adjust for previous row
             if (isDebit) runningBalance += absAmount;

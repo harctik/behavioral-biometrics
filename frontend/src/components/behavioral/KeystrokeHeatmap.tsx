@@ -117,7 +117,7 @@ export function KeystrokeHeatmap() {
       }
 
       // WPM estimate
-      const flights = ks.map((k: any) => k.flight_time).filter((f: number) => f > 0 && f < 5000);
+      const flights = ks.map((k) => k.flight_time).filter((f: number) => f > 0 && f < 5000);
       const wpm = flights.length >= 3
         ? Math.round((totalKeys / 5) / (flights.reduce((a: number, b: number) => a + b, 0) / 60000))
         : 0;

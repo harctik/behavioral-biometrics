@@ -1,5 +1,6 @@
 "use client";
 
+import { useIsClient } from "@/hooks/useBrowser";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Keyboard, MousePointer2, Brain, ShieldAlert, ShieldCheck, Zap, Activity, AlertTriangle, Check, Copy, Timer } from "lucide-react";
@@ -77,13 +78,12 @@ function RiskBar({ label, value, color }: { label: string; value: number; color:
 
 export default function DemoPage() {
   const [text, setText] = useState("");
-  const [risks, setRisks] = useState(computeRiskSignals({ customer_session_id: "", session_id: "", page_context: "", window_start: Date.now(), window_end: Date.now(), sdk_timing: { sdk_load_time: 0, first_interaction_time: -1, time_to_first_keystroke: -1 }, device_fingerprint: null, keystroke_events: [], mouse_events: [], touch_events: [], scroll_events: [], navigation_events: [], motion_events: [], cognitive_events: [], sequence_hash: "", clock_skew: 0, extended_features: {} as any }));
+  const [risks, setRisks] = useState(() => computeRiskSignals({ customer_session_id: "", session_id: "", page_context: "", window_start: Date.now(), window_end: Date.now(), sdk_timing: { sdk_load_time: 0, first_interaction_time: -1, time_to_first_keystroke: -1 }, device_fingerprint: null, keystroke_events: [], mouse_events: [], touch_events: [], scroll_events: [], navigation_events: [], motion_events: [], cognitive_events: [], sequence_hash: "", clock_skew: 0, extended_features: {} as ExtendedBehavioralPayload["extended_features"] }));
   const [decision, setDecision] = useState<"normal" | "elevated" | "critical" | null>(null);
   const [simLabel, setSimLabel] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Device values only exist in the browser, so show them after mount.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useIsClient();
 
   useEffect(() => {
     const collector = getCollector();
@@ -329,7 +329,7 @@ export default function DemoPage() {
               <div className="flex justify-between"><span>Touch Points</span><span className="text-slate-300">{mounted ? navigator.maxTouchPoints : '--'}</span></div>
               <div className="flex justify-between"><span>Timezone</span><span className="text-slate-300">{mounted ? Intl.DateTimeFormat().resolvedOptions().timeZone : '--'}</span></div>
               <div className="flex justify-between"><span>Language</span><span className="text-slate-300">{mounted ? navigator.language : '--'}</span></div>
-              <div className="flex justify-between"><span>Platform</span><span className="text-slate-300">{mounted ? (navigator as any).userAgentData?.platform || navigator.platform : '--'}</span></div>
+              <div className="flex justify-between"><span>Platform</span><span className="text-slate-300">{mounted ? (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform || navigator.platform : '--'}</span></div>
               <div className="flex justify-between"><span>Pixel Ratio</span><span className="text-slate-300">{mounted ? window.devicePixelRatio : '--'}x</span></div>
             </div>
           </div>

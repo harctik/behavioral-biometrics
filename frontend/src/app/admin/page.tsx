@@ -1,5 +1,6 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -12,7 +13,47 @@ import { getSessionId } from "@/lib/auth-utils";
 
 
 
-const StatCard = ({ title, value, sub, icon: Icon }: { title: string, value: string | number, sub: string, icon: any }) => (
+interface LiveSession {
+  id: string;
+  ip: string;
+  risk: number;
+  keystroke?: number | null;
+  pointer?: number | null;
+  status: string;
+  time: string;
+}
+
+interface TimelinePoint {
+  risk_score: number;
+  risk_level: string;
+  timestamp: string | number;
+}
+
+interface AuditEvidence {
+  action: string;
+  status: string;
+  user_id: string;
+  resource: string;
+  timestamp: string;
+}
+
+interface CbsProviderStatus {
+  healthy?: boolean;
+  latency_ms?: number;
+}
+
+interface DeviceIntel {
+  screen_width: number;
+  screen_height: number;
+  color_depth: number;
+  hardware_concurrency: number;
+  touch_points: number;
+  timezone: string;
+  language: string;
+  platform: string;
+}
+
+const StatCard = ({ title, value, sub, icon: Icon }: { title: string, value: string | number, sub: string, icon: LucideIcon }) => (
   <div className="glass-panel p-5 rounded-xl flex flex-col justify-between">
     <div className="flex justify-between items-start mb-4">
       <span className="text-muted text-xs uppercase tracking-wider font-semibold">{title}</span>
@@ -25,7 +66,7 @@ const StatCard = ({ title, value, sub, icon: Icon }: { title: string, value: str
   </div>
 );
 
-const SidebarItem = ({ icon: Icon, label, active }: { icon: any, label: string, active?: boolean }) => (
+const SidebarItem = ({ icon: Icon, label, active }: { icon: LucideIcon, label: string, active?: boolean }) => (
   <div className={`flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg cursor-pointer transition-all ${active ? 'bg-accent-primary/20 text-accent-primary font-medium border border-accent-primary/30' : 'text-muted hover:text-fg hover:bg-surface-2 border border-transparent'}`}>
     <Icon className="w-[18px] h-[18px]" />
     {label}
@@ -35,7 +76,7 @@ const SidebarItem = ({ icon: Icon, label, active }: { icon: any, label: string, 
 export default function AdminPage() {
   const router = useRouter();
   // Gap 17: No more hardcoded mock data — sessions come from backend only
-  const [liveSessions, setLiveSessions] = useState<any[]>([]);
+  const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
   const [stats, setStats] = useState<{
     active_protected_sessions: number;
     anomalies_prevented_24h: number;
@@ -43,18 +84,18 @@ export default function AdminPage() {
     system_trust_score: number;
   } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [auditEvidence, setAuditEvidence] = useState<any[]>([]);
+  const [auditEvidence, setAuditEvidence] = useState<AuditEvidence[]>([]);
   const [auditChainValid, setAuditChainValid] = useState<boolean | null>(null);
   const [auditVerifiedCount, setAuditVerifiedCount] = useState(0);
   const [duressResult, setDuressResult] = useState<{duress_score: number, alert_level: string} | null>(null);
-  const [cbsHealth, setCbsHealth] = useState<Record<string, any> | null>(null);
+  const [cbsHealth, setCbsHealth] = useState<Record<string, CbsProviderStatus> | null>(null);
   const [roleTarget, setRoleTarget] = useState("");
   const [roleValue, setRoleValue] = useState("user");
   const [activeTab, setActiveTab] = useState("telemetry");
 
   // Live Alert Feed & Device Intel
   const [liveAlerts, setLiveAlerts] = useState<{time: string, id: string, context: string, risk: number, status: string}[]>([]);
-  const [deviceIntel, setDeviceIntel] = useState<any>(null);
+  const [deviceIntel, setDeviceIntel] = useState<DeviceIntel | null>(null);
 
   const [roleStatus, setRoleStatus] = useState<"" | "updating" | "success" | "failed">("");
 
@@ -195,7 +236,7 @@ export default function AdminPage() {
           if (res.ok) {
             const tl = await res.json();
             if (tl.timeline) {
-              setLiveSessions(tl.timeline.map((t: any) => ({
+              setLiveSessions(tl.timeline.map((t: TimelinePoint) => ({
                 id: "current_user",
                 risk: t.risk_score,
                 keystroke: null, pointer: null,
@@ -541,7 +582,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {auditEvidence.slice(0, 20).map((ev: any, i: number) => (
+                  {auditEvidence.slice(0, 20).map((ev, i) => (
                     <tr key={i} className="hover:bg-white/5">
                       <td className="px-4 py-3 text-fg">{ev.action}</td>
                       <td className="px-4 py-3"><span className={ev.status === 'ok' ? 'text-accent-success' : 'text-accent-warning'}>{ev.status}</span></td>
@@ -586,7 +627,7 @@ export default function AdminPage() {
           <div className="space-y-6">
             <h2 className="text-lg font-bold text-fg">Core Banking System Health</h2>
             <div className="grid grid-cols-2 gap-4">
-              {cbsHealth ? Object.entries(cbsHealth).map(([provider, status]: [string, any]) => (
+              {cbsHealth ? Object.entries(cbsHealth).map(([provider, status]) => (
                 <div key={provider} className="glass-panel rounded-xl p-5">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-bold text-fg uppercase">{provider}</span>

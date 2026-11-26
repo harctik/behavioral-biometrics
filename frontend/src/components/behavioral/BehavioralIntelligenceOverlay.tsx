@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import type { SessionMetrics } from "@/lib/api-types";
+import { readStorage, useIsClient, useStoredString } from "@/hooks/useBrowser";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getCollector } from "@/lib/behavioral-collector";
 import { getCsrfToken } from "@/lib/auth-utils";
@@ -138,6 +140,18 @@ function Sparkline({ data, color = "rgba(189,189,184,0.8)" }: { data: number[]; 
 // ██  GLOBAL BEHAVIORAL INTELLIGENCE OVERLAY  ██
 // ═══════════════════════════════════════════════════════════════════════════
 
+const VISIBLE_KEY = "bba_bio_overlay";
+const POSITION_KEY = "bba_bio_overlay_pos";
+
+function parsePosition(raw: string | null): { x: number; y: number } | null {
+  try {
+    const parsed = raw ? JSON.parse(raw) : null;
+    return typeof parsed?.x === "number" && typeof parsed?.y === "number" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function BehavioralIntelligenceOverlay() {
   const pathname = usePathname();
   const router = useRouter();
@@ -147,37 +161,24 @@ export function BehavioralIntelligenceOverlay() {
   useAutoPageContext();
   
   // Panel state
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const [visible, setVisible] = useState(false);
+  const mounted = useIsClient();
+  const [storedVisible, setStoredVisible] = useStoredString(VISIBLE_KEY);
+  const visible = storedVisible === "true";
+  const setVisible = useCallback((next: boolean) => setStoredVisible(String(next)), [setStoredVisible]);
   const [expanded, setExpanded] = useState(false);
   const [minimized, setMinimized] = useState(false);
 
   // ── Drag-to-move state ──────────────────────────────────────────────
-  const [panelPos, setPanelPos] = useState<{ x: number; y: number } | null>(null);
+  const [storedPos, setStoredPos] = useStoredString(POSITION_KEY);
+  const panelPos = useMemo(() => parsePosition(storedPos), [storedPos]);
+  const setPanelPos = useCallback(
+    (next: { x: number; y: number }) => setStoredPos(JSON.stringify(next)),
+    [setStoredPos],
+  );
   const isDraggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ px: number; py: number; ox: number; oy: number }>({ px: 0, py: 0, ox: 0, oy: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
-
-  // Load saved position from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("bba_bio_overlay_pos");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.x === "number" && typeof parsed.y === "number") {
-          setPanelPos(parsed);
-        }
-      }
-    } catch {}
-  }, []);
-
-  // Persist position
-  useEffect(() => {
-    if (panelPos) {
-      localStorage.setItem("bba_bio_overlay_pos", JSON.stringify(panelPos));
-    }
-  }, [panelPos]);
 
   // Clamp helper: ensures the panel stays within viewport bounds
   const clampPos = useCallback((x: number, y: number) => {
@@ -196,6 +197,7 @@ export function BehavioralIntelligenceOverlay() {
     // Only drag on primary button (left-click)
     if (e.button !== 0) return;
     isDraggingRef.current = true;
+    setIsDragging(true);
     const el = panelRef.current;
     const rect = el?.getBoundingClientRect();
     dragStartRef.current = {
@@ -215,23 +217,22 @@ export function BehavioralIntelligenceOverlay() {
     const newX = dragStartRef.current.ox + dx;
     const newY = dragStartRef.current.oy + dy;
     setPanelPos(clampPos(newX, newY));
-  }, [clampPos]);
+  }, [clampPos, setPanelPos]);
 
   const onPointerUp = useCallback(() => {
     isDraggingRef.current = false;
+    setIsDragging(false);
   }, []);
 
   // Re-clamp on window resize so the panel doesn't go off-screen
   useEffect(() => {
     const handleResize = () => {
-      setPanelPos(prev => {
-        if (!prev) return prev;
-        return clampPos(prev.x, prev.y);
-      });
+      const prev = parsePosition(readStorage(POSITION_KEY));
+      if (prev) setPanelPos(clampPos(prev.x, prev.y));
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [clampPos]);
+  }, [clampPos, setPanelPos]);
 
   // Live stats
   const [liveStats, setLiveStats] = useState<LiveStats>({
@@ -245,8 +246,8 @@ export function BehavioralIntelligenceOverlay() {
   const [riskLevel, setRiskLevel] = useState<string>("low");
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [sessionDuration, setSessionDuration] = useState(0);
-  const [backendMetrics, setBackendMetrics] = useState<any>(null);
-  const sessionStartRef = useRef(Date.now());
+  const [backendMetrics, setBackendMetrics] = useState<SessionMetrics | null>(null);
+  const sessionStartRef = useRef(0);
   const [pasteWarning, setPasteWarning] = useState<{ show: boolean; count: number; charLen: number }>({ show: false, count: 0, charLen: 0 });
   const lastPasteCountRef = useRef(0);
 
@@ -255,25 +256,16 @@ export function BehavioralIntelligenceOverlay() {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === "B") {
         e.preventDefault();
-        setVisible(v => !v);
+        setVisible(readStorage(VISIBLE_KEY) !== "true");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  // Also check localStorage for persistent preference
-  useEffect(() => {
-    const saved = localStorage.getItem("bba_bio_overlay");
-    if (saved === "true") setVisible(true);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem("bba_bio_overlay", visible ? "true" : "false");
-  }, [visible]);
+  }, [setVisible]);
 
   // Poll live stats from collector
   useEffect(() => {
+    sessionStartRef.current = Date.now();
     const interval = setInterval(() => {
       try {
         const collector = getCollector();
@@ -281,19 +273,19 @@ export function BehavioralIntelligenceOverlay() {
         const ks = snap.keystroke_events || [];
         const ms = snap.mouse_events || [];
         
-        const holds = ks.map((k: any) => k.hold_time).filter((h: number) => h > 0 && h < 2000);
-        const flights = ks.map((k: any) => k.flight_time).filter((f: number) => f > 0 && f < 5000);
-        const velocities = ms.filter((m: any) => m.velocity !== undefined).map((m: any) => m.velocity);
+        const holds = ks.map((k) => k.hold_time).filter((h: number) => h > 0 && h < 2000);
+        const flights = ks.map((k) => k.flight_time).filter((f: number) => f > 0 && f < 5000);
+        const velocities = ms.map((m) => m.velocity).filter((v): v is number => v !== undefined);
 
         // Read cognitive events for copy-paste and hesitation
         const cogEvents = snap.cognitive_events || [];
-        const pasteEvents = cogEvents.filter((c: any) => c.type === "copy_paste" || c.type === "autofill");
-        const hesitationEvents = cogEvents.filter((c: any) => c.type === "hesitation" || c.type === "pre_submit_pause");
-        const tabSwitchEvents = cogEvents.filter((c: any) => c.type === "tab_switch");
+        const pasteEvents = cogEvents.filter((c) => c.type === "copy_paste" || c.type === "autofill");
+        const hesitationEvents = cogEvents.filter((c) => c.type === "hesitation" || c.type === "pre_submit_pause");
+        const tabSwitchEvents = cogEvents.filter((c) => c.type === "tab_switch");
         const scrollEvts = snap.scroll_events || [];
         let scrollReversals = 0;
         for (let i = 1; i < scrollEvts.length; i++) {
-          if ((scrollEvts[i] as any).direction !== (scrollEvts[i-1] as any).direction) scrollReversals++;
+          if (scrollEvts[i].direction !== scrollEvts[i-1].direction) scrollReversals++;
         }
 
         const currentPasteCount = pasteEvents.length;
@@ -313,7 +305,7 @@ export function BehavioralIntelligenceOverlay() {
           avgHold: holds.length > 0 ? Math.round(holds.reduce((a: number, b: number) => a + b, 0) / holds.length) : 0,
           avgFlight: flights.length > 0 ? Math.round(flights.reduce((a: number, b: number) => a + b, 0) / flights.length) : 0,
           mouseVelMean: velocities.length > 0 ? Math.round(velocities.reduce((a: number, b: number) => a + b, 0) / velocities.length * 100) / 100 : 0,
-          corrections: ks.filter((k: any) => k.is_backspace).length,
+          corrections: ks.filter((k) => k.is_backspace).length,
           copyPaste: currentPasteCount > 0,
           hesitation: hesitationEvents.length > 0,
           pasteCount: currentPasteCount,
@@ -444,7 +436,7 @@ export function BehavioralIntelligenceOverlay() {
       className={`fixed z-[9999] 
       w-[calc(100vw-32px)] sm:w-[320px]
       rounded-2xl shadow-2xl overflow-hidden
-      ${isDraggingRef.current ? "" : "transition-all duration-300"}
+      ${isDragging ? "" : "transition-all duration-300"}
       ${expanded ? "sm:w-[380px]" : ""}
     `}
       style={{
@@ -657,11 +649,11 @@ export function BehavioralIntelligenceOverlay() {
           )}
 
           {/* Expanded: Ensemble Flags */}
-          {expanded && backendMetrics?.ensemble?.ensemble_flags?.length > 0 && (
+          {expanded && (backendMetrics?.ensemble?.ensemble_flags?.length ?? 0) > 0 && (
             <div className="pt-2 border-t border-border/30">
               <div className="text-[8px] text-muted uppercase tracking-wider mb-1">Active Flags</div>
               <div className="flex flex-wrap gap-1">
-                {backendMetrics.ensemble.ensemble_flags.slice(0, 6).map((flag: string, i: number) => (
+                {backendMetrics?.ensemble?.ensemble_flags?.slice(0, 6).map((flag: string, i: number) => (
                   <span key={i} className="px-1 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-[7px] font-mono text-red-400 truncate max-w-[130px]" title={flag}>
                     {flag.split(":")[0]}
                   </span>

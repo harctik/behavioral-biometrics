@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useStoredString } from "@/hooks/useBrowser";
+import { useState, useMemo, useEffect } from "react";
 import {
   PieChart as PieChartIcon, TrendingUp, TrendingDown, BarChart3, ArrowUpRight, ArrowDownRight, Search
 } from "lucide-react";
@@ -35,12 +36,22 @@ const MOCK_HOLDINGS: Holding[] = [
 const TYPE_LABELS: Record<string, string> = { equity: "Equity", mf: "Mutual Fund", bond: "Bond", fd: "Fixed Deposit" };
 const TYPE_COLORS: Record<string, string> = { equity: "text-blue-400", mf: "text-purple-400", bond: "text-amber-400", fd: "text-emerald-400" };
 
+function parseNotes(raw: string | null): Record<string, string> {
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function InvestmentsPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [filter, setFilter] = useState<string>("all");
   const [holdingSearch, setHoldingSearch] = useState("");
   const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
-  const [holdingNotes, setHoldingNotes] = useState<Record<string, string>>({});
+  const [storedNotes, setStoredNotes] = useStoredString("bba_holding_notes");
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+  const holdingNotes = useMemo(() => ({ ...parseNotes(storedNotes), ...draftNotes }), [storedNotes, draftNotes]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,22 +63,12 @@ export default function InvestmentsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const savedNotes = localStorage.getItem("bba_holding_notes");
-    if (savedNotes) {
-      try {
-        setHoldingNotes(JSON.parse(savedNotes));
-      } catch {}
-    }
-  }, []);
-
   const updateHoldingNote = (id: string, note: string) => {
-    setHoldingNotes(prev => ({ ...prev, [id]: note }));
+    setDraftNotes(prev => ({ ...prev, [id]: note }));
   };
 
   const saveHoldingNote = (id: string) => {
-    localStorage.setItem("bba_holding_notes", JSON.stringify(holdingNotes));
+    setStoredNotes(JSON.stringify(holdingNotes));
     toast.success("Note saved");
   };
 
@@ -176,7 +177,7 @@ export default function InvestmentsPage() {
                         })}
                       </Pie>
                       <Tooltip 
-                        formatter={(value: any) => `₹${Number(value).toLocaleString()}`}
+                        formatter={(value) => `₹${Number(value).toLocaleString()}`}
                         contentStyle={{ backgroundColor: '#0b0b0b', borderColor: '#333331', borderRadius: '8px' }}
                       />
                     </PieChart>

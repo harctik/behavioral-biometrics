@@ -1,5 +1,7 @@
 "use client";
 
+import type { ApiTransaction } from "@/lib/api-types";
+import { useNow } from "@/hooks/useBrowser";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
@@ -55,8 +57,9 @@ export default function TransfersPage() {
   const [newBank, setNewBank] = useState("");
   const [beneficiaryToDelete, setBeneficiaryToDelete] = useState<string | null>(null);
 
+  const now = useNow();
   const selectedBenInfo = beneficiaries.find(b => b.id === selectedBeneficiary);
-  const isCooling = selectedBenInfo && (!selectedBenInfo.created_at || (Date.now() - new Date(selectedBenInfo.created_at).getTime()) < 24 * 60 * 60 * 1000);
+  const isCooling = selectedBenInfo && (!selectedBenInfo.created_at || (now - new Date(selectedBenInfo.created_at).getTime()) < 24 * 60 * 60 * 1000);
 
 
   useEffect(() => {
@@ -75,13 +78,13 @@ export default function TransfersPage() {
         }
         if (histRes.ok) {
           const hData = await histRes.json();
-          const mappedHistory = (hData.transactions || []).map((t: any) => ({
-            id: t.id,
+          const mappedHistory = (hData.transactions || []).map((t: ApiTransaction) => ({
+            id: String(t.id),
             to: t.merchant || "Unknown",
             amount: Number(t.amount || 0),
             date: t.date,
             incoming: t.type === "in",
-            status: t.status || (t.decision === "allow" ? "completed" : "failed")
+            status: (t.status as Transfer["status"]) || (t.decision === "allow" ? "completed" : "failed")
           }));
           setHistory(mappedHistory);
         }
@@ -189,13 +192,13 @@ export default function TransfersPage() {
       });
       if (histRes.ok) {
         const hData = await histRes.json();
-        const mappedHistory = (hData.transactions || []).map((t: any) => ({
-          id: t.id,
+        const mappedHistory = (hData.transactions || []).map((t: ApiTransaction) => ({
+          id: String(t.id),
           to: t.merchant || "Unknown",
-          amount: parseFloat(t.amount || "0"),
+          amount: parseFloat(String(t.amount || "0")),
           date: t.date,
           incoming: t.type === "in",
-          status: t.status || (t.decision === "allow" ? "completed" : "failed")
+          status: (t.status as Transfer["status"]) || (t.decision === "allow" ? "completed" : "failed")
         }));
         setHistory(mappedHistory);
       }
@@ -207,9 +210,9 @@ export default function TransfersPage() {
         setNote(""); 
         setSelectedBeneficiary(""); 
       }, 8000); // 8s to read the assessment
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      toast.error(err.message || "Transaction failed");
+      toast.error((err instanceof Error && err.message) || "Transaction failed");
     } finally {
       setSending(false);
     }
@@ -468,7 +471,7 @@ export default function TransfersPage() {
                           <div className="text-sm text-fg font-medium flex flex-wrap items-center gap-1.5">
                             {b.name}
                             {b.verified ? <Check className="w-3 h-3 text-accent-success" /> : <span className="text-[8px] text-muted border border-border rounded px-1 ml-1 bg-surface-2 font-bold tracking-widest">UNVERIFIED</span>}
-                            {(!b.created_at || (Date.now() - new Date(b.created_at).getTime()) < 24 * 60 * 60 * 1000) && (
+                            {(!b.created_at || (now - new Date(b.created_at).getTime()) < 24 * 60 * 60 * 1000) && (
                               <span className="px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[9px] font-bold rounded-sm ml-1">COOLING</span>
                             )}
                           </div>

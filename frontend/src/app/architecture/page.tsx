@@ -1,5 +1,6 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { useState, useEffect } from "react";
 import { UserPlus, LogIn, Activity, Send, ShieldAlert, Shield, CheckCircle2 } from "lucide-react";
 import { getCollector } from "@/lib/behavioral-collector";
@@ -7,7 +8,7 @@ import Link from "next/link";
 import { Mark, Wordmark } from "@/components/Mark";
 
 // Map string icon names from artifact to actual Lucide components
-const IconMap: Record<string, any> = {
+const IconMap: Record<string, LucideIcon> = {
   "user-plus": UserPlus,
   "log-in": LogIn,
   "activity": Activity,

@@ -367,7 +367,7 @@ export default function OtpPage() {
             className="w-full text-center text-xs text-muted hover:text-accent-primary transition-colors py-2 cursor-pointer mt-1 flex items-center justify-center gap-1"
           >
             <Mail className="w-3 h-3" />
-            Didn't receive it? Resend OTP
+            Didn&apos;t receive it? Resend OTP
           </button>
         )}
 

@@ -333,15 +333,22 @@ function categorizeKey(key: string): string | null {
 function collectDeviceFingerprint(): DeviceFingerprint | null {
   if (typeof window === "undefined") return null;
   try {
-    const nav = navigator as any;
+    const nav = navigator as Navigator & {
+      connection?: { effectiveType?: string };
+      mozConnection?: { effectiveType?: string };
+      webkitConnection?: { effectiveType?: string };
+      deviceMemory?: number;
+      userAgentData?: { platform?: string };
+    };
     // WebGL renderer
     let webglRenderer = "unknown";
     try {
       const canvas = document.createElement("canvas");
-      const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+      const gl = (canvas.getContext("webgl") ||
+        canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
       if (gl) {
-        const dbg = (gl as any).getExtension("WEBGL_debug_renderer_info");
-        if (dbg) webglRenderer = (gl as any).getParameter(dbg.UNMASKED_RENDERER_WEBGL) || "unknown";
+        const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+        if (dbg) webglRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || "unknown";
       }
     } catch { /* WebGL unavailable */ }
     // Pointer type
@@ -476,8 +483,9 @@ export class BehavioralCollector {
       // Collect device fingerprint once (Gap 9)
       this._deviceFingerprint = collectDeviceFingerprint();
       // Async battery level
-      if ('getBattery' in navigator && typeof (navigator as any).getBattery === 'function') {
-        (navigator as any).getBattery().then((b: any) => {
+      const batteryNav = navigator as Navigator & { getBattery?: () => Promise<{ level: number }> };
+      if (typeof batteryNav.getBattery === 'function') {
+        batteryNav.getBattery().then((b) => {
           if (this._deviceFingerprint) this._deviceFingerprint.battery_level = b.level;
         }).catch(() => {});
       }
@@ -898,11 +906,13 @@ export class BehavioralCollector {
       this.cleanupFns.push(() => window.removeEventListener("devicemotion", onMotion));
     };
 
-    if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
+    const motionEvent = DeviceMotionEvent as unknown as { requestPermission?: () => Promise<string> };
+
+    if (typeof motionEvent.requestPermission === "function") {
       // For iOS 13+: permission must be requested via user gesture.
       // We attach a one-time click listener to request it.
       const requestPerm = () => {
-        (DeviceMotionEvent as any).requestPermission()
+        motionEvent.requestPermission?.()
           .then((state: string) => {
             if (state === "granted") attach();
           })

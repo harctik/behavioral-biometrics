@@ -1,5 +1,6 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Bell, X, ShieldCheck, AlertTriangle, ArrowRightLeft, LogIn, Info } from "lucide-react";
 
@@ -12,7 +13,7 @@ interface Notification {
   read: boolean;
 }
 
-const ICON_MAP: Record<string, any> = {
+const ICON_MAP: Record<string, LucideIcon> = {
   security: ShieldCheck,
   transaction: ArrowRightLeft,
   login: LogIn,

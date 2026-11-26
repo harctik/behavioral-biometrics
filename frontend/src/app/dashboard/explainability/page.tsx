@@ -1,5 +1,7 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
+import type { EnsembleMetrics } from "@/lib/api-types";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
@@ -13,7 +15,7 @@ import { getCsrfToken } from "@/lib/auth-utils";
 interface EngineExplanation {
   id: string;
   name: string;
-  icon: any;
+  icon: LucideIcon;
   color: string;
   description: string;
   methodology: string;
@@ -75,7 +77,7 @@ export default function ExplainabilityPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const ensemble = backendMetrics?.ensemble || {};
+  const ensemble: EnsembleMetrics = backendMetrics?.ensemble ?? {};
   const featureRichness = backendMetrics?.feature_richness || 0;
 
   // Build engine explanations from live data

@@ -101,13 +101,20 @@ export default function CalibrationPage() {
   // Auto-advance from typing to mouse when enough keystrokes
   useEffect(() => {
     if (stage === "typing" && keystrokeCount >= REQUIRED_KEYSTROKES) {
-      setTimeout(() => setStage("mouse"), 500);
-    } else if (stage === "typing" && typedText.length >= currentPhrase.length * 0.9) {
-      // Phrase completed — load next phrase and clear textarea
+      const id = setTimeout(() => setStage("mouse"), 500);
+      return () => clearTimeout(id);
+    }
+  }, [keystrokeCount, stage]);
+
+  // When a phrase is complete, clear the textarea and load the next one
+  const handlePhraseInput = (value: string) => {
+    if (keystrokeCount < REQUIRED_KEYSTROKES && value.length >= currentPhrase.length * 0.9) {
       setTypedText("");
       setPhraseIndex(prev => (prev + 1) % SAMPLE_PHRASES.length);
+    } else {
+      setTypedText(value);
     }
-  }, [keystrokeCount, stage, typedText, currentPhrase]);
+  };
 
   // Auto-advance from mouse to processing when enough events
   useEffect(() => {
@@ -216,7 +223,7 @@ export default function CalibrationPage() {
                     Behavioral Enrollment
                   </h1>
                   <p className="text-slate-400 text-sm leading-relaxed mt-2 max-w-sm mx-auto">
-                    We'll learn your unique typing rhythm and mouse patterns to create your
+                    We&apos;ll learn your unique typing rhythm and mouse patterns to create your
                     behavioral biometric profile. This takes about 30 seconds.
                   </p>
                 </div>
@@ -268,7 +275,7 @@ export default function CalibrationPage() {
                   <div>
                     <h2 className="text-lg font-bold text-slate-100">Type the phrase below</h2>
                     <p className="text-xs text-slate-400">
-                      Type naturally - we're learning <em>how</em> you type, not what you type
+                      Type naturally - we&apos;re learning <em>how</em> you type, not what you type
                     </p>
                   </div>
                 </div>
@@ -282,7 +289,7 @@ export default function CalibrationPage() {
                 <textarea
                   ref={textareaRef}
                   value={typedText}
-                  onChange={(e) => setTypedText(e.target.value)}
+                  onChange={(e) => handlePhraseInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Start typing here..."
                   rows={3}
@@ -335,7 +342,7 @@ export default function CalibrationPage() {
                   <div>
                     <h2 className="text-lg font-bold text-slate-100">Move your cursor</h2>
                     <p className="text-xs text-slate-400">
-                      Move naturally around the area below - we're capturing your pointer dynamics
+                      Move naturally around the area below - we&apos;re capturing your pointer dynamics
                     </p>
                   </div>
                 </div>

@@ -36,7 +36,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [remainingAttempts, setRemainingAttempts] = useState<number | null>(null);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
-  const [lockoutCountdown, setLockoutCountdown] = useState<string>("");
+  const [countdownText, setLockoutCountdown] = useState<string>("");
+  const lockoutCountdown = lockoutUntil ? countdownText : "";
 
   // ── Phase 2: Typing Challenge ────────────────────────────────────────
   const [typedText, setTypedText] = useState("");
@@ -88,7 +89,7 @@ export default function LoginPage() {
 
   // ── Lockout countdown timer ──────────────────────────────────────────
   useEffect(() => {
-    if (!lockoutUntil) { setLockoutCountdown(""); return; }
+    if (!lockoutUntil) return;
     const tick = () => {
       const remaining = lockoutUntil - Date.now();
       if (remaining <= 0) {

@@ -1,4 +1,6 @@
 "use client";
+import type { SessionMetrics } from "@/lib/api-types";
+import { useIsClient } from "@/hooks/useBrowser";
 import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
 
 
@@ -43,9 +45,11 @@ function ChallengeContent() {
   const [confidence, setConfidence] = useState(0);
   const [fallbackMode, setFallbackMode] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [targetPhrase, setTargetPhrase] = useState("");
+  const isClient = useIsClient();
+  const [phraseSeed, setPhraseSeed] = useState(() => Math.random());
+  const targetPhrase = isClient ? PHRASES[Math.floor(phraseSeed * PHRASES.length)] : "";
   const [timeLeft, setTimeLeft] = useState(30);
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef(0);
 
   // Local real-time behavioral analysis from collector
   const [local, setLocal] = useState({
@@ -59,14 +63,14 @@ function ChallengeContent() {
   });
 
   // Backend ML ensemble (optional overlay)
-  const [backend, setBackend] = useState<any>(null);
+  const [backend, setBackend] = useState<SessionMetrics | null>(null);
 
   const reason = reasonParam === "behavioral_anomaly" && scoreParam
     ? `Behavioral confidence dropped to ${(parseFloat(scoreParam) * 100).toFixed(0)}% — unusual activity detected.`
     : reasonParam === "idle" ? "Session idle too long." : "Interaction pattern change detected.";
 
   useEffect(() => {
-    setTargetPhrase(PHRASES[Math.floor(Math.random() * PHRASES.length)]);
+    startTimeRef.current = Date.now();
     const c = getCollector(); c.setContext("STEP_UP_CHALLENGE"); c.reset(); c.start();
     return () => c.stop();
   }, []);
@@ -196,7 +200,7 @@ function ChallengeContent() {
   const ringStroke = confidence < 40 ? "stroke-red-500" : confidence < 70 ? "stroke-amber-500" : "stroke-emerald-500";
 
   // Use backend when available, else local
-  const identity = backend ? backend.authenticity_score : local.identityScore;
+  const identity = backend?.authenticity_score ?? local.identityScore;
   const liveness = backend?.ensemble?.liveness_score ?? local.livenessScore;
   const duress = backend?.ensemble?.duress_score ?? local.duressScore;
   const challengeRisk = backend?.ensemble?.challenge_risk ?? 0;
@@ -368,7 +372,7 @@ function ChallengeContent() {
                 setText("");
                 setConfidence(0);
                 setTimeLeft(30);
-                setTargetPhrase(PHRASES[Math.floor(Math.random() * PHRASES.length)]);
+                setPhraseSeed(Math.random());
                 startTimeRef.current = Date.now();
                 setIsVerifying(false);
                 const c = getCollector();

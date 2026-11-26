@@ -1,4 +1,5 @@
 "use client";
+import { useIsClient } from "@/hooks/useBrowser";
 import { Mark } from "@/components/Mark";
 
 import { FormEvent, useState, useEffect, useRef, useCallback } from "react";
@@ -60,10 +61,9 @@ export default function SignUpPage() {
 
   // ── Behavioral Typing Prompt ──────────────────────────────────────────
   // Empty on server render to avoid hydration mismatch; randomized client-side.
-  const [typingPrompt, setTypingPrompt] = useState("");
-  useEffect(() => {
-    setTypingPrompt(TYPING_PROMPTS[Math.floor(Math.random() * TYPING_PROMPTS.length)]);
-  }, []);
+  const isClient = useIsClient();
+  const [promptSeed] = useState(() => Math.random());
+  const typingPrompt = isClient ? TYPING_PROMPTS[Math.floor(promptSeed * TYPING_PROMPTS.length)] : "";
   const [typedText, setTypedText] = useState("");
   const [pasteDetected, setPasteDetected] = useState(false);
   const typingRef = useRef<HTMLTextAreaElement>(null);
@@ -153,14 +153,6 @@ export default function SignUpPage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Update typing accuracy in real-time
-  useEffect(() => {
-    setLiveStats(prev => ({
-      ...prev,
-      typingAccuracy: computeMatchAccuracy(typedText, typingPrompt),
-    }));
-  }, [typedText, typingPrompt]);
 
   // ── Password Validation ───────────────────────────────────────────────
   const passwordChecks = {
@@ -687,7 +679,7 @@ export default function SignUpPage() {
                   
                   <div className="bg-cyan-500/5 border border-cyan-500/10 rounded px-2.5 py-1.5">
                     <p className="text-[10px] text-cyan-400/80 leading-snug">
-                      Type this naturally — we're capturing your rhythm. Pasting is disabled.
+                      Type this naturally — we&apos;re capturing your rhythm. Pasting is disabled.
                     </p>
                   </div>
 
@@ -781,7 +773,7 @@ export default function SignUpPage() {
                     consistency={Math.max(0, 100 - liveStats.correctionRate)}
                     rhythm={holdTimeSeries.length > 3 ? Math.min(100, Math.round(100 - (Math.abs(liveStats.holdMean - 120) / 120) * 50)) : 0}
                     volume={Math.min(100, Math.round((liveStats.keystrokes / 40) * 100))}
-                    accuracy={liveStats.typingAccuracy}
+                    accuracy={computeMatchAccuracy(typedText, typingPrompt)}
                     size={140}
                   />
                   <span className="text-[9px] text-muted-2 font-mono mt-3 uppercase tracking-widest">Data Quality</span>

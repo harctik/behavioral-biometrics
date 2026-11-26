@@ -42,12 +42,20 @@ const MOCK_CARDS: Card[] = [
 ];
 
 // The API sends type, number, status and brand; the screen uses these names.
-function toCard(c: any): Card {
+type ApiCard = Pick<Card, "id" | "expiry" | "limit" | "spent" | "cvv"> &
+  Partial<Pick<Card, "network" | "last4" | "holder" | "frozen" | "fullNumber">> & {
+    type: string;
+    number?: string;
+    status?: string;
+    brand?: string;
+  };
+
+function toCard(c: ApiCard): Card {
   const last4 = c.last4 ?? String(c.number ?? "").slice(-4);
   return {
     ...c,
     type: String(c.type).toLowerCase() as Card["type"],
-    network: c.network ?? c.brand,
+    network: (c.network ?? c.brand) as Card["network"],
     last4,
     fullNumber: c.fullNumber ?? `•••• •••• •••• ${last4}`,
     holder: c.holder ?? "",
@@ -439,7 +447,7 @@ export default function CardsPage() {
                   <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
                   <div>
                     <div className="text-sm font-medium text-blue-400">Card is frozen</div>
-                    <p className="text-xs text-muted mt-1">All transactions on this card are temporarily blocked. Tap "Unfreeze" to re-enable.</p>
+                    <p className="text-xs text-muted mt-1">All transactions on this card are temporarily blocked. Tap &quot;Unfreeze&quot; to re-enable.</p>
                   </div>
                 </div>
               )}

@@ -16,18 +16,14 @@ function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
 
-  const [isVerifying, setIsVerifying] = useState(true);
+  const [isVerifying, setIsVerifying] = useState(() => Boolean(token));
   const [success, setSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => (token ? null : "No verification token found."));
   
   const [mfaSecret, setMfaSecret] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) {
-      setIsVerifying(false);
-      setError("No verification token found.");
-      return;
-    }
+    if (!token) return;
 
     let isMounted = true;
 

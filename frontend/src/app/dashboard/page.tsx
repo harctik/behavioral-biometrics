@@ -1,5 +1,7 @@
 "use client";
 
+import type { ApiBeneficiary, ApiTransaction } from "@/lib/api-types";
+import { useStoredString } from "@/hooks/useBrowser";
 import {
   TrendingUp, ArrowDownLeft, ArrowUpRight, ShieldAlert,
   Check, Activity, Fingerprint
@@ -74,7 +76,7 @@ function TypingRhythmWaveform() {
         const collector = getCollector();
         const snap = collector.getBufferSnapshot();
         const holds = snap.keystroke_events
-          .map((k: any) => k.hold_time)
+          .map((k) => k.hold_time)
           .filter((h: number) => h > 0 && h < 500);
         if (holds.length > 0) {
           setPoints(holds.slice(-30));
@@ -123,24 +125,22 @@ function TypingRhythmWaveform() {
 }
 
 
+interface PendingApproval {
+  txn_id: string;
+  beneficiary: string;
+  maker_id: string;
+  amount: string;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [username, setUsername] = useState("User");
-  const [demoMode, setDemoMode] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('bba_demo_mode');
-      if (saved !== null) {
-        setDemoMode(saved === 'true');
-      }
-    }
-  }, []);
+  const [storedDemoMode, setStoredDemoMode] = useStoredString('bba_demo_mode');
+  const demoMode = storedDemoMode === 'true';
 
   const toggleDemoMode = () => {
     const newVal = !demoMode;
-    setDemoMode(newVal);
-    localStorage.setItem('bba_demo_mode', newVal.toString());
+    setStoredDemoMode(String(newVal));
   };
   const { score, events, backendMetrics, enrollment, digraphProfile } = useTelemetry();
   const [currentContext, setCurrentContext] = useState<string>("DASHBOARD");
@@ -161,18 +161,18 @@ export default function DashboardPage() {
 
   // New states for tabs
   const [activeTab, setActiveTab] = useState<'retail' | 'corporate' | 'insights'>('retail');
-  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [approvalState, setApprovalState] = useState<Record<string, string>>({}); // track approval status by txn_id
 
   // Backend-driven account data
   const [balance, setBalance] = useState<number | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<{name: string, date: string, amount: string, type: 'in'|'out', category: string}[]>([]);
-  const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
+  const [beneficiaries, setBeneficiaries] = useState<ApiBeneficiary[]>([]);
 
   // Poll live behavioral stats from collector every 500ms
   useEffect(() => {
-    let prevKs = 0;
-    let prevMs = 0;
+    const prevKs = 0;
+    const prevMs = 0;
     const interval = setInterval(async () => {
       try {
         const collector = getCollector();
@@ -258,10 +258,10 @@ export default function DashboardPage() {
           if (txRes.ok) {
             const txData = await txRes.json();
             if (txData.transactions && txData.transactions.length > 0) {
-              setRecentTransactions(txData.transactions.map((tx: any) => ({
-                name: tx.merchant || tx.operation,
+              setRecentTransactions(txData.transactions.map((tx: ApiTransaction) => ({
+                name: tx.merchant || tx.operation || "Transaction",
                 date: new Date(tx.date).toLocaleDateString(),
-                amount: parseFloat(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }),
+                amount: parseFloat(String(tx.amount)).toLocaleString(undefined, { minimumFractionDigits: 2 }),
                 type: (tx.type as 'in' | 'out') || 'out',
                 category: tx.category || 'Transfer'
               })));
@@ -451,7 +451,7 @@ export default function DashboardPage() {
           setTransferError(assessData.error || assessData.msg || "Transaction denied.");
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Transfer failed:", err);
       // Network errors should not hard-block — offer retry
       setTransferState('blocked');
@@ -1137,7 +1137,7 @@ export default function DashboardPage() {
                     { label: 'Temporal', key: 'temporal_rhythm_risk' },
                     { label: 'Bot Detect', key: 'challenge_bot_risk' },
                   ].map(({ label, key }) => {
-                    const val = backendMetrics.category_scores[key] || 0;
+                    const val = backendMetrics.category_scores?.[key] || 0;
                     return (
                       <div key={key} className="flex items-center gap-1.5">
                         <span className="text-[9px] text-muted w-14">{label}</span>
