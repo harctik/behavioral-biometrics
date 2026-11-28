@@ -16,12 +16,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Any, Union
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
 import requests
-
-from .error_handling import ExternalServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -117,10 +115,11 @@ class Webhook:
     def validate_url(self) -> bool:
         """Validate the webhook URL against SSRF attacks."""
         try:
-            import socket
             import ipaddress
+            import socket
+
             result = urlparse(self.url)
-            if result.scheme not in ('http', 'https'):
+            if result.scheme not in ("http", "https"):
                 return False
             if not result.netloc:
                 return False
@@ -138,7 +137,8 @@ class Webhook:
                     or ip_obj.is_reserved
                     or ip_obj.is_unspecified
                     or str(ip_obj).startswith("169.254.")
-                    or str(ip_obj) == "0.0.0.0"
+                    or str(ip_obj)
+                    == "0.0.0.0"  # nosec B104 - compares addresses, binds nothing
                 ):
                     return False
             except socket.gaierror:
@@ -162,7 +162,7 @@ class WebhookPayload:
         self.data = data
         self.webhook_id = (
             webhook_id
-            or f"wh_{int(time.time())}_{hashlib.md5(str(data).encode()).hexdigest()[:8]}"
+            or f"wh_{int(time.time())}_{hashlib.md5(str(data).encode(), usedforsecurity=False).hexdigest()[:8]}"
         )
         self.timestamp = timestamp or datetime.utcnow()
         self.attempts = 0

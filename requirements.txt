@@ -8,9 +8,11 @@ gunicorn>=21.0,<23.0
 pydantic>=2.12,<3.0
 pydantic-settings>=2.1,<3.0
 email-validator>=2.1,<3.0
+# 2.9.2 fixes known CVEs but needs Python 3.11, which Docker and Render use.
+dnspython>=2.9.2,<3.0; python_version >= "3.11"
 phonenumbers>=8.13,<10.0
 python-dotenv>=1.0,<2.0
-cryptography>=42.0,<43.0
+cryptography>=50.0,<51.0
 bcrypt>=4.1,<5.0
 pyotp>=2.9,<3.0
 
@@ -28,7 +30,7 @@ SQLAlchemy>=2.0,<3.0
 psycopg2-binary==2.9.9
 
 # Security and Compliance
-cffi>=1.15,<2.0
+cffi>=2.0,<3.0
 requests>=2.31,<3.0
 celery==5.4.0
 resend>=1.1.0,<3.0

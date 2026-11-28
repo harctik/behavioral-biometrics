@@ -1,6 +1,6 @@
-from cryptography.fernet import Fernet
 from datetime import timedelta
 
+from cryptography.fernet import Fernet
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -107,7 +107,9 @@ class Settings(BaseSettings):
     SESSION_INACTIVITY_TIMEOUT_MINUTES: int = 15  # RBI mandate for netbanking
     MAX_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_DURATION_MINUTES: int = 15
-    SUSPICIOUS_LOGIN_ALERT_THRESHOLD: int = 3  # Send alert email after this many failed attempts
+    SUSPICIOUS_LOGIN_ALERT_THRESHOLD: int = (
+        3  # Send alert email after this many failed attempts
+    )
     CSRF_ENABLED: bool = True
     CSRF_HEADER_NAME: str = "X-CSRF-Token"
     # Feature extraction configuration
@@ -250,7 +252,7 @@ class Settings(BaseSettings):
             v = v.strip()
             # Normalise legacy postgres:// scheme to postgresql:// for SQLAlchemy 2.x
             if v.startswith("postgres://"):
-                v = "postgresql://" + v[len("postgres://"):]
+                v = "postgresql://" + v[len("postgres://") :]
         return v
 
     def init_app(self, app):

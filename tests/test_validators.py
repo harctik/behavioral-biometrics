@@ -6,28 +6,28 @@ boolean, UUID, datetime, IP, URL) and schema validation.
 
 import os
 import sys
+
 import pytest
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if root not in sys.path:
     sys.path.insert(0, root)
 
-from app.validators import (
-    validate_string,
-    validate_email,
-    validate_password,
-    validate_integer,
-    validate_float,
-    validate_boolean,
-    validate_uuid,
-    validate_ip_address,
-    validate_url,
-    validate_list,
-    validate_dict,
-    validate_schema,
-)
 from app.error_handling import ValidationError
-
+from app.validators import (
+    validate_boolean,
+    validate_dict,
+    validate_email,
+    validate_float,
+    validate_integer,
+    validate_ip_address,
+    validate_list,
+    validate_password,
+    validate_schema,
+    validate_string,
+    validate_url,
+    validate_uuid,
+)
 
 # ============================================================================
 # validate_string

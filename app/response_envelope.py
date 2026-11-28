@@ -14,13 +14,16 @@ Every API response should follow this structure:
 """
 import datetime
 import os
-from flask import g, jsonify, make_response
 from typing import Any, Dict, Optional
+
+from flask import g
 
 APP_VERSION = os.environ.get("APP_VERSION", "2.0.0")
 
 
-def success_response(data: Any = None, status: int = 200, meta: Optional[Dict] = None) -> tuple:
+def success_response(
+    data: Any = None, status: int = 200, meta: Optional[Dict] = None
+) -> tuple:
     """Build a standardized success response."""
     envelope = {
         "success": True,

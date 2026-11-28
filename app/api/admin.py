@@ -1,20 +1,19 @@
 """Admin API blueprint."""
-from flask import request
-from flask_restx import Namespace, Resource
-from flask_jwt_extended import jwt_required
-import hashlib
-import json
 import logging
 
-from app.extensions import get_db, limiter
+from flask import request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource
+
 from app.api.helpers import (
+    get_current_user_id,
     get_session_cached,
-    require_role,
     require_aal,
     require_mfa,
-    get_current_user_id,
+    require_role,
     validate_session_ownership,
 )
+from app.extensions import get_db, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,8 @@ admin_ns = Namespace("admin", description="Administrative operations")
 
 
 def serialize_dates(obj):
-    from datetime import datetime, date
+    from datetime import date, datetime
+
     if isinstance(obj, dict):
         return {k: serialize_dates(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -80,10 +80,10 @@ class AdminAuditEvidence(Resource):
         err = validate_session_ownership(s)
         if err:
             return err
-            
+
         target_uid = request.args.get("target_user_id")
         uid_to_query = int(target_uid) if target_uid else None
-        
+
         evidence = get_db().get_audit_evidence(user_id=uid_to_query, limit=200)
         return serialize_dates({"evidence": evidence}), 200
 
@@ -174,7 +174,7 @@ class AdminLiveSessions(Resource):
         db = get_db()
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            
+
             cursor.execute(
                 """
                 SELECT s.session_id, s.user_id, s.ip_address, s.user_agent, s.assurance_level, s.last_activity, u.username
@@ -185,7 +185,7 @@ class AdminLiveSessions(Resource):
                 """
             )
             rows = cursor.fetchall()
-            
+
         sessions = []
         for r in rows:
             # Try to compute real risk from the user's most recent behavioral assessment
@@ -199,47 +199,57 @@ class AdminLiveSessions(Resource):
                            FROM audit_evidence
                            WHERE user_id = ? AND action IN ('behavioral_assessment', 'session_metrics')
                            ORDER BY created_at DESC LIMIT 1""",
-                        (r['user_id'],),
+                        (r["user_id"],),
                     ).fetchone()
                     if latest:
                         import json as _json
-                        meta = latest['metadata']
+
+                        meta = latest["metadata"]
                         if isinstance(meta, str):
                             try:
                                 meta = _json.loads(meta)
                             except (ValueError, TypeError):
                                 meta = {}
                         if meta:
-                            auth = float(meta.get('authenticity_score', 0) or 0)
+                            auth = float(meta.get("authenticity_score", 0) or 0)
                             user_risk = round(max(0, 1 - auth), 2)
-                            user_keystroke = round(float(meta.get('keystroke_score', 0.5) or 0.5), 2)
-                            user_pointer = round(float(meta.get('pointer_score', 0.5) or 0.5), 2)
+                            user_keystroke = round(
+                                float(meta.get("keystroke_score", 0.5) or 0.5), 2
+                            )
+                            user_pointer = round(
+                                float(meta.get("pointer_score", 0.5) or 0.5), 2
+                            )
             except Exception:
                 pass
 
             # Fallback status mapping from assurance level
-            al = r['assurance_level'] or 'unknown'
-            if al == 'blocked':
-                status = 'Blocked'
+            al = r["assurance_level"] or "unknown"
+            if al == "blocked":
+                status = "Blocked"
                 user_risk = 0.95
-            elif al in ('mfa', 'pwd'):
-                status = 'Verified'
+            elif al in ("mfa", "pwd"):
+                status = "Verified"
             else:
-                status = 'Step-Up MFA'
+                status = "Step-Up MFA"
 
-            sessions.append({
-                "id": f"usr_{r['user_id']}",
-                "username": r['username'],
-                "ip": r['ip_address'],
-                "device": r['user_agent'][:30] if r['user_agent'] else "Unknown",
-                "risk": user_risk,
-                "keystroke": user_keystroke,
-                "pointer": user_pointer,
-                "status": status,
-                "time": str(r['last_activity']).split('.')[0].split(' ')[-1] if r['last_activity'] else ""
-            })
-            
+            sessions.append(
+                {
+                    "id": f"usr_{r['user_id']}",
+                    "username": r["username"],
+                    "ip": r["ip_address"],
+                    "device": r["user_agent"][:30] if r["user_agent"] else "Unknown",
+                    "risk": user_risk,
+                    "keystroke": user_keystroke,
+                    "pointer": user_pointer,
+                    "status": status,
+                    "time": str(r["last_activity"]).split(".")[0].split(" ")[-1]
+                    if r["last_activity"]
+                    else "",
+                }
+            )
+
         return {"sessions": sessions}, 200
+
 
 @admin_ns.route("/dashboard-stats")
 class AdminDashboardStats(Resource):
@@ -250,10 +260,12 @@ class AdminDashboardStats(Resource):
             return {"error": "Forbidden"}, 403
 
         db = get_db()
-        from datetime import datetime as _dt, timedelta, timezone
+        from datetime import datetime as _dt
+        from datetime import timedelta, timezone
+
         _now = _dt.now(timezone.utc)
         cutoff_1d = (_now - timedelta(days=1)).isoformat()
-        
+
         with db.get_connection() as conn:
             cursor = conn.cursor()
 
@@ -261,32 +273,34 @@ class AdminDashboardStats(Resource):
             cursor.execute(
                 "SELECT COUNT(*) as count FROM sessions WHERE is_active AND last_activity > ?",
                 # last_activity is stored as "YYYY-MM-DD HH:MM:SS" in UTC
-                ((_now - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S"),)
+                ((_now - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S"),),
             )
             active_sessions = cursor.fetchone()["count"]
 
             # Anomalies (last 24h)
             cursor.execute(
                 "SELECT COUNT(*) as count FROM auth_events WHERE event_type = 'anomaly' AND timestamp > ?",
-                (cutoff_1d,)
+                (cutoff_1d,),
             )
             anomalies = cursor.fetchone()["count"]
 
             # Duress Alerts (last 24h)
             cursor.execute(
                 "SELECT COUNT(*) as count FROM auth_events WHERE event_type = 'duress' AND timestamp > ?",
-                (cutoff_1d,)
+                (cutoff_1d,),
             )
             duress_alerts = cursor.fetchone()["count"]
 
         # Compute real ML model availability + latency probe
         import time as _time
+
         model_count = 0
         total_models = 8
         latency_ms = 0.0
         try:
             t0 = _time.perf_counter()
             from app.models.ml_models import EnsembleBehavioralClassifier
+
             model_count = total_models  # If import succeeds, models are available
             latency_ms = round((_time.perf_counter() - t0) * 1000, 1)
         except ImportError:

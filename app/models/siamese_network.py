@@ -11,15 +11,14 @@ comparing their behavioral embeddings.
 Inference target: 15ms per comparison.
 """
 
+import logging
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
 from sklearn.preprocessing import StandardScaler
-from typing import List, Dict, Tuple, Optional
-import joblib
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +59,7 @@ class SiameseEncoder(nn.Module):
 
 
 from app.models.base import FeatureConsistencyMixin
+
 
 class SiameseNetwork(nn.Module, FeatureConsistencyMixin):
     """Siamese Network for behavioral identity matching.
@@ -303,7 +303,9 @@ class SiameseNetwork(nn.Module, FeatureConsistencyMixin):
     def load(self, path: str) -> bool:
         """Load Siamese network state."""
         try:
-            checkpoint = torch.load(path, weights_only=False)
+            # Unpickles the sklearn scaler, so loading can run code:
+            # only load checkpoints this application wrote.
+            checkpoint = torch.load(path, weights_only=False)  # nosec B614
             self.load_state_dict(checkpoint["state_dict"])
             self.scaler = checkpoint["scaler"]
             self.feature_names = checkpoint.get("feature_names")

@@ -40,18 +40,18 @@ logger = logging.getLogger(__name__)
 # Configurable ensemble weights — sum to 1.0.
 # Override at runtime via ``ENSEMBLE_WEIGHTS.update(...)`` for auto-calibration.
 ENSEMBLE_WEIGHTS: Dict[str, float] = {
-    "cognitive":           0.12,
-    "duress":              0.12,
-    "liveness":            0.09,
+    "cognitive": 0.12,
+    "duress": 0.12,
+    "liveness": 0.09,
     "invisible_challenge": 0.08,
     "device_intelligence": 0.06,
-    "composite_fraud":     0.05,
-    "passive_enrollment":  0.06,
-    "feature_selection":   0.08,
-    "transaction":         0.09,
-    "replay_detection":    0.09,
-    "concept_drift":       0.04,
-    "digraph_match":       0.12,
+    "composite_fraud": 0.05,
+    "passive_enrollment": 0.06,
+    "feature_selection": 0.08,
+    "transaction": 0.09,
+    "replay_detection": 0.09,
+    "concept_drift": 0.04,
+    "digraph_match": 0.12,
 }
 
 # Lazy singletons — avoids import-time cost for numpy/scipy
@@ -60,6 +60,7 @@ _duress_detector = None
 _liveness_detector = None
 
 import threading
+
 _cognitive_lock = threading.Lock()
 _duress_lock = threading.Lock()
 _liveness_lock = threading.Lock()
@@ -71,6 +72,7 @@ def _get_cognitive_engine():
         with _cognitive_lock:
             if _cognitive_engine is None:
                 from app.models.cognitive_engine import CognitiveEngine
+
                 _cognitive_engine = CognitiveEngine()
     return _cognitive_engine
 
@@ -81,6 +83,7 @@ def _get_duress_detector():
         with _duress_lock:
             if _duress_detector is None:
                 from app.models.duress_detector import DuressDetector
+
                 _duress_detector = DuressDetector()
     return _duress_detector
 
@@ -91,6 +94,7 @@ def _get_liveness_detector():
         with _liveness_lock:
             if _liveness_detector is None:
                 from app.models.liveness_detector import LivenessDetector
+
                 _liveness_detector = LivenessDetector()
     return _liveness_detector
 
@@ -272,7 +276,8 @@ def score_with_ensemble(
             enrollment_mgr = get_enrollment_manager()
             session_context = {
                 "is_new_device": device_risk > 0.6,
-                "is_new_ip": device_result.get("flags") and any("ip" in f.lower() for f in device_result["flags"])
+                "is_new_ip": device_result.get("flags")
+                and any("ip" in f.lower() for f in device_result["flags"]),
             }
             enrollment_result = enrollment_mgr.ingest_session_data(
                 user_id=int(user_id),
@@ -294,22 +299,37 @@ def score_with_ensemble(
                     # Extract per-key hold and per-digraph flight from keystroke features
                     digraph_input = {
                         "per_key_hold": keystroke_features.get("per_key_hold", {}),
-                        "per_digraph_flight": keystroke_features.get("per_digraph_flight", {}),
+                        "per_digraph_flight": keystroke_features.get(
+                            "per_digraph_flight", {}
+                        ),
                     }
                     # If no per_key data, try to synthesize from hold_time features
-                    if not digraph_input["per_key_hold"] and "hold_time_mean" in extended_features:
-                        digraph_input["per_key_hold"] = {"_aggregate": {
-                            "mean": extended_features.get("hold_time_mean", 70),
-                            "std": extended_features.get("hold_time_std", 12),
-                            "count": 1,
-                        }}
-                    if not digraph_input["per_digraph_flight"] and "flight_time_mean" in extended_features:
-                        digraph_input["per_digraph_flight"] = {"_aggregate": {
-                            "mean": extended_features.get("flight_time_mean", 110),
-                            "std": extended_features.get("flight_time_std", 15),
-                            "count": 1,
-                        }}
-                    if digraph_input["per_key_hold"] or digraph_input["per_digraph_flight"]:
+                    if (
+                        not digraph_input["per_key_hold"]
+                        and "hold_time_mean" in extended_features
+                    ):
+                        digraph_input["per_key_hold"] = {
+                            "_aggregate": {
+                                "mean": extended_features.get("hold_time_mean", 70),
+                                "std": extended_features.get("hold_time_std", 12),
+                                "count": 1,
+                            }
+                        }
+                    if (
+                        not digraph_input["per_digraph_flight"]
+                        and "flight_time_mean" in extended_features
+                    ):
+                        digraph_input["per_digraph_flight"] = {
+                            "_aggregate": {
+                                "mean": extended_features.get("flight_time_mean", 110),
+                                "std": extended_features.get("flight_time_std", 15),
+                                "count": 1,
+                            }
+                        }
+                    if (
+                        digraph_input["per_key_hold"]
+                        or digraph_input["per_digraph_flight"]
+                    ):
                         enrollment_mgr.ingest_digraph_profile(
                             user_id=int(user_id),
                             digraph_profile=digraph_input,
@@ -378,22 +398,32 @@ def score_with_ensemble(
     if session_history:
         try:
             from app.models.gan_adversarial import LivenessDetector as GANLiveness
+
             gan_detector = GANLiveness()
             # Analyze entropy of multiple features to detect replayed/synthetic streams
             # Try different feature keys that exist in our extended features
             best_replay = {"replay_probability": 0.0}
-            for fkey in ("typing_hold_variance", "flight_time_cv", "bigram_speed_mean",
-                         "correction_rate", "mouse_acceleration_mean"):
+            for fkey in (
+                "typing_hold_variance",
+                "flight_time_cv",
+                "bigram_speed_mean",
+                "correction_rate",
+                "mouse_acceleration_mean",
+            ):
                 try:
                     r = gan_detector.check_entropy(session_history, fkey)
-                    if r.get("sufficient_data") and r.get("replay_probability", 0) > best_replay.get("replay_probability", 0):
+                    if r.get("sufficient_data") and r.get(
+                        "replay_probability", 0
+                    ) > best_replay.get("replay_probability", 0):
                         best_replay = r
                 except Exception:
                     pass
             replay_result = best_replay
             if replay_result.get("is_suspicious"):
                 replay_risk = replay_result.get("replay_probability", 0.0)
-                result["ensemble_flags"].append(f"replay_detected:prob={replay_risk:.2f}")
+                result["ensemble_flags"].append(
+                    f"replay_detected:prob={replay_risk:.2f}"
+                )
         except Exception as exc:
             logger.warning("GAN LivenessDetector failed: %s", exc)
 
@@ -405,13 +435,19 @@ def score_with_ensemble(
     if session_history and len(session_history) > 10:
         try:
             from app.models.adwin_drift import get_adwin_detector
+
             adwin = get_adwin_detector()
             drift_result = adwin.detect(
-                stream=[s.get("bigram_speed_mean", s.get("flight_time_cv", 0)) for s in session_history]
+                stream=[
+                    s.get("bigram_speed_mean", s.get("flight_time_cv", 0))
+                    for s in session_history
+                ]
             )
             drift_risk = drift_result.get("drift_probability", 0.0)
             if drift_risk > 0.5:
-                result["ensemble_flags"].append(f"adwin:concept_drift_detected({drift_risk:.2f})")
+                result["ensemble_flags"].append(
+                    f"adwin:concept_drift_detected({drift_risk:.2f})"
+                )
         except Exception as exc:
             logger.warning("ADWIN drift detection failed: %s", exc)
 
@@ -423,6 +459,7 @@ def score_with_ensemble(
     if user_id:
         try:
             from app.models.passive_enrollment import get_enrollment_manager
+
             em = get_enrollment_manager()
             dgp_state = em._load_digraph_state(int(user_id))
             if dgp_state and dgp_state.get("per_key_hold"):
@@ -430,9 +467,14 @@ def score_with_ensemble(
                 if keystroke_features:
                     incoming_profile = {
                         "per_key_hold": keystroke_features.get("per_key_hold", {}),
-                        "per_digraph_flight": keystroke_features.get("per_digraph_flight", {}),
+                        "per_digraph_flight": keystroke_features.get(
+                            "per_digraph_flight", {}
+                        ),
                     }
-                    if incoming_profile["per_key_hold"] or incoming_profile["per_digraph_flight"]:
+                    if (
+                        incoming_profile["per_key_hold"]
+                        or incoming_profile["per_digraph_flight"]
+                    ):
                         digraph_match_score = em._compute_digraph_match_score(
                             dgp_state, incoming_profile
                         )
@@ -464,18 +506,19 @@ def score_with_ensemble(
 
     # Named engine signals for attribution
     engine_signals = {
-        "cognitive":         cognitive_risk,
-        "duress":            duress_score,
-        "liveness":          1.0 - liveness_score,   # Inverted: low liveness = high risk
+        "cognitive": cognitive_risk,
+        "duress": duress_score,
+        "liveness": 1.0 - liveness_score,  # Inverted: low liveness = high risk
         "invisible_challenge": challenge_risk,
         "device_intelligence": device_risk,
-        "composite_fraud":   max(fraud_score, social_eng),
+        "composite_fraud": max(fraud_score, social_eng),
         "passive_enrollment": 1.0 - enrollment_match,  # Inverted: low match = high risk
-        "feature_selection":  1.0 - weighted_match,     # Inverted: mismatch = risk
-        "transaction":       txn_risk,
-        "replay_detection":  replay_risk,
-        "concept_drift":     drift_risk,
-        "digraph_match":     (1.0 - digraph_match_score) * digraph_confidence,  # Weighted by confidence
+        "feature_selection": 1.0 - weighted_match,  # Inverted: mismatch = risk
+        "transaction": txn_risk,
+        "replay_detection": replay_risk,
+        "concept_drift": drift_risk,
+        "digraph_match": (1.0 - digraph_match_score)
+        * digraph_confidence,  # Weighted by confidence
     }
 
     # Configurable weights — keys must match engine_signals
@@ -507,7 +550,10 @@ def score_with_ensemble(
     non_zero_signals = [v for v in engine_signals.values() if v > 0.01]
     if len(non_zero_signals) >= 3:
         import statistics
-        signal_std = statistics.stdev(non_zero_signals) if len(non_zero_signals) > 1 else 0.0
+
+        signal_std = (
+            statistics.stdev(non_zero_signals) if len(non_zero_signals) > 1 else 0.0
+        )
         # Low variance = high consensus = high confidence
         risk_confidence = round(max(0.1, min(1.0, 1.0 - signal_std)), 4)
     else:
@@ -518,6 +564,7 @@ def score_with_ensemble(
     synthetic_probability = 0.0
     try:
         from app.models.gan_adversarial import GANAdversarialDetector
+
         gan = GANAdversarialDetector()
         gan_result = gan.analyze(extended_features)
         synthetic_probability = gan_result.get("synthetic_probability", 0.0)
@@ -550,7 +597,8 @@ def score_with_ensemble(
         "block": round(block_threshold, 2),
         "step_up": round(step_up_threshold, 2),
         "confidence_adjusted": risk_confidence < 0.5,
-        "enrollment_adjusted": enrollment_result.get("enrollment_phase") == "collecting",
+        "enrollment_adjusted": enrollment_result.get("enrollment_phase")
+        == "collecting",
     }
 
     # Collect flags from cognitive
@@ -627,101 +675,127 @@ def score_with_bayesian_fusion(
 
     # 1. Cognitive
     cog = legacy.get("cognitive_analysis") or {}
-    evidences.append(EngineEvidence(
-        engine_name="cognitive",
-        risk_score=cog.get("cognitive_risk", 0.0),
-        confidence=0.8 if cog else 0.0,
-        flags=cog.get("cognitive_flags", []),
-        raw_output=cog,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="cognitive",
+            risk_score=cog.get("cognitive_risk", 0.0),
+            confidence=0.8 if cog else 0.0,
+            flags=cog.get("cognitive_flags", []),
+            raw_output=cog,
+        )
+    )
 
     # 2. Duress
-    evidences.append(EngineEvidence(
-        engine_name="duress",
-        risk_score=legacy.get("duress_score", 0.0),
-        confidence=0.9 if legacy.get("duress_score", 0) > 0 else 0.0,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="duress",
+            risk_score=legacy.get("duress_score", 0.0),
+            confidence=0.9 if legacy.get("duress_score", 0) > 0 else 0.0,
+        )
+    )
 
     # 3. Liveness (inverted: low liveness = high risk)
     liveness = legacy.get("liveness_score", 1.0)
-    evidences.append(EngineEvidence(
-        engine_name="liveness",
-        risk_score=1.0 - liveness,
-        confidence=0.85 if liveness < 1.0 else 0.1,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="liveness",
+            risk_score=1.0 - liveness,
+            confidence=0.85 if liveness < 1.0 else 0.1,
+        )
+    )
 
     # 4. Invisible Challenge
-    evidences.append(EngineEvidence(
-        engine_name="invisible_challenge",
-        risk_score=legacy.get("challenge_risk", 0.0),
-        confidence=0.7 if legacy.get("challenge_risk", 0) > 0 else 0.0,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="invisible_challenge",
+            risk_score=legacy.get("challenge_risk", 0.0),
+            confidence=0.7 if legacy.get("challenge_risk", 0) > 0 else 0.0,
+        )
+    )
 
     # 5. Device Intelligence
-    evidences.append(EngineEvidence(
-        engine_name="device_intelligence",
-        risk_score=legacy.get("device_risk", 0.0),
-        confidence=0.8 if legacy.get("device_risk", 0) > 0 else 0.0,
-        flags=(legacy.get("device_analysis") or {}).get("flags", []),
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="device_intelligence",
+            risk_score=legacy.get("device_risk", 0.0),
+            confidence=0.8 if legacy.get("device_risk", 0) > 0 else 0.0,
+            flags=(legacy.get("device_analysis") or {}).get("flags", []),
+        )
+    )
 
     # 6. Composite Fraud
     comp = legacy.get("composite_analysis") or {}
-    comp_risk = max(comp.get("fraud_pattern_score", 0.0), comp.get("social_eng_score", 0.0))
-    evidences.append(EngineEvidence(
-        engine_name="composite_fraud",
-        risk_score=comp_risk,
-        confidence=0.7 if comp_risk > 0 else 0.0,
-        flags=comp.get("composite_flags", []),
-    ))
+    comp_risk = max(
+        comp.get("fraud_pattern_score", 0.0), comp.get("social_eng_score", 0.0)
+    )
+    evidences.append(
+        EngineEvidence(
+            engine_name="composite_fraud",
+            risk_score=comp_risk,
+            confidence=0.7 if comp_risk > 0 else 0.0,
+            flags=comp.get("composite_flags", []),
+        )
+    )
 
     # 7. Passive Enrollment (inverted: low match = high risk)
     enrollment = legacy.get("enrollment_status") or {}
     match_score = enrollment.get("match_score", 0.5)
-    evidences.append(EngineEvidence(
-        engine_name="passive_enrollment",
-        risk_score=1.0 - match_score,
-        confidence=0.8 if enrollment.get("enrolled") else 0.1,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="passive_enrollment",
+            risk_score=1.0 - match_score,
+            confidence=0.8 if enrollment.get("enrolled") else 0.1,
+        )
+    )
 
     # 8. Feature Selection (inverted: mismatch = risk)
     weighted_match = legacy.get("weighted_match_score", 0.0)
-    evidences.append(EngineEvidence(
-        engine_name="feature_selection",
-        risk_score=1.0 - weighted_match,
-        confidence=0.75 if weighted_match > 0 else 0.0,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="feature_selection",
+            risk_score=1.0 - weighted_match,
+            confidence=0.75 if weighted_match > 0 else 0.0,
+        )
+    )
 
     # 9. Transaction
     txn = legacy.get("transaction_risk") or {}
     txn_risk_val = txn.get("transaction_risk", 0.0) if isinstance(txn, dict) else 0.0
-    evidences.append(EngineEvidence(
-        engine_name="transaction",
-        risk_score=txn_risk_val,
-        confidence=0.85 if txn_risk_val > 0 else 0.0,
-        flags=txn.get("flags", []) if isinstance(txn, dict) else [],
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="transaction",
+            risk_score=txn_risk_val,
+            confidence=0.85 if txn_risk_val > 0 else 0.0,
+            flags=txn.get("flags", []) if isinstance(txn, dict) else [],
+        )
+    )
 
     # 10. Replay Detection
-    evidences.append(EngineEvidence(
-        engine_name="replay_detection",
-        risk_score=legacy.get("replay_risk", 0.0),
-        confidence=0.8 if legacy.get("replay_risk", 0) > 0 else 0.0,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="replay_detection",
+            risk_score=legacy.get("replay_risk", 0.0),
+            confidence=0.8 if legacy.get("replay_risk", 0) > 0 else 0.0,
+        )
+    )
 
     # 11. Concept Drift
-    evidences.append(EngineEvidence(
-        engine_name="concept_drift",
-        risk_score=legacy.get("drift_risk", 0.0),
-        confidence=0.6 if legacy.get("drift_risk", 0) > 0 else 0.0,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="concept_drift",
+            risk_score=legacy.get("drift_risk", 0.0),
+            confidence=0.6 if legacy.get("drift_risk", 0) > 0 else 0.0,
+        )
+    )
 
     # 12. GAN Adversarial
-    evidences.append(EngineEvidence(
-        engine_name="gan_adversarial",
-        risk_score=legacy.get("synthetic_probability", 0.0),
-        confidence=0.7 if legacy.get("synthetic_probability", 0) > 0 else 0.0,
-    ))
+    evidences.append(
+        EngineEvidence(
+            engine_name="gan_adversarial",
+            risk_score=legacy.get("synthetic_probability", 0.0),
+            confidence=0.7 if legacy.get("synthetic_probability", 0) > 0 else 0.0,
+        )
+    )
 
     # Run Bayesian fusion
     fusion = BayesianRiskFusion(enrollment_phase=enrollment_phase)
@@ -736,7 +810,9 @@ def score_with_bayesian_fusion(
         "evidence_trail": result.evidence_trail,
         "top_risk_drivers": result.top_risk_drivers,
         "fusion_time_ms": result.execution_time_ms,
-        "total_time_ms": round((time.monotonic() - t0) * 1000 + result.execution_time_ms, 2),
+        "total_time_ms": round(
+            (time.monotonic() - t0) * 1000 + result.execution_time_ms, 2
+        ),
         "engines_used": result.engines_used,
         "engines_skipped": result.engines_skipped,
         "adaptive_thresholds": fusion._thresholds,
@@ -750,4 +826,3 @@ def score_with_bayesian_fusion(
         # Pass through all flags
         "ensemble_flags": legacy.get("ensemble_flags", []),
     }
-

@@ -1,35 +1,39 @@
-import json
 import hashlib
+import json
+import logging
+import os
+import re
 import secrets
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
 import bcrypt
 import pyotp
-import re
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, List, Tuple
-import os
-import logging
-from contextlib import contextmanager
-from typing import Any, Union
-from app.config import Settings
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
+
+from app.config import Settings
 
 _DUMMY_HASH = bcrypt.hashpw(b"dummy-constant-time-padding", bcrypt.gensalt())
 logger = logging.getLogger(__name__)
 
+
 class QueryAdapter:
     """Wraps SQLAlchemy Connection to behave like DBAPI cursor and auto-translate parameters."""
+
     def __init__(self, conn):
         self.conn = conn
         self._result = None
 
     def cursor(self):
         return self
-        
+
     def execute(self, query, params=None):
         if params:
             param_dict = {}
             if isinstance(params, (tuple, list)):
+
                 def repl(match):
                     idx = len(param_dict)
                     if idx < len(params):
@@ -37,8 +41,8 @@ class QueryAdapter:
                         param_dict[key] = params[idx]
                         return f":{key}"
                     return match.group(0)
-                
-                query = re.sub(r'(\?|%s)', repl, query)
+
+                query = re.sub(r"(\?|%s)", repl, query)
             elif isinstance(params, dict):
                 param_dict = params
             self._result = self.conn.execute(text(query), param_dict)
@@ -53,7 +57,7 @@ class QueryAdapter:
         if row:
             return dict(row._mapping)
         return None
-        
+
     def fetchall(self):
         if not self._result:
             return []
@@ -61,7 +65,7 @@ class QueryAdapter:
 
     def commit(self):
         pass
-        
+
     def rollback(self):
         pass
 
@@ -71,15 +75,24 @@ class QueryAdapter:
             return self._result.lastrowid
         return None
 
+
 class DatabaseManager:
     """Manages all database operations for the continuous authentication system"""
 
     def __init__(self, db_path: str):
         self.db_path = db_path
-        
+
         # Configure SQLAlchemy Engine
-        if self.db_path.startswith("postgresql://") or self.db_path.startswith("postgres://"):
-            self.engine = create_engine(self.db_path, pool_size=5, max_overflow=10, pool_timeout=30, pool_recycle=1800)
+        if self.db_path.startswith("postgresql://") or self.db_path.startswith(
+            "postgres://"
+        ):
+            self.engine = create_engine(
+                self.db_path,
+                pool_size=5,
+                max_overflow=10,
+                pool_timeout=30,
+                pool_recycle=1800,
+            )
             self.is_pg = True
         else:
             if self.db_path != ":memory:" and not self.db_path.startswith("sqlite"):
@@ -91,7 +104,7 @@ class DatabaseManager:
             else:
                 self.engine = create_engine(self.db_path)
             self.is_pg = False
-            
+
         self.init_database()
 
     def init_database(self):
@@ -149,17 +162,12 @@ class DatabaseManager:
             # Retrofit existing databases safely — use information_schema
             # on PostgreSQL to avoid poisoning the transaction.
             self._safe_add_column(
-                cursor, "users", "email_verified",
-                f"BOOLEAN DEFAULT {_bool_false}"
+                cursor, "users", "email_verified", f"BOOLEAN DEFAULT {_bool_false}"
             )
             self._safe_add_column(
-                cursor, "users", "mfa_enabled",
-                f"BOOLEAN DEFAULT {_bool_false}"
+                cursor, "users", "mfa_enabled", f"BOOLEAN DEFAULT {_bool_false}"
             )
-            self._safe_add_column(
-                cursor, "users", "typing_prompt",
-                "TEXT"
-            )
+            self._safe_add_column(cursor, "users", "typing_prompt", "TEXT")
 
             # ── Sessions ────────────────────────────────────────────────────
             cursor.execute(
@@ -387,7 +395,7 @@ class DatabaseManager:
 
             # ── Digraph profiles (persisted Bayesian posteriors) ─────────────
             cursor.execute(
-                f"""
+                """
                 CREATE TABLE IF NOT EXISTS digraph_profiles (
                     user_id INTEGER PRIMARY KEY,
                     profile_data TEXT NOT NULL,
@@ -424,7 +432,7 @@ class DatabaseManager:
 
             # ── Enrollment state (durable passive enrollment profiles) ───────
             cursor.execute(
-                f"""
+                """
                 CREATE TABLE IF NOT EXISTS enrollment_state (
                     user_id INTEGER PRIMARY KEY,
                     state_json TEXT NOT NULL,
@@ -458,8 +466,12 @@ class DatabaseManager:
 
             # ── Enhanced session columns ─────────────────────────────────────
             self._safe_add_column(cursor, "sessions", "risk_score_final", "REAL")
-            self._safe_add_column(cursor, "sessions", "keystroke_count", "INTEGER DEFAULT 0")
-            self._safe_add_column(cursor, "sessions", "mouse_event_count", "INTEGER DEFAULT 0")
+            self._safe_add_column(
+                cursor, "sessions", "keystroke_count", "INTEGER DEFAULT 0"
+            )
+            self._safe_add_column(
+                cursor, "sessions", "mouse_event_count", "INTEGER DEFAULT 0"
+            )
             self._safe_add_column(cursor, "sessions", "enrollment_action", "TEXT")
             self._safe_add_column(cursor, "sessions", "device_hash", "TEXT")
 
@@ -622,8 +634,10 @@ class DatabaseManager:
             # Insert new code
             if self.is_pg:
                 conn.execute(
-                    "INSERT INTO otp_codes (user_id, otp_code, expires_at) "
-                    "VALUES (?, ?, CURRENT_TIMESTAMP + INTERVAL '" + str(int(ttl_seconds)) + " seconds')",
+                    "INSERT INTO otp_codes (user_id, otp_code, expires_at) "  # nosec B608 - fixed SQL fragments, bound values
+                    "VALUES (?, ?, CURRENT_TIMESTAMP + INTERVAL '"
+                    + str(int(ttl_seconds))
+                    + " seconds')",
                     (user_id, code),
                 )
             else:
@@ -718,12 +732,15 @@ class DatabaseManager:
             mfa_secret = user.get("mfa_secret")
             if mfa_secret:
                 try:
-                    from flask import current_app
                     from cryptography.fernet import Fernet
+                    from flask import current_app
+
                     fernet_key = current_app.config.get("BACKUP_FERNET")
                     if fernet_key:
                         fernet = Fernet(fernet_key.encode("utf-8"))
-                        user["mfa_secret"] = fernet.decrypt(mfa_secret.encode("utf-8")).decode("utf-8")
+                        user["mfa_secret"] = fernet.decrypt(
+                            mfa_secret.encode("utf-8")
+                        ).decode("utf-8")
                 except Exception:
                     pass
             return user
@@ -735,14 +752,19 @@ class DatabaseManager:
         mfa_secret = pyotp.random_base32()
         encrypted_mfa_secret = mfa_secret
         try:
-            from flask import current_app
             from cryptography.fernet import Fernet
+            from flask import current_app
+
             fernet_key = current_app.config.get("BACKUP_FERNET")
             if fernet_key:
                 fernet = Fernet(fernet_key.encode("utf-8"))
-                encrypted_mfa_secret = fernet.encrypt(mfa_secret.encode("utf-8")).decode("utf-8")
+                encrypted_mfa_secret = fernet.encrypt(
+                    mfa_secret.encode("utf-8")
+                ).decode("utf-8")
         except Exception as e:
-            logger.warning("Failed to encrypt MFA secret, using plaintext fallback: %s", e)
+            logger.warning(
+                "Failed to encrypt MFA secret, using plaintext fallback: %s", e
+            )
 
         try:
             # Generate salt and hash password
@@ -840,7 +862,10 @@ class DatabaseManager:
                 password_valid = bcrypt.checkpw(password.encode("utf-8"), stored_hash)
             except (ValueError, TypeError):
                 # Corrupted hash or malformed input — treat as invalid
-                logger.warning("bcrypt verification failed for user %s (invalid salt/hash)", user["username"])
+                logger.warning(
+                    "bcrypt verification failed for user %s (invalid salt/hash)",
+                    user["username"],
+                )
                 password_valid = False
             if password_valid:
                 # Reset failed attempts and update last login
@@ -953,7 +978,7 @@ class DatabaseManager:
             # Use TRUE for PostgreSQL, 1 for SQLite
             val = "TRUE" if self.is_pg else "1"
             cursor.execute(
-                f"UPDATE users SET email_verified = {val} WHERE user_id = ?",
+                f"UPDATE users SET email_verified = {val} WHERE user_id = ?",  # nosec B608 - fixed SQL fragments, bound values
                 (user_id,),
             )
             conn.commit()
@@ -1030,13 +1055,14 @@ class DatabaseManager:
         features_enc = features_json  # default: plaintext
 
         try:
-            from flask import current_app
             from cryptography.fernet import Fernet
+            from flask import current_app
 
             fernet_key = current_app.config.get("BACKUP_FERNET")
             # Only encrypt if the key was explicitly set in .env (not ephemeral).
             # Ephemeral keys (auto-generated on startup) cause data loss on restart.
             import os
+
             env_fernet = os.environ.get("BACKUP_FERNET", "")
             if fernet_key and env_fernet:
                 # Key is persistent — safe to encrypt
@@ -1118,8 +1144,8 @@ class DatabaseManager:
         """Get behavioral data for a user"""
         fernet = None
         try:
-            from flask import current_app
             from cryptography.fernet import Fernet
+            from flask import current_app
 
             fernet_key = current_app.config.get("BACKUP_FERNET")
             if fernet_key:
@@ -1494,7 +1520,7 @@ class DatabaseManager:
                     expires_at = datetime.fromisoformat(expires_at)
                 except Exception:
                     expires_at = now
-            
+
             if isinstance(expires_at, datetime):
                 if expires_at.tzinfo is not None and now.tzinfo is None:
                     expires_at = expires_at.replace(tzinfo=None)
@@ -1532,7 +1558,7 @@ class DatabaseManager:
         _false = "FALSE" if self.is_pg else "0"
         with self.get_connection() as conn:
             conn.execute(
-                f"UPDATE users SET username = ?, email = ?, is_active = {_false} WHERE user_id = ?",
+                f"UPDATE users SET username = ?, email = ?, is_active = {_false} WHERE user_id = ?",  # nosec B608 - fixed SQL fragments, bound values
                 (anon, f"{anon}@example.invalid", user_id),
             )
             # Remove raw_data payloads for minimization
@@ -1589,7 +1615,11 @@ class DatabaseManager:
             if updates:
                 params.append(user_id)
                 set_clause = ", ".join(updates)
-                query = "UPDATE model_metadata SET " + set_clause + " WHERE user_id = ?"
+                query = (
+                    "UPDATE model_metadata SET "  # nosec B608
+                    + set_clause
+                    + " WHERE user_id = ?"
+                )
                 cursor.execute(
                     query,
                     params,
@@ -1719,9 +1749,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def get_session_snapshots(
-        self, session_id: str, limit: int = 100
-    ) -> List[Dict]:
+    def get_session_snapshots(self, session_id: str, limit: int = 100) -> List[Dict]:
         """Get chronological snapshots for a session — builds risk timeline.
 
         Returns a list of snapshot dicts ordered by timestamp (oldest first),
@@ -1743,11 +1771,15 @@ class DatabaseManager:
             for row in rows:
                 item = dict(row)
                 try:
-                    item["ensemble_flags"] = json.loads(item.get("ensemble_flags") or "[]")
+                    item["ensemble_flags"] = json.loads(
+                        item.get("ensemble_flags") or "[]"
+                    )
                 except Exception:
                     item["ensemble_flags"] = []
                 try:
-                    item["extended_features"] = json.loads(item.get("extended_features") or "{}")
+                    item["extended_features"] = json.loads(
+                        item.get("extended_features") or "{}"
+                    )
                 except Exception:
                     item["extended_features"] = {}
                 result.append(item)
@@ -1873,9 +1905,7 @@ class DatabaseManager:
                 )
             conn.commit()
 
-    def get_session_keystrokes(
-        self, session_id: str, limit: int = 500
-    ) -> List[Dict]:
+    def get_session_keystrokes(self, session_id: str, limit: int = 500) -> List[Dict]:
         """Retrieve keystroke events for a specific session."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -1890,9 +1920,7 @@ class DatabaseManager:
             )
             return [dict(r) for r in cursor.fetchall()]
 
-    def get_session_mouse_events(
-        self, session_id: str, limit: int = 500
-    ) -> List[Dict]:
+    def get_session_mouse_events(self, session_id: str, limit: int = 500) -> List[Dict]:
         """Retrieve mouse events for a specific session."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -1967,9 +1995,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def get_risk_timeline(
-        self, session_id: str, limit: int = 200
-    ) -> List[Dict]:
+    def get_risk_timeline(self, session_id: str, limit: int = 200) -> List[Dict]:
         """Get the full risk timeline for a session (chronological)."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -1986,15 +2012,15 @@ class DatabaseManager:
             for row in cursor.fetchall():
                 item = dict(row)
                 try:
-                    item["engine_scores"] = json.loads(item.get("engine_scores") or "{}")
+                    item["engine_scores"] = json.loads(
+                        item.get("engine_scores") or "{}"
+                    )
                 except Exception:
                     item["engine_scores"] = {}
                 result.append(item)
             return result
 
-    def get_user_risk_history(
-        self, user_id: int, limit: int = 50
-    ) -> List[Dict]:
+    def get_user_risk_history(self, user_id: int, limit: int = 50) -> List[Dict]:
         """Get recent risk evaluations across all sessions for a user."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2049,8 +2075,14 @@ class DatabaseManager:
                         per_digraph_count = EXCLUDED.per_digraph_count,
                         last_updated = CURRENT_TIMESTAMP
                     """,
-                    (user_id, profile_json, updates_count, confidence,
-                     per_key_count, per_digraph_count),
+                    (
+                        user_id,
+                        profile_json,
+                        updates_count,
+                        confidence,
+                        per_key_count,
+                        per_digraph_count,
+                    ),
                 )
             else:
                 cursor.execute(
@@ -2060,8 +2092,14 @@ class DatabaseManager:
                      per_key_count, per_digraph_count, last_updated)
                     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     """,
-                    (user_id, profile_json, updates_count, confidence,
-                     per_key_count, per_digraph_count),
+                    (
+                        user_id,
+                        profile_json,
+                        updates_count,
+                        confidence,
+                        per_key_count,
+                        per_digraph_count,
+                    ),
                 )
             conn.commit()
 
@@ -2118,9 +2156,7 @@ class DatabaseManager:
             )
             conn.commit()
 
-    def get_enrollment_history(
-        self, user_id: int, limit: int = 50
-    ) -> List[Dict]:
+    def get_enrollment_history(self, user_id: int, limit: int = 50) -> List[Dict]:
         """Get enrollment progression history for a user."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -2146,6 +2182,7 @@ class DatabaseManager:
         enrollment state (profile, session count, enrolled flag) as JSON.
         """
         import json as _json
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             state_json = _json.dumps(state)
@@ -2161,6 +2198,7 @@ class DatabaseManager:
     def load_enrollment_state(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Load passive enrollment state from the database."""
         import json as _json
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -2336,14 +2374,17 @@ class DatabaseManager:
                     enrollment_action = ?
                 WHERE session_id = ?
                 """,
-                (final_risk, keystroke_count, mouse_event_count,
-                 enrollment_action, session_id),
+                (
+                    final_risk,
+                    keystroke_count,
+                    mouse_event_count,
+                    enrollment_action,
+                    session_id,
+                ),
             )
             conn.commit()
 
-    def get_user_session_history(
-        self, user_id: int, limit: int = 20
-    ) -> List[Dict]:
+    def get_user_session_history(self, user_id: int, limit: int = 20) -> List[Dict]:
         """Get session history with behavioral metadata for a user."""
         with self.get_connection() as conn:
             cursor = conn.cursor()

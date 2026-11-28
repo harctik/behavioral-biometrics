@@ -5,11 +5,9 @@ namespaces registered under ``/api/v1/...``.
 
 Uses shared fixtures from ``conftest.py``.
 """
-from conftest import enable_mfa, full_login
-import pytest
-from freezegun import freeze_time
 import pyotp
-
+from conftest import enable_mfa, full_login
+from freezegun import freeze_time
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SESSION NAMESPACE
@@ -264,7 +262,7 @@ class TestTransactionNamespace:
     def test_assess_replayed_nonce_rejected(
         self, client, mfa_logged_in_user, mfa_auth_headers
     ):
-        from app.utils import sign_operation, consume_nonce
+        from app.utils import consume_nonce, sign_operation
 
         nonce = client.get(
             "/api/v1/transaction/nonce", headers=mfa_auth_headers

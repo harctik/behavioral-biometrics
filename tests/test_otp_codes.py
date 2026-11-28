@@ -4,8 +4,9 @@
 def _expiry_seconds(db, user_id):
     with db.get_connection() as conn:
         row = conn.execute(
-            "SELECT CAST(strftime('%s', expires_at) AS INTEGER) "
-            "- CAST(strftime('%s', 'now') AS INTEGER) AS left_s "
+            # No strftime("%s"): the query adapter reads %s as a placeholder.
+            "SELECT CAST(ROUND((julianday(expires_at) - julianday('now')) * 86400) "
+            "AS INTEGER) AS left_s "
             "FROM otp_codes WHERE user_id = ? AND used_at IS NULL",
             (user_id,),
         ).fetchone()

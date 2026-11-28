@@ -27,7 +27,7 @@ import time
 import urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -122,6 +122,7 @@ def cmu_row_to_features(row: Dict[str, str]) -> Dict[str, float]:
     We map these real timing values into our feature engine's expected format,
     computing statistical aggregates (mean, std, median, cv) over all keys.
     """
+
     def safe_float(val):
         try:
             v = float(val)
@@ -133,8 +134,8 @@ def cmu_row_to_features(row: Dict[str, str]) -> Dict[str, float]:
 
     # ── Extract raw timing arrays ─────────────────────────────────────────
     hold_times = []
-    dd_times = []   # Down-down (inter-key intervals)
-    ud_times = []   # Up-down (flight times)
+    dd_times = []  # Down-down (inter-key intervals)
+    ud_times = []  # Up-down (flight times)
 
     for key in CMU_KEYS:
         h_col = f"H.{key}"
@@ -169,9 +170,13 @@ def cmu_row_to_features(row: Dict[str, str]) -> Dict[str, float]:
     # have more-consistent mouse movements in production)
     rhythm_consistency = 1.0 - min(1.0, np.std(dd_arr) / max(np.mean(dd_arr), 1))
 
-    features["mouse_vel_instant"] = max(0, rhythm_consistency * 1.5 + rng.normal(0, 0.1))
+    features["mouse_vel_instant"] = max(
+        0, rhythm_consistency * 1.5 + rng.normal(0, 0.1)
+    )
     features["mouse_vel_mean"] = max(0, rhythm_consistency * 1.2 + rng.normal(0, 0.05))
-    features["mouse_vel_std"] = max(0, (1 - rhythm_consistency) * 0.5 + rng.normal(0, 0.02))
+    features["mouse_vel_std"] = max(
+        0, (1 - rhythm_consistency) * 0.5 + rng.normal(0, 0.02)
+    )
     features["mouse_vel_median"] = features["mouse_vel_mean"]
     features["mouse_acc_mean"] = max(0, 0.5 + rng.normal(0, 0.1))
     features["mouse_decel_rate"] = max(0, 0.3 + rng.normal(0, 0.05))
@@ -181,7 +186,9 @@ def cmu_row_to_features(row: Dict[str, str]) -> Dict[str, float]:
     features["angular_deviation"] = max(0, 15 + rng.normal(0, 3))
     features["overshoot_distance"] = max(0, 5 + rng.normal(0, 1))
     features["click_precision"] = np.clip(rhythm_consistency * 0.9, 0, 1)
-    features["click_dur_mean"] = float(np.mean(hold_arr))  # Real hold time as click proxy
+    features["click_dur_mean"] = float(
+        np.mean(hold_arr)
+    )  # Real hold time as click proxy
     features["click_dur_std"] = float(np.std(hold_arr))
     features["dbl_click_interval"] = max(0, 250 + rng.normal(0, 30))
     features["mouse_idle_time"] = max(0, rng.exponential(1500))
@@ -225,15 +232,21 @@ def cmu_row_to_features(row: Dict[str, str]) -> Dict[str, float]:
     total_time_ms = float(np.sum(dd_arr))
     chars_per_min = (len(CMU_PASSWORD) / max(total_time_ms, 1)) * 60000
     features["typing_speed_wpm"] = chars_per_min / 5  # Standard WPM (5 chars/word)
-    features["typing_speed_variance"] = float(np.std(dd_arr)) / max(float(np.mean(dd_arr)), 1) * 10
+    features["typing_speed_variance"] = (
+        float(np.std(dd_arr)) / max(float(np.mean(dd_arr)), 1) * 10
+    )
 
     # Digraph/trigraph consistency — REAL from consecutive key pairs
     if len(dd_arr) >= 2:
         pair_diffs = np.diff(dd_arr)
-        features["digraph_timing_consistency"] = max(0, 1.0 - np.std(pair_diffs) / max(np.mean(np.abs(pair_diffs)), 1))
+        features["digraph_timing_consistency"] = max(
+            0, 1.0 - np.std(pair_diffs) / max(np.mean(np.abs(pair_diffs)), 1)
+        )
     else:
         features["digraph_timing_consistency"] = 0.5
-    features["trigraph_timing_consistency"] = features["digraph_timing_consistency"] * 0.9
+    features["trigraph_timing_consistency"] = (
+        features["digraph_timing_consistency"] * 0.9
+    )
 
     # N-gram entropy — REAL from timing distribution
     if len(dd_arr) > 2:
@@ -246,7 +259,9 @@ def cmu_row_to_features(row: Dict[str, str]) -> Dict[str, float]:
     features["rhythm_consistency"] = rhythm_consistency
     features["burst_count"] = max(0, int(np.sum(dd_arr < np.mean(dd_arr) * 0.5)))
     features["burst_mean_length"] = max(1, 3 + rng.normal(0, 0.5))
-    features["burst_to_pause_ratio"] = np.clip(features["burst_count"] / max(len(dd_arr), 1), 0, 1)
+    features["burst_to_pause_ratio"] = np.clip(
+        features["burst_count"] / max(len(dd_arr), 1), 0, 1
+    )
     features["segmented_typing_score"] = np.clip(rhythm_consistency * 0.8, 0, 1)
     features["backspace_freq"] = max(0, rng.exponential(0.03))
     features["backspace_timing"] = max(0, 200 + rng.normal(0, 40))
@@ -256,15 +271,23 @@ def cmu_row_to_features(row: Dict[str, str]) -> Dict[str, float]:
     features["shortcut_proficiency"] = np.clip(rng.beta(3, 4), 0, 1)
     features["ctrl_usage_count"] = 0.0
     features["caps_lock_used"] = 0.0
-    features["shift_hold_mean"] = float(np.mean([h for h in hold_arr if h > 100]) if any(h > 100 for h in hold_arr) else 120.0)
+    features["shift_hold_mean"] = float(
+        np.mean([h for h in hold_arr if h > 100])
+        if any(h > 100 for h in hold_arr)
+        else 120.0
+    )
     features["uppercase_method"] = 1.0  # Password uses Shift+r
     features["tab_nav_count"] = 0.0
     features["enter_submit_count"] = 1.0  # Press Enter to submit
     features["numpad_preference"] = 0.0
     features["password_rhythm"] = rhythm_consistency
-    features["data_familiarity_signal"] = min(1.0, session_idx / 8.0)  # Familiarity increases with sessions
+    features["data_familiarity_signal"] = min(
+        1.0, session_idx / 8.0
+    )  # Familiarity increases with sessions
     features["time_to_first_key"] = max(0, 800 + rng.normal(0, 200))
-    features["time_last_key_to_submit"] = max(0, hold_arr[-1] if len(hold_arr) > 0 else 100)
+    features["time_last_key_to_submit"] = max(
+        0, hold_arr[-1] if len(hold_arr) > 0 else 100
+    )
     features["keystroke_event_count"] = float(len(CMU_PASSWORD) * 2)  # keydown + keyup
     features["total_keys_pressed"] = float(len(CMU_PASSWORD) + 1)  # +1 for Shift
     features["keystroke_pressure_variance"] = max(0, rng.normal(0.05, 0.01))
@@ -377,7 +400,9 @@ def cmu_row_to_features(row: Dict[str, str]) -> Dict[str, float]:
     features["total_active_ms"] = total_time_ms + rng.normal(0, 500)
     features["idle_ratio"] = np.clip(rng.beta(2, 8), 0, 1)
     features["micro_vibration_mean"] = max(0, rng.exponential(0.03))
-    features["modifier_overlap_mean"] = float(hold_arr[5]) if len(hold_arr) > 5 else 120.0  # Shift key overlap
+    features["modifier_overlap_mean"] = (
+        float(hold_arr[5]) if len(hold_arr) > 5 else 120.0
+    )  # Shift key overlap
     features["modifier_overlap_std"] = max(0, 15 + rng.normal(0, 5))
     features["modifier_overlap_count"] = 1.0  # One Shift key in password
     features["touch_velocity_mean"] = max(0, 180 + rng.normal(0, 40))
@@ -403,8 +428,12 @@ def train_user(
     """Train all ML models for a single user."""
     from app.training_orchestrator import TrainingOrchestrator
 
-    logger.info("Training user %d with %d genuine + %d impostor samples",
-                user_id, len(genuine_features), len(impostor_features))
+    logger.info(
+        "Training user %d with %d genuine + %d impostor samples",
+        user_id,
+        len(genuine_features),
+        len(impostor_features),
+    )
 
     # Create a lightweight DB adapter for the orchestrator
     db = TrainingDBAdapter(user_id, genuine_features)
@@ -436,8 +465,14 @@ class TrainingDBAdapter:
         return [{"features": f} for f in self._features[:limit]]
 
     def update_model_metadata(self, user_id, model_version, accuracy, metadata):
-        self._metadata = {"version": model_version, "accuracy": accuracy, "metadata": metadata}
-        logger.info("Model metadata saved: version=%s, accuracy=%.4f", model_version, accuracy)
+        self._metadata = {
+            "version": model_version,
+            "accuracy": accuracy,
+            "metadata": metadata,
+        }
+        logger.info(
+            "Model metadata saved: version=%s, accuracy=%.4f", model_version, accuracy
+        )
 
     def update_calibration_status(self, user_id, status):
         logger.info("Calibration status: %s", status)
@@ -447,13 +482,21 @@ class TrainingDBAdapter:
 
     def get_connection(self):
         """Dummy connection for health checks."""
+
         class DummyConn:
             def execute(self, q):
                 class R:
-                    def fetchone(self): return (1,)
+                    def fetchone(self):
+                        return (1,)
+
                 return R()
-            def __enter__(self): return self
-            def __exit__(self, *a): pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                pass
+
         return DummyConn()
 
 
@@ -461,15 +504,22 @@ def main():
     parser = argparse.ArgumentParser(
         description="Train ML models using real CMU keystroke dynamics data"
     )
-    parser.add_argument("--users", type=int, default=0,
-                        help="Number of users to train (0 = all)")
-    parser.add_argument("--user", type=str, default=None,
-                        help="Specific user ID to train (e.g., s002)")
-    parser.add_argument("--phase", type=str, default=None,
-                        choices=["bootstrap", "building", "mature"],
-                        help="Force enrollment phase")
-    parser.add_argument("--samples", type=int, default=200,
-                        help="Max samples per user for training")
+    parser.add_argument(
+        "--users", type=int, default=0, help="Number of users to train (0 = all)"
+    )
+    parser.add_argument(
+        "--user", type=str, default=None, help="Specific user ID to train (e.g., s002)"
+    )
+    parser.add_argument(
+        "--phase",
+        type=str,
+        default=None,
+        choices=["bootstrap", "building", "mature"],
+        help="Force enrollment phase",
+    )
+    parser.add_argument(
+        "--samples", type=int, default=200, help="Max samples per user for training"
+    )
     args = parser.parse_args()
 
     print("=" * 70)
@@ -482,7 +532,11 @@ def main():
     balabit_dir = os.path.join(DATASET_DIR, "balabit_mouse")
     hmog_dir = os.path.join(DATASET_DIR, "hmog_touch")
 
-    if not os.path.exists(cmu_path) or not os.path.exists(balabit_dir) or not os.path.exists(hmog_dir):
+    if (
+        not os.path.exists(cmu_path)
+        or not os.path.exists(balabit_dir)
+        or not os.path.exists(hmog_dir)
+    ):
         print("Datasets missing. Please run `python data_downloader.py` first.")
         sys.exit(1)
 
@@ -490,11 +544,11 @@ def main():
     cmu_data = load_cmu_dataset(cmu_path)
     balabit_data = parse_balabit(balabit_dir)
     hmog_data = parse_hmog(hmog_dir)
-    
+
     print(f"Loaded {len(cmu_data)} CMU users (Keystroke)")
     print(f"Loaded {len(balabit_data)} Balabit users (Mouse)")
     print(f"Loaded {len(hmog_data)} HMOG users (Touch/Sensors)")
-    
+
     all_users = unify_and_cross_fill(cmu_data, balabit_data, hmog_data)
     subjects = sorted(all_users.keys())
 
@@ -504,9 +558,11 @@ def main():
             sys.exit(1)
         subjects = [args.user]
     elif args.users > 0:
-        subjects = subjects[:args.users]
+        subjects = subjects[: args.users]
 
-    print(f"\nTraining {len(subjects)} users: {subjects[:5]}{'...' if len(subjects) > 5 else ''}")
+    print(
+        f"\nTraining {len(subjects)} users: {subjects[:5]}{'...' if len(subjects) > 5 else ''}"
+    )
     print(f"Samples per user: {args.samples}")
     print(f"Phase: {args.phase or 'auto-detect'}")
     print()
@@ -521,7 +577,7 @@ def main():
         print(f"  [{i+1}/{len(subjects)}] Training user: {subject}")
         print(f"{'-' * 60}")
 
-        genuine = all_users[subject][:args.samples]
+        genuine = all_users[subject][: args.samples]
 
         # Use other users as impostors
         impostor = []
@@ -538,9 +594,11 @@ def main():
                 force_phase=args.phase,
             )
             results[subject] = report
-            print(f"  [OK] {subject}: {report.get('models_trained_count', 0)} models trained, "
-                  f"{report.get('models_failed_count', 0)} failed, "
-                  f"{report.get('duration_seconds', 0):.1f}s")
+            print(
+                f"  [OK] {subject}: {report.get('models_trained_count', 0)} models trained, "
+                f"{report.get('models_failed_count', 0)} failed, "
+                f"{report.get('duration_seconds', 0):.1f}s"
+            )
         except Exception as e:
             print(f"  [FAIL] {subject}: {e}")
             logger.exception("Training failed for %s", subject)
@@ -550,7 +608,7 @@ def main():
 
     # Step 4: Summary
     print(f"\n{'=' * 70}")
-    print(f"  TRAINING COMPLETE")
+    print("  TRAINING COMPLETE")
     print(f"  Users trained: {len(results)}")
     print(f"  Total time: {total_time:.1f}s")
     print(f"  Models directory: {os.path.abspath(MODELS_DIR)}")
@@ -563,15 +621,24 @@ def main():
     # Save training summary
     summary_path = os.path.join(MODELS_DIR, "training_summary.json")
     with open(summary_path, "w") as f:
-        json.dump({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "dataset": "CMU Keystroke Dynamics (DSN 2009)",
-            "users_trained": len(results),
-            "total_time_seconds": round(total_time, 2),
-            "results": {k: {"models_trained": v.get("models_trained_count", 0),
-                            "duration": v.get("duration_seconds", 0)}
-                        for k, v in results.items() if "error" not in v},
-        }, f, indent=2)
+        json.dump(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "dataset": "CMU Keystroke Dynamics (DSN 2009)",
+                "users_trained": len(results),
+                "total_time_seconds": round(total_time, 2),
+                "results": {
+                    k: {
+                        "models_trained": v.get("models_trained_count", 0),
+                        "duration": v.get("duration_seconds", 0),
+                    }
+                    for k, v in results.items()
+                    if "error" not in v
+                },
+            },
+            f,
+            indent=2,
+        )
     print(f"\nSummary saved to: {summary_path}")
 
 

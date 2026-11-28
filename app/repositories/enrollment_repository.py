@@ -8,7 +8,6 @@ Architecture:
     API Routes → Services → Repositories → Database (SQLAlchemy)
 """
 
-import json
 import logging
 from typing import Any, Dict, List, Optional
 

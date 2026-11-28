@@ -6,10 +6,8 @@ Tests for new banking intelligence layer:
 - Time-of-day risk
 """
 
-import pytest
-import json
-from unittest.mock import patch
 from datetime import datetime
+from unittest.mock import patch
 
 
 class TestBankingVelocityChecks:

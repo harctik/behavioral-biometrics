@@ -116,11 +116,18 @@ class MailService:
         if not reset_url_base:
             # Derive from Flask app config → RESET_URL_BASE → FRONTEND_URL
             from flask import current_app
-            reset_url_base = current_app.config.get("RESET_URL_BASE", "") or \
-                (current_app.config.get("FRONTEND_URL", "").rstrip("/") + "/reset-password" if current_app.config.get("FRONTEND_URL") else "")
+
+            reset_url_base = current_app.config.get("RESET_URL_BASE", "") or (
+                current_app.config.get("FRONTEND_URL", "").rstrip("/")
+                + "/reset-password"
+                if current_app.config.get("FRONTEND_URL")
+                else ""
+            )
             if not reset_url_base:
                 reset_url_base = "http://localhost:3000/reset-password"
-                logger.warning("RESET_URL_BASE and FRONTEND_URL not set — using localhost fallback for password reset link")
+                logger.warning(
+                    "RESET_URL_BASE and FRONTEND_URL not set — using localhost fallback for password reset link"
+                )
 
         reset_link = f"{reset_url_base}?token={reset_token}"
 
@@ -166,11 +173,17 @@ class MailService:
         if not verify_url_base:
             # Derive from Flask app config → VERIFY_URL_BASE → FRONTEND_URL
             from flask import current_app
-            verify_url_base = current_app.config.get("VERIFY_URL_BASE", "") or \
-                (current_app.config.get("FRONTEND_URL", "").rstrip("/") + "/verify-email" if current_app.config.get("FRONTEND_URL") else "")
+
+            verify_url_base = current_app.config.get("VERIFY_URL_BASE", "") or (
+                current_app.config.get("FRONTEND_URL", "").rstrip("/") + "/verify-email"
+                if current_app.config.get("FRONTEND_URL")
+                else ""
+            )
             if not verify_url_base:
                 verify_url_base = "http://localhost:3000/verify-email"
-                logger.warning("VERIFY_URL_BASE and FRONTEND_URL not set — using localhost fallback for email verification link")
+                logger.warning(
+                    "VERIFY_URL_BASE and FRONTEND_URL not set — using localhost fallback for email verification link"
+                )
 
         verify_link = f"{verify_url_base}?token={verify_token}"
 
@@ -328,7 +341,10 @@ class MailService:
         try:
             import resend
 
-            logger.info("Resend API Key prefix configured as: %s", str(self.resend_api_key)[:7] if self.resend_api_key else "None")
+            logger.info(
+                "Resend API Key prefix configured as: %s",
+                str(self.resend_api_key)[:7] if self.resend_api_key else "None",
+            )
             resend.api_key = self.resend_api_key
             params: dict = {
                 "from": sender,
@@ -342,7 +358,9 @@ class MailService:
             response = resend.Emails.send(params)
             logger.info(
                 "Email sent via Resend to %s (subject=%s, id=%s)",
-                to, subject, response.get("id", "unknown"),
+                to,
+                subject,
+                response.get("id", "unknown"),
             )
             return True
         except Exception:

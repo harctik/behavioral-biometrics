@@ -7,7 +7,6 @@ caching, rate limiting, and other common operations.
 
 import base64
 import hashlib
-import hmac
 import json
 import random
 import string
@@ -22,7 +21,6 @@ import jwt
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
 
 # ============================================================================
 # Security Utilities

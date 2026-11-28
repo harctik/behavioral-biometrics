@@ -5,10 +5,9 @@ Verifies that the behavioral scoring endpoints can handle high concurrency
 with < 50ms latency, as required for production.
 """
 
-from locust import HttpUser, task, between
 import random
-import time
-import json
+
+from locust import HttpUser, between, task
 
 
 class BehavioralAuthUser(HttpUser):
@@ -37,24 +36,21 @@ class BehavioralAuthUser(HttpUser):
                 "mouse_pointer": {
                     "mouse_vel_mean": random.uniform(200.0, 400.0),
                     "mouse_event_count": 25,
-                }
+                },
             },
-            "device_context": {
-                "screen_width": 1920,
-                "screen_height": 1080
-            }
+            "device_context": {"screen_width": 1920, "screen_height": 1080},
         }
-        
+
         # We don't have a user authenticated, so we submit to the unauthenticated
         # telemetry endpoint or a mock test endpoint. If we want to test the full
         # pipeline, we'd need a real token. For load testing, we will hit the
         # public configuration endpoints as well.
-        
+
         with self.client.post(
-            "/api/v1/auth/behavioral/telemetry", 
+            "/api/v1/auth/behavioral/telemetry",
             json=payload,
             catch_response=True,
-            name="Submit Telemetry"
+            name="Submit Telemetry",
         ) as response:
             # We expect 401 Unauthorized if no token, which is fine for load testing
             # the WAF/Gateway layer. If we want to load test the ML, we'd need
@@ -68,9 +64,7 @@ class BehavioralAuthUser(HttpUser):
     def fetch_csrf_token(self):
         """Test the CSRF token generation endpoint."""
         with self.client.get(
-            "/api/v1/auth/csrf-token",
-            catch_response=True,
-            name="Fetch CSRF"
+            "/api/v1/auth/csrf-token", catch_response=True, name="Fetch CSRF"
         ) as response:
             if response.status_code == 200:
                 response.success()
@@ -82,14 +76,14 @@ class BehavioralAuthUser(HttpUser):
         """Simulate high-volume login attempts to test rate limiting."""
         payload = {
             "username": f"user_{random.randint(1, 1000)}",
-            "password": "wrong_password"
+            "password": "wrong_password",
         }
-        
+
         with self.client.post(
             "/api/v1/auth/login",
             json=payload,
             catch_response=True,
-            name="Login Attempt"
+            name="Login Attempt",
         ) as response:
             # We expect 401 (Invalid creds) or 429 (Rate limited)
             if response.status_code in [401, 429]:

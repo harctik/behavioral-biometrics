@@ -8,7 +8,6 @@ any system that can write to the local filesystem.
 """
 
 import os
-import json
 from datetime import datetime
 from pathlib import Path
 

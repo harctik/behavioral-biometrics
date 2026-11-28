@@ -16,7 +16,6 @@ Signals analyzed:
 from __future__ import annotations
 
 import logging
-import math
 from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
@@ -98,7 +97,9 @@ class LivenessDetector:
         # Suspiciously fast AND robotic rhythm = script injection
         if bigram_mean < 50 and flight_cv < 0.1:
             evidence_bot += 0.4
-            flags.append(f"liveness:sub50ms_burst_injection (mean={bigram_mean:.0f}ms, cv={flight_cv:.3f})")
+            flags.append(
+                f"liveness:sub50ms_burst_injection (mean={bigram_mean:.0f}ms, cv={flight_cv:.3f})"
+            )
         elif bigram_mean < 80 and flight_cv < 0.15:
             evidence_bot += 0.2
             flags.append(f"liveness:suspicious_burst_speed (mean={bigram_mean:.0f}ms)")
@@ -154,18 +155,24 @@ class LivenessDetector:
 
         # Natural digraph variance = human (each pair has unique rhythm)
         digraph_stds = [
-            v for k, v in features.items()
+            v
+            for k, v in features.items()
             if k.startswith("digraph_") and k.endswith("_std") and v > 0
         ]
         if len(digraph_stds) >= 3:
             import numpy as np
+
             avg_digraph_std = float(np.mean(digraph_stds))
             if avg_digraph_std > 15:  # Natural variance in ms
                 evidence_human += 0.1
-                flags.append(f"liveness:natural_digraph_variance(avg_std={avg_digraph_std:.0f}ms)")
+                flags.append(
+                    f"liveness:natural_digraph_variance(avg_std={avg_digraph_std:.0f}ms)"
+                )
             elif avg_digraph_std < 3:  # Too consistent = scripted
                 evidence_bot += 0.2
-                flags.append(f"liveness:uniform_digraph_timing(avg_std={avg_digraph_std:.0f}ms)")
+                flags.append(
+                    f"liveness:uniform_digraph_timing(avg_std={avg_digraph_std:.0f}ms)"
+                )
 
         # Modifier overlap presence = human (bots rarely hold shift naturally)
         mod_mean = features.get("modifier_overlap_mean", 0)
@@ -201,4 +208,3 @@ class LivenessDetector:
             "evidence_human": round(evidence_human, 4),
             "evidence_bot": round(evidence_bot, 4),
         }
-

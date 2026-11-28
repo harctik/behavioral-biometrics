@@ -1,12 +1,13 @@
 """ML model status and feature importance API."""
+import datetime
 import logging
 import os
-import datetime
-from flask_restx import Namespace, Resource, fields
-from flask_jwt_extended import jwt_required
 
-from app.extensions import get_db, limiter, get_redis
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource, fields
+
 from app.api.helpers import get_current_user_id
+from app.extensions import limiter
 from app.ml_ensemble import ENSEMBLE_WEIGHTS
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,9 @@ ml_status_model = ml_ns.model(
     "MLStatus",
     {
         "engines": fields.Raw(description="Status of each ML engine"),
-        "ensemble_weights": fields.Raw(description="Current ensemble weight configuration"),
+        "ensemble_weights": fields.Raw(
+            description="Current ensemble weight configuration"
+        ),
         "total_engines": fields.Integer(),
         "active_engines": fields.Integer(),
         "version": fields.String(),
@@ -39,9 +42,14 @@ class MLStatus(Resource):
         # 1. Cognitive Engine
         try:
             from app.models.cognitive_engine import CognitiveEngine
+
             engines["cognitive_engine"] = {
                 "status": "loaded",
-                "features": ["hesitation_analysis", "correction_patterns", "timing_anomalies"],
+                "features": [
+                    "hesitation_analysis",
+                    "correction_patterns",
+                    "timing_anomalies",
+                ],
                 "description": "Cognitive behavioral pattern analysis",
             }
         except ImportError:
@@ -50,9 +58,14 @@ class MLStatus(Resource):
         # 2. Duress Detector
         try:
             from app.models.duress_detector import DuressDetector
+
             engines["duress_detector"] = {
                 "status": "loaded",
-                "features": ["speed_variance", "pressure_anomaly", "timing_irregularity"],
+                "features": [
+                    "speed_variance",
+                    "pressure_anomaly",
+                    "timing_irregularity",
+                ],
                 "description": "Coercion and duress detection (DPDP Act 2023)",
             }
         except ImportError:
@@ -61,6 +74,7 @@ class MLStatus(Resource):
         # 3. Liveness Detector
         try:
             from app.models.liveness_detector import LivenessDetector
+
             engines["liveness_detector"] = {
                 "status": "loaded",
                 "features": ["bot_detection", "replay_detection", "automation_markers"],
@@ -72,9 +86,14 @@ class MLStatus(Resource):
         # 4. Invisible Challenge Engine
         try:
             from app.models.invisible_challenge_engine import InvisibleChallengeEngine
+
             engines["invisible_challenge"] = {
                 "status": "loaded",
-                "features": ["micro_challenges", "behavioral_CAPTCHAs", "implicit_verification"],
+                "features": [
+                    "micro_challenges",
+                    "behavioral_CAPTCHAs",
+                    "implicit_verification",
+                ],
                 "description": "Patent-style invisible verification (US20150205955A1)",
             }
         except ImportError:
@@ -83,6 +102,7 @@ class MLStatus(Resource):
         # 5. Device Intelligence
         try:
             from app.models.device_intelligence import DeviceIntelligenceEngine
+
             engines["device_intelligence"] = {
                 "status": "loaded",
                 "features": ["RAT_detection", "emulator_detection", "geo_velocity"],
@@ -94,9 +114,14 @@ class MLStatus(Resource):
         # 6. Composite Signal Engine
         try:
             from app.models.composite_signal_engine import CompositeSignalEngine
+
             engines["composite_signal"] = {
                 "status": "loaded",
-                "features": ["multi_user_detection", "fraud_patterns", "behavioral_consistency"],
+                "features": [
+                    "multi_user_detection",
+                    "fraud_patterns",
+                    "behavioral_consistency",
+                ],
                 "description": "Multi-signal fusion and fraud detection",
             }
         except ImportError:
@@ -105,9 +130,14 @@ class MLStatus(Resource):
         # 7. GAN Adversarial Detector
         try:
             from app.models.gan_adversarial import GANAdversarialDetector
+
             engines["gan_adversarial"] = {
                 "status": "loaded",
-                "features": ["synthetic_detection", "adversarial_patterns", "distribution_analysis"],
+                "features": [
+                    "synthetic_detection",
+                    "adversarial_patterns",
+                    "distribution_analysis",
+                ],
                 "description": "GAN-based synthetic behavior detection",
             }
         except ImportError:
@@ -116,9 +146,14 @@ class MLStatus(Resource):
         # 8. Passive Enrollment
         try:
             from app.models.passive_enrollment import PassiveEnrollmentManager
+
             engines["passive_enrollment"] = {
                 "status": "loaded",
-                "features": ["silent_profiling", "progressive_trust", "behavioral_baseline"],
+                "features": [
+                    "silent_profiling",
+                    "progressive_trust",
+                    "behavioral_baseline",
+                ],
                 "description": "BioCatch-style silent profile building",
             }
         except ImportError:
@@ -127,6 +162,7 @@ class MLStatus(Resource):
         # 9. ADWIN Drift Detector
         try:
             from app.models.adwin_drift import ADWINDriftDetector
+
             engines["adwin_drift"] = {
                 "status": "loaded",
                 "features": ["concept_drift", "distribution_shift", "model_staleness"],
@@ -138,9 +174,14 @@ class MLStatus(Resource):
         # 10. Transaction Baseline
         try:
             from app.models.transaction_baseline import TransactionHistoryBaseline
+
             engines["transaction_baseline"] = {
                 "status": "loaded",
-                "features": ["amount_anomaly", "beneficiary_analysis", "timing_patterns"],
+                "features": [
+                    "amount_anomaly",
+                    "beneficiary_analysis",
+                    "timing_patterns",
+                ],
                 "description": "Transaction history anomaly detection",
             }
         except ImportError:
@@ -149,9 +190,14 @@ class MLStatus(Resource):
         # 11. Per-User Feature Selector
         try:
             from app.models.per_user_feature_selector import PerUserFeatureSelector
+
             engines["feature_selector"] = {
                 "status": "loaded",
-                "features": ["top_20_selection", "user_unique_features", "discriminative_scoring"],
+                "features": [
+                    "top_20_selection",
+                    "user_unique_features",
+                    "discriminative_scoring",
+                ],
                 "description": "Per-user discriminative feature selection",
             }
         except ImportError:
@@ -177,10 +223,11 @@ class FeatureImportance(Resource):
     def get(self):
         """Return top-20 most important features with weights for the current user."""
         uid = get_current_user_id()
-        
+
         # Try per-user feature selection first
         try:
             from app.models.per_user_feature_selector import get_feature_selector
+
             selector = get_feature_selector()
             selection = selector.get_user_selection(int(uid))
             if selection and selection.get("selected_features"):

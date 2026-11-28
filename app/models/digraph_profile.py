@@ -25,12 +25,13 @@ from __future__ import annotations
 import logging
 import math
 import statistics
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 # ── Key Categorization ─────────────────────────────────────────────────────────
+
 
 def _categorize_key(key: str) -> Optional[str]:
     """Map a raw key identifier to a privacy-safe category.
@@ -98,7 +99,7 @@ def _categorize_key(key: str) -> Optional[str]:
         "enter": "key_enter",
         "return": "key_enter",
         "capslock": "key_capslock",
-        "shift": None,        # Modifier — ignore for timing
+        "shift": None,  # Modifier — ignore for timing
         "control": None,
         "alt": None,
         "meta": None,
@@ -120,6 +121,7 @@ def _categorize_key(key: str) -> Optional[str]:
 
 # ── Profile Extractor ──────────────────────────────────────────────────────────
 
+
 class DigraphProfileExtractor:
     """Extracts per-key and per-digraph timing profiles from raw keystroke events.
 
@@ -134,10 +136,10 @@ class DigraphProfileExtractor:
     """
 
     # Timing sanity bounds (ms)
-    MIN_HOLD_TIME = 10       # Below 10ms is likely noise
-    MAX_HOLD_TIME = 1500     # Above 1.5s is a pause, not a hold
-    MIN_FLIGHT_TIME = 5      # Below 5ms is likely noise
-    MAX_FLIGHT_TIME = 2000   # Above 2s is a pause between words
+    MIN_HOLD_TIME = 10  # Below 10ms is likely noise
+    MAX_HOLD_TIME = 1500  # Above 1.5s is a pause, not a hold
+    MIN_FLIGHT_TIME = 5  # Below 5ms is likely noise
+    MAX_FLIGHT_TIME = 2000  # Above 2s is a pause between words
 
     def extract_profile(
         self,
@@ -236,8 +238,12 @@ class DigraphProfileExtractor:
         )
 
         # ── Phase 5: Meta information ─────────────────────────────────────
-        timestamps = [e.get("timestamp", 0) for e in keystroke_events if e.get("timestamp")]
-        total_duration = (max(timestamps) - min(timestamps)) if len(timestamps) >= 2 else 0
+        timestamps = [
+            e.get("timestamp", 0) for e in keystroke_events if e.get("timestamp")
+        ]
+        total_duration = (
+            (max(timestamps) - min(timestamps)) if len(timestamps) >= 2 else 0
+        )
 
         # Coverage: how many of the 26 alpha keys + 10 digits were seen
         alpha_keys_seen = sum(1 for k in per_key_hold if k.startswith("alpha_"))
@@ -262,9 +268,7 @@ class DigraphProfileExtractor:
             "meta": meta,
         }
 
-    def _build_stats(
-        self, data: Dict[str, List[float]]
-    ) -> Dict[str, Dict[str, Any]]:
+    def _build_stats(self, data: Dict[str, List[float]]) -> Dict[str, Dict[str, Any]]:
         """Convert lists of values into mean/std/count statistics."""
         result = {}
         for key, values in data.items():
@@ -308,12 +312,12 @@ class DigraphProfileExtractor:
         timestamps = [e.get("timestamp", 0) for e in events if e.get("timestamp")]
         if len(timestamps) >= 2:
             elapsed_min = max(0.01, (max(timestamps) - min(timestamps)) / 60000.0)
-            agg["typing_speed_wpm"] = round(min(200, (len(events) / 5.0) / elapsed_min), 1)
+            agg["typing_speed_wpm"] = round(
+                min(200, (len(events) / 5.0) / elapsed_min), 1
+            )
 
         # Correction rate (backspaces / total)
-        agg["correction_rate"] = round(
-            backspace_count / max(len(events), 1), 4
-        )
+        agg["correction_rate"] = round(backspace_count / max(len(events), 1), 4)
 
         # Rhythm entropy: how variable is the inter-key timing?
         if len(flight_times) >= 5:
@@ -366,10 +370,17 @@ class DigraphProfileExtractor:
                 n_total = n_old + n_new
                 new_mean = (old["mean"] * n_old + stats["mean"] * n_new) / n_total
                 # Pooled std approximation
-                new_std = math.sqrt(
-                    ((n_old - 1) * old["std"] ** 2 + (n_new - 1) * stats["std"] ** 2)
-                    / max(n_total - 2, 1)
-                ) if n_total > 2 else max(old["std"], stats["std"])
+                new_std = (
+                    math.sqrt(
+                        (
+                            (n_old - 1) * old["std"] ** 2
+                            + (n_new - 1) * stats["std"] ** 2
+                        )
+                        / max(n_total - 2, 1)
+                    )
+                    if n_total > 2
+                    else max(old["std"], stats["std"])
+                )
                 merged["per_key_hold"][key] = {
                     "mean": round(new_mean, 2),
                     "std": round(max(new_std, 1.0), 2),
@@ -388,10 +399,17 @@ class DigraphProfileExtractor:
                 n_new = stats["count"]
                 n_total = n_old + n_new
                 new_mean = (old["mean"] * n_old + stats["mean"] * n_new) / n_total
-                new_std = math.sqrt(
-                    ((n_old - 1) * old["std"] ** 2 + (n_new - 1) * stats["std"] ** 2)
-                    / max(n_total - 2, 1)
-                ) if n_total > 2 else max(old["std"], stats["std"])
+                new_std = (
+                    math.sqrt(
+                        (
+                            (n_old - 1) * old["std"] ** 2
+                            + (n_new - 1) * stats["std"] ** 2
+                        )
+                        / max(n_total - 2, 1)
+                    )
+                    if n_total > 2
+                    else max(old["std"], stats["std"])
+                )
                 merged["per_digraph_flight"][key] = {
                     "mean": round(new_mean, 2),
                     "std": round(max(new_std, 1.0), 2),

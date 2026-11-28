@@ -5,17 +5,18 @@ This module contains unit tests for database operations, authentication flow,
 and configuration validation.
 """
 
-from conftest import enable_mfa, full_login
-import pytest
 import os
-from datetime import datetime
-from app import create_app
-from app.database import DatabaseManager, create_db_manager
-from app.config import Settings
-from app.feature_extractor import BehavioralFeatureExtractor
-from app.drift_detector import BehavioralDriftDetector
-from app.utils import sign_operation, consume_nonce
+
 import pyotp
+import pytest
+from conftest import enable_mfa, full_login
+
+from app import create_app
+from app.config import Settings
+from app.database import create_db_manager
+from app.drift_detector import BehavioralDriftDetector
+from app.feature_extractor import BehavioralFeatureExtractor
+from app.utils import consume_nonce, sign_operation
 
 
 def _register_login_mfa(client, username, email, password, ua="pytest-agent"):
@@ -276,7 +277,9 @@ class TestAuthenticationFlow:
         data = response.get_json()
         assert "data" in data
         assert "user_id" in data["data"]
-        assert "mfa_provisioning_uri" in data["data"]  # Backend returns MFA URI for enrollment
+        assert (
+            "mfa_provisioning_uri" in data["data"]
+        )  # Backend returns MFA URI for enrollment
 
     def test_register_missing_fields(self, client):
         """Test registration with missing fields."""
@@ -840,7 +843,7 @@ class TestLogging:
 
     def test_logging_setup(self):
         """Test that logging can be set up."""
-        from app.logging_config import setup_logging, get_logger
+        from app.logging_config import setup_logging
 
         logger = setup_logging(log_level="DEBUG")
         assert logger is not None
@@ -860,7 +863,7 @@ class TestUtilities:
 
     def test_issue_and_consume_nonce(self):
         """Nonce should be consumable once and fail on replay."""
-        from app.utils import issue_nonce, consume_nonce
+        from app.utils import consume_nonce, issue_nonce
 
         nonce = issue_nonce(ttl_seconds=60)
         assert consume_nonce(nonce) is True

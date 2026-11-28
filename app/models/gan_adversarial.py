@@ -11,17 +11,17 @@ Banking Security Features:
 - Adversarial training pipeline for classifier hardening
 """
 
+import hashlib
+import hmac
+import logging
+import secrets
+import time
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
-import hmac
-import hashlib
-import time
-import secrets
-from typing import List, Dict, Tuple, Optional
-from scipy import stats as scipy_stats
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -389,7 +389,7 @@ class AdversarialTrainer:
 
     def load(self, path: str):
         """Load GAN models"""
-        checkpoint = torch.load(path, weights_only=False)
+        checkpoint = torch.load(path, weights_only=True)
         self.generator.load_state_dict(checkpoint["generator_state_dict"])
         self.discriminator.load_state_dict(checkpoint["discriminator_state_dict"])
         self.g_optimizer.load_state_dict(checkpoint["generator_optimizer"])

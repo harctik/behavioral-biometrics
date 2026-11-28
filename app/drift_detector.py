@@ -5,12 +5,13 @@ reference distributions and returns drift scores for adaptive authentication.
 """
 
 import logging
+import math
+from collections import deque
+from datetime import datetime, timedelta
+from typing import Dict, List
+
 import numpy as np
 from scipy import stats
-from collections import deque, defaultdict
-from typing import Dict, List, Tuple, Optional
-import math
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 

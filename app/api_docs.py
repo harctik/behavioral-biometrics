@@ -4,12 +4,12 @@ OpenAPI/Swagger documentation models and utilities for Behavior-Based Authentica
 This module provides Pydantic models and Flask-RESTX models for comprehensive API documentation.
 """
 
-from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, EmailStr, validator
-from flask_restx import fields, Model
-from flask import request
+from typing import Any, Dict, List, Optional
 
+from flask import request
+from flask_restx import fields
+from pydantic import BaseModel, EmailStr, Field, validator
 
 # ============================================================================
 # Pydantic Models for Request/Response Validation

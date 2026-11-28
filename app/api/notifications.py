@@ -1,15 +1,17 @@
 import logging
 from datetime import datetime, timezone
-from flask import request
-from flask_restx import Namespace, Resource
-from flask_jwt_extended import jwt_required
 
-from app.extensions import get_db, limiter
+from flask import request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource
+
 from app.api.helpers import get_current_user_id
+from app.extensions import get_db, limiter
 
 logger = logging.getLogger(__name__)
 
 notifications_ns = Namespace("notifications", description="User notifications")
+
 
 @notifications_ns.route("")
 class NotificationsList(Resource):
@@ -23,26 +25,38 @@ class NotificationsList(Resource):
             with db.get_connection() as conn:
                 rows = conn.execute(
                     "SELECT id, type, title, message, is_read as read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC",
-                    (uid,)
+                    (uid,),
                 ).fetchall()
-                
+
                 if not rows:
                     # Auto-provision notifications for demo
                     notifs = [
-                        ("n1", uid, "security", "Behavioral Profile Active", "Your behavioral fingerprint is being continuously verified."),
-                        ("n2", uid, "login", "New Login Detected", "Session started from your current device.")
+                        (
+                            "n1",
+                            uid,
+                            "security",
+                            "Behavioral Profile Active",
+                            "Your behavioral fingerprint is being continuously verified.",
+                        ),
+                        (
+                            "n2",
+                            uid,
+                            "login",
+                            "New Login Detected",
+                            "Session started from your current device.",
+                        ),
                     ]
                     for n in notifs:
                         conn.execute(
                             "INSERT INTO notifications (id, user_id, type, title, message, is_read) VALUES (?, ?, ?, ?, ?, 0)",
-                            n
+                            n,
                         )
                     conn.commit()
                     rows = conn.execute(
                         "SELECT id, type, title, message, is_read as read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC",
-                        (uid,)
+                        (uid,),
                     ).fetchall()
-            
+
             notifications = []
             for row in rows:
                 n = dict(row)
@@ -72,7 +86,7 @@ class NotificationsList(Resource):
                     n["time"] = "Recently"
                 n["read"] = bool(n["read"])
                 notifications.append(n)
-                
+
             return {"notifications": notifications}, 200
         except Exception as e:
             logger.error("Failed to fetch notifications: %s", e)
@@ -85,19 +99,27 @@ class NotificationsList(Resource):
         uid = get_current_user_id()
         payload = request.get_json() or {}
         import uuid as _uuid
+
         nid = f"n_{str(_uuid.uuid4())[:8]}"
         db = get_db()
         try:
             with db.get_connection() as conn:
                 conn.execute(
                     "INSERT INTO notifications (id, user_id, type, title, message, is_read) VALUES (?, ?, ?, ?, ?, 0)",
-                    (nid, uid, payload.get("type", "info"), payload.get("title", "Alert"), payload.get("message", ""))
+                    (
+                        nid,
+                        uid,
+                        payload.get("type", "info"),
+                        payload.get("title", "Alert"),
+                        payload.get("message", ""),
+                    ),
                 )
                 conn.commit()
             return {"success": True}, 201
         except Exception as e:
             logger.error("Failed to insert notification: %s", e)
             return {"error": "Database error"}, 500
+
 
 @notifications_ns.route("/read-all")
 class NotificationsReadAll(Resource):
@@ -108,11 +130,14 @@ class NotificationsReadAll(Resource):
         db = get_db()
         try:
             with db.get_connection() as conn:
-                conn.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (uid,))
+                conn.execute(
+                    "UPDATE notifications SET is_read = 1 WHERE user_id = ?", (uid,)
+                )
                 conn.commit()
             return {"success": True}, 200
         except Exception:
             return {"error": "Database error"}, 500
+
 
 @notifications_ns.route("/<string:notification_id>")
 class NotificationItem(Resource):
@@ -123,11 +148,15 @@ class NotificationItem(Resource):
         db = get_db()
         try:
             with db.get_connection() as conn:
-                conn.execute("DELETE FROM notifications WHERE id = ? AND user_id = ?", (notification_id, uid))
+                conn.execute(
+                    "DELETE FROM notifications WHERE id = ? AND user_id = ?",
+                    (notification_id, uid),
+                )
                 conn.commit()
             return {"success": True}, 200
         except Exception:
             return {"error": "Database error"}, 500
+
 
 @notifications_ns.route("/preferences")
 class NotificationPreferences(Resource):

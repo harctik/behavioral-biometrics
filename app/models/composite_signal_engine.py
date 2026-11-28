@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import math
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -188,7 +187,7 @@ class CompositeSignalEngine:
             round(f.get("flight_time_cv", 0) * 1000),
         ]
         raw = ":".join(str(v) for v in core_features)
-        return hashlib.md5(raw.encode()).hexdigest()[:16]
+        return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()[:16]
 
     def _detect_lie(self, f: Dict, user_id: Optional[int], flags: list) -> float:
         """Detect lying/unfamiliar data entry (Behavioral Biometrics patent).
@@ -241,7 +240,9 @@ class CompositeSignalEngine:
         mod_std = f.get("modifier_overlap_std", 0)
         if mod_std > 200:
             score = max(score, 0.35)
-            flags.append(f"composite:multi_user_modifier_instability(std={mod_std:.0f}ms)")
+            flags.append(
+                f"composite:multi_user_modifier_instability(std={mod_std:.0f}ms)"
+            )
 
         return min(1.0, score)
 
@@ -327,7 +328,8 @@ class CompositeSignalEngine:
 
         # Pattern 5: All digraph timings identical = replayed recording
         digraph_means = [
-            val for key, val in f.items()
+            val
+            for key, val in f.items()
             if key.startswith("digraph_") and key.endswith("_mean") and val > 0
         ]
         if len(digraph_means) >= 3:

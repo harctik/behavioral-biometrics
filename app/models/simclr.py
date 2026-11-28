@@ -11,13 +11,14 @@ Banking-Specific Augmentations:
 - Cross-device normalization — profile transfer between devices
 """
 
+import logging
+from typing import Dict, List, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
-from typing import List, Dict, Tuple
-import logging
+from torch.utils.data import DataLoader, Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -180,12 +181,16 @@ class SimCLRModel(nn.Module):
         batch_size: int = 32,
     ):
         """Train SimCLR model with NT-Xent loss (upgraded: cosine LR + AdamW)"""
-        logger.info("Starting SimCLR training (v2 — cosine LR, lower τ=%.2f)...", temperature)
+        logger.info(
+            "Starting SimCLR training (v2 — cosine LR, lower τ=%.2f)...", temperature
+        )
 
         # Prepare dataset
         transform = AugmentationTransform()
         dataset = SimCLRDataset(features, transform)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+        dataloader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=True, drop_last=True
+        )
 
         # Optimizer with weight decay + cosine annealing
         optimizer = torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-4)
@@ -216,12 +221,8 @@ class SimCLRModel(nn.Module):
                 sim_22.masked_fill_(mask, -9e15)
 
                 labels = torch.arange(B)
-                loss_12 = F.cross_entropy(
-                    torch.cat([sim_12, sim_11], dim=1), labels
-                )
-                loss_21 = F.cross_entropy(
-                    torch.cat([sim_12.T, sim_22], dim=1), labels
-                )
+                loss_12 = F.cross_entropy(torch.cat([sim_12, sim_11], dim=1), labels)
+                loss_21 = F.cross_entropy(torch.cat([sim_12.T, sim_22], dim=1), labels)
                 loss = (loss_12 + loss_21) / 2
 
                 loss.backward()
@@ -262,7 +263,7 @@ class SimCLRModel(nn.Module):
 
     def load(self, path: str):
         """Load model"""
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, weights_only=True)
         self.load_state_dict(checkpoint["state_dict"])
         self.feature_names = checkpoint.get("feature_names")
 
@@ -325,7 +326,7 @@ class ContrastiveEnrollment:
 
     def load(self, path: str):
         """Load enrollment data"""
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, weights_only=True)
         self.embeddings = checkpoint["embeddings"]
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.threshold = checkpoint.get("threshold", 0.7)

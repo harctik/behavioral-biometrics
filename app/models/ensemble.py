@@ -1,9 +1,13 @@
-import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
 import logging
+from typing import Dict, List
+
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
-from app.models.sequence_models import GRUSequenceModel
+import os
+from datetime import datetime
+
 from app.models.anomaly_detectors import (
     AutoencoderAnomalyDetector,
     IsolationForestDetector,
@@ -13,12 +17,7 @@ from app.models.incremental_classifiers import (
     IncrementalKNNClassifier,
     PassiveAggressiveDetector,
 )
-from app.models.analytics_and_security import BehavioralAnalytics, SessionSecurityMonitor, AuditLogger
-from sklearn.preprocessing import StandardScaler
-import os
-from datetime import datetime
-
-import joblib
+from app.models.sequence_models import GRUSequenceModel
 
 
 class EnsembleBehavioralClassifier:
@@ -43,10 +42,21 @@ class EnsembleBehavioralClassifier:
 
     ENROLLMENT_PHASES = {
         "bootstrap": {"days": 3, "models": ["svm", "isolation", "knn"]},
-        "building": {"days": 7, "models": ["svm", "isolation", "knn", "transformer", "pa"]},
+        "building": {
+            "days": 7,
+            "models": ["svm", "isolation", "knn", "transformer", "pa"],
+        },
         "mature": {
             "days": float("inf"),
-            "models": ["transformer", "autoencoder", "svm", "knn", "pa", "isolation", "gru"],
+            "models": [
+                "transformer",
+                "autoencoder",
+                "svm",
+                "knn",
+                "pa",
+                "isolation",
+                "gru",
+            ],
         },
     }
 
@@ -82,20 +92,22 @@ class EnsembleBehavioralClassifier:
             "svm": 0.15,
             "knn": 0.15,
             "isolation": 0.10,
-            "gru": 0.10,          # Legacy recurrent — lower weight
+            "gru": 0.10,  # Legacy recurrent — lower weight
             "pa": 0.05,
         }
 
     def _init_transformer(self):
         """Initialize BehavioralTransformerEncoder (lazy — tolerates import failures)."""
         try:
-            from app.models.transformer_model import BehavioralTransformerEncoder
             from app.behavioral_feature_engine import BehavioralFeatureEngine
+            from app.models.transformer_model import BehavioralTransformerEncoder
 
-            feature_dim = BehavioralFeatureEngine.FEATURE_COUNT  # Dynamic — matches actual engine
+            feature_dim = (
+                BehavioralFeatureEngine.FEATURE_COUNT
+            )  # Dynamic — matches actual engine
 
             self.transformer_model = BehavioralTransformerEncoder(
-                sequence_length=50,   # Match GRU's default for feature dicts
+                sequence_length=50,  # Match GRU's default for feature dicts
                 feature_dim=feature_dim,
                 d_model=64,
                 nhead=4,
@@ -104,9 +116,14 @@ class EnsembleBehavioralClassifier:
                 dropout=0.1,
                 embedding_dim=128,
             )
-            logger.info("BehavioralTransformerEncoder initialized (d=64, h=4, L=2, features=%d)", feature_dim)
+            logger.info(
+                "BehavioralTransformerEncoder initialized (d=64, h=4, L=2, features=%d)",
+                feature_dim,
+            )
         except Exception:
-            logger.warning("BehavioralTransformerEncoder not available — falling back to GRU-only")
+            logger.warning(
+                "BehavioralTransformerEncoder not available — falling back to GRU-only"
+            )
             self.transformer_model = None
 
     def _init_banking_models(self):
@@ -134,7 +151,9 @@ class EnsembleBehavioralClassifier:
                 "progress_pct": 0,
                 "active_models": self.ENROLLMENT_PHASES["bootstrap"]["models"],
                 "total_models": len(self.model_weights),
-                "active_model_count": len(self.ENROLLMENT_PHASES["bootstrap"]["models"]),
+                "active_model_count": len(
+                    self.ENROLLMENT_PHASES["bootstrap"]["models"]
+                ),
             }
 
         days = (datetime.now() - self.enrollment_start).days
@@ -174,7 +193,9 @@ class EnsembleBehavioralClassifier:
             # Train BehavioralTransformerEncoder (primary)
             if self.transformer_model is not None and len(genuine_features) >= 50:
                 try:
-                    results["transformer"] = self.transformer_model.train_model(genuine_features)
+                    results["transformer"] = self.transformer_model.train_model(
+                        genuine_features
+                    )
                 except Exception as e:
                     logger.error("Transformer training failed: %s", e)
                     results["transformer"] = {"error": str(e)}
@@ -352,9 +373,15 @@ class EnsembleBehavioralClassifier:
         weights = []
 
         # Transformer score (primary)
-        if "transformer" in predictions and predictions["transformer"]["confidence"] > 0.1:
+        if (
+            "transformer" in predictions
+            and predictions["transformer"]["confidence"] > 0.1
+        ):
             scores.append(predictions["transformer"]["score"])
-            weights.append(self.model_weights["transformer"] * predictions["transformer"]["confidence"])
+            weights.append(
+                self.model_weights["transformer"]
+                * predictions["transformer"]["confidence"]
+            )
 
         # GRU score (legacy)
         if "gru" in predictions and predictions["gru"]["confidence"] > 0.1:

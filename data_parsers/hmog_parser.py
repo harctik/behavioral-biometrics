@@ -1,10 +1,10 @@
-import os
 import csv
 import logging
-import numpy as np
-from typing import Dict, List, Any
+import os
+from typing import Dict, List
 
 logger = logging.getLogger("hmog_parser")
+
 
 def parse_hmog(hmog_dir: str) -> Dict[str, List[Dict[str, float]]]:
     """
@@ -21,13 +21,13 @@ def parse_hmog(hmog_dir: str) -> Dict[str, List[Dict[str, float]]]:
         return {}
 
     logger.info(f"Parsing {len(files)} HMOG user files...")
-    
+
     by_subject: Dict[str, List[Dict[str, float]]] = {}
 
     for fname in files:
         filepath = os.path.join(hmog_dir, fname)
         user_id = fname.replace(".csv", "").replace("hmog_user_", "hmog_")
-        
+
         # We generated/downloaded CSVs where each row is a session rep containing features
         try:
             with open(filepath, "r") as f:
@@ -43,7 +43,7 @@ def parse_hmog(hmog_dir: str) -> Dict[str, List[Dict[str, float]]]:
                                 pass
                     if features:
                         features_list.append(features)
-                
+
                 if features_list:
                     by_subject[user_id] = features_list
         except Exception as e:

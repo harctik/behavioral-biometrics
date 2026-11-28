@@ -10,15 +10,20 @@ Hyperparameters are tuned ONLY on 10 held-out "tuning" subjects; reported result
 come from the other 41 subjects, which are never used for tuning.
 """
 
-import json, sys, itertools, warnings, time
-import numpy as np, pandas as pd
+import json
+import sys
+import time
+import warnings
+
+import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed
-from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import IsolationForest
-from sklearn.svm import OneClassSVM
+from sklearn.metrics import roc_auc_score, roc_curve
 from sklearn.neighbors import NearestNeighbors
 from sklearn.neural_network import MLPRegressor
-from sklearn.metrics import roc_curve, roc_auc_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import OneClassSVM
 
 warnings.filterwarnings("ignore")
 

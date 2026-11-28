@@ -12,10 +12,8 @@ Files covered:
   8. ml_ensemble.py (was 68%)
 """
 
-import math
-import pytest
 import numpy as np
-
+import pytest
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. BehavioralFeatureEngine (was 0% → target 95%+)

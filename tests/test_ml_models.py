@@ -7,9 +7,8 @@ These tests run WITHOUT GPU/heavy deps — all models tested via their
 pure-Python / NumPy inference paths.
 """
 
-import pytest
 import numpy as np
-
+import pytest
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # COGNITIVE ENGINE

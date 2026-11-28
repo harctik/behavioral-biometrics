@@ -5,18 +5,18 @@ Tests for Phase 4 production-readiness features:
 - CBS CircuitBreaker
 """
 
-import pytest
 import time
 
-from app.database import DatabaseManager
-from app.compliance import ConsentManager
+import pytest
+
 from app.banking.cbs_adapters import (
     CircuitBreaker,
     CircuitState,
     ExternalCallError,
     FinacleAdapter,
 )
-
+from app.compliance import ConsentManager
+from app.database import DatabaseManager
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Audit Chain Verification

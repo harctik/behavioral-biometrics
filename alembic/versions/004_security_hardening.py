@@ -11,9 +11,9 @@ Changes:
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "004"
@@ -27,9 +27,7 @@ def upgrade() -> None:
 
     # 1. Add context_hash to sessions for session-binding validation
     with op.batch_alter_table("sessions") as batch:
-        batch.add_column(
-            sa.Column("context_hash", sa.String(), nullable=True)
-        )
+        batch.add_column(sa.Column("context_hash", sa.String(), nullable=True))
 
     # 2. Drop the redundant salt column from users.
     #    bcrypt stores the salt inside the password_hash itself, so this

@@ -6,10 +6,10 @@ Covers:
 - T-2: Account lockout enforcement (6th attempt with correct password is rejected)
 - CSRF token endpoint
 """
-from conftest import full_login
 import hashlib
 import uuid
-import pytest
+
+from conftest import full_login
 
 
 class TestPasswordResetEndToEnd:
@@ -45,7 +45,10 @@ class TestPasswordResetEndToEnd:
             db = get_db()
             with db.get_connection() as conn:
                 try:
-                    from app.database_pg import DatabaseManager as PostgresDatabaseManager
+                    from app.database_pg import (
+                        DatabaseManager as PostgresDatabaseManager,
+                    )
+
                     is_pg = isinstance(db, PostgresDatabaseManager)
                 except ImportError:
                     is_pg = False
@@ -113,8 +116,9 @@ class TestPasswordResetEndToEnd:
         token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
         # Issue a token that already expired (5 minutes ago)
-        from app.extensions import get_db
         import datetime
+
+        from app.extensions import get_db
 
         with app.app_context():
             db = get_db()
@@ -147,8 +151,9 @@ class TestPasswordResetEndToEnd:
         raw_token = str(uuid.uuid4())
         token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
-        from app.extensions import get_db
         import datetime
+
+        from app.extensions import get_db
 
         with app.app_context():
             db = get_db()

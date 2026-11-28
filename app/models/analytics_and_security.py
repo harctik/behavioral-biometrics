@@ -1,14 +1,15 @@
-import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
 import logging
+from typing import Dict, List
+
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
-import os
 import hashlib
-import joblib
-from collections import deque
-from logging.handlers import RotatingFileHandler
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
+
+
 class BehavioralAnalytics:
     """Advanced behavioral analytics for user comparison and insights"""
 
@@ -156,7 +157,6 @@ class BehavioralAnalytics:
         }
 
 
-
 class DeviceFingerprint:
     """Device fingerprinting for enhanced security"""
 
@@ -190,7 +190,6 @@ class DeviceFingerprint:
     def get_device_count(self, user_id: int) -> int:
         """Get number of known devices for user"""
         return len(self.fingerprints.get(user_id, []))
-
 
 
 class SessionSecurityMonitor:
@@ -271,7 +270,6 @@ class SessionSecurityMonitor:
             "ip_changes": profile["ip_changes"],
             "behavioral_anomalies": profile["behavioral_anomalies"],
         }
-
 
 
 class RiskBasedAuthenticator:
@@ -362,7 +360,6 @@ class RiskBasedAuthenticator:
         }
 
 
-
 class AuditLogger:
     """Comprehensive audit logging for security compliance"""
 
@@ -418,5 +415,3 @@ class AuditLogger:
             f"SESSION | {event_type} | User:{user_id} | Session:{session_id} | "
             f"{details}"
         )
-
-

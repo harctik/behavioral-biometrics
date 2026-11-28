@@ -5,9 +5,9 @@ This module provides a configurable logging setup that can be adjusted via
 environment variables and uses rotating file handlers for production use.
 """
 
+import logging
 import os
 import sys
-import logging
 from logging.handlers import RotatingFileHandler
 
 

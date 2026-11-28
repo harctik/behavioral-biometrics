@@ -17,11 +17,12 @@ Supported Models:
 - Siamese Network
 """
 
+import logging
 import os
 import time
-import logging
+from typing import Dict, Tuple
+
 import numpy as np
-from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ class ONNXOptimizer:
         output_path = output_path or onnx_path.replace(".onnx", "_int8.onnx")
 
         try:
-            from onnxruntime.quantization import quantize_dynamic, QuantType
+            from onnxruntime.quantization import QuantType, quantize_dynamic
 
             quantize_dynamic(
                 model_input=onnx_path,

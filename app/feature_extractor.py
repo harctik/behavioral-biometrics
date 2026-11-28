@@ -4,13 +4,12 @@ The extractor produces a fixed-size feature vector (38 features) to keep model
 input dimensions stable across training and inference.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Tuple, Optional
-from collections import defaultdict, deque
-import statistics
-import math
 import logging
+import math
+from collections import defaultdict, deque
+from typing import Dict, List, Tuple
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 

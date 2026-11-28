@@ -7,6 +7,7 @@ an in-memory SQLite database.
 
 import os
 import sys
+
 import pytest
 
 # Ensure project root is importable

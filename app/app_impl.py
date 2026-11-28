@@ -14,19 +14,17 @@ Production middleware stack:
 import time
 import uuid
 from datetime import timedelta
-from flask import Flask, request, g, session
+
+from flask import Flask, g, request
 from flask_jwt_extended import JWTManager
 from flask_restx import Api
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-import logging
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Settings
-
-
-from .logging_config import setup_logging, get_logger
+from .error_handling import ErrorHandler, make_error_response
+from .logging_config import get_logger, setup_logging
 from .redis_store import get_redis_client
-from .error_handling import make_error_response, ErrorHandler
 
 logger = get_logger(__name__)
 
@@ -198,21 +196,21 @@ def create_app(env: str = "development"):
     )
 
     from app.api import (
-        auth_ns,
-        session_ns,
-        behavioral_ns,
-        transaction_ns,
         admin_ns,
-        compliance_ns,
+        auth_ns,
         banking_ns,
-        health_ns,
-        webhooks_ns,
-        user_ns,
-        notifications_ns,
+        behavioral_ns,
         beneficiaries_ns,
-        investments_ns,
         cards_ns,
+        compliance_ns,
+        health_ns,
+        investments_ns,
         ml_ns,
+        notifications_ns,
+        session_ns,
+        transaction_ns,
+        user_ns,
+        webhooks_ns,
     )
 
     api.add_namespace(auth_ns, path="")
@@ -321,10 +319,12 @@ def create_app(env: str = "development"):
                 if o.strip()
             }
             # Always allow localhost for local development
-            allowed_set.update({
-                "http://localhost:3000",
-                "http://127.0.0.1:3000",
-            })
+            allowed_set.update(
+                {
+                    "http://localhost:3000",
+                    "http://127.0.0.1:3000",
+                }
+            )
             if origin in allowed_set:
                 response.headers["Access-Control-Allow-Origin"] = origin
                 response.headers.add("Vary", "Origin")
@@ -439,9 +439,11 @@ def create_app(env: str = "development"):
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
 
     from app.database import get_engine, reset_engine
+
     db = None
     # Retry with exponential backoff (handles Supabase pooler cold-starts)
     import time as _time
+
     _max_retries = 3
     for _attempt in range(1, _max_retries + 1):
         try:
@@ -453,14 +455,21 @@ def create_app(env: str = "development"):
             # Clear the cached engine so the next attempt creates a fresh one
             reset_engine(db_uri)
             if _attempt < _max_retries:
-                wait = 2 ** _attempt  # 2s, 4s
+                wait = 2**_attempt  # 2s, 4s
                 logger.warning(
                     "Database connection attempt %d/%d failed: %s — retrying in %ds",
-                    _attempt, _max_retries, pg_err, wait,
+                    _attempt,
+                    _max_retries,
+                    pg_err,
+                    wait,
                 )
                 _time.sleep(wait)
             else:
-                logger.error("Database connection failed after %d attempts: %s", _max_retries, pg_err)
+                logger.error(
+                    "Database connection failed after %d attempts: %s",
+                    _max_retries,
+                    pg_err,
+                )
                 logger.warning(
                     "Falling back to SQLite. This is NOT recommended for production."
                 )
@@ -492,16 +501,23 @@ def create_app(env: str = "development"):
 
     @app.errorhandler(405)
     def method_not_allowed(error):
-        return make_error_response("METHOD_NOT_ALLOWED", "Method not allowed for this endpoint", status=405)
+        return make_error_response(
+            "METHOD_NOT_ALLOWED", "Method not allowed for this endpoint", status=405
+        )
 
     @app.errorhandler(422)
     def unprocessable_entity(error):
-        return make_error_response("UNPROCESSABLE_ENTITY", "Unprocessable entity", status=422)
+        return make_error_response(
+            "UNPROCESSABLE_ENTITY", "Unprocessable entity", status=422
+        )
 
     @app.errorhandler(429)
     def too_many_requests(error):
         from flask import jsonify, make_response
-        data, status = make_error_response("TOO_MANY_REQUESTS", "Rate limit exceeded", status=429)
+
+        data, status = make_error_response(
+            "TOO_MANY_REQUESTS", "Rate limit exceeded", status=429
+        )
         resp = make_response(jsonify(data), status)
         resp.headers["Retry-After"] = str(getattr(error, "retry_after", 60) or 60)
         return resp

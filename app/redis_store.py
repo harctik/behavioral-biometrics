@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 import hashlib
-from typing import Any, Optional, List
+import json
+from typing import Any, List, Optional
 
 from .logging_config import get_logger
 
@@ -67,7 +67,9 @@ def delete_session(client, session_id: str) -> None:
 
 FEATURE_CACHE_PREFIX = "bfc:"
 FEATURE_CACHE_MAX = 512  # Max feature vectors per user
-FEATURE_CACHE_TTL = 300  # 5-minute TTL for feature cache (aligned with session activity)
+FEATURE_CACHE_TTL = (
+    300  # 5-minute TTL for feature cache (aligned with session activity)
+)
 BLOOM_PREFIX = "bloom:"
 
 

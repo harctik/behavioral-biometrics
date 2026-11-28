@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -537,4 +537,3 @@ def get_behavioral_engine() -> BehavioralFeatureEngine:
     if _engine is None:
         _engine = BehavioralFeatureEngine()
     return _engine
-

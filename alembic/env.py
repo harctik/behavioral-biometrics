@@ -1,7 +1,9 @@
-from logging.config import fileConfig
-import sys
 import os
-from sqlalchemy import pool, create_engine
+import sys
+from logging.config import fileConfig
+
+from sqlalchemy import create_engine, pool
+
 from alembic import context
 
 # Add the app directory to the path
@@ -17,7 +19,6 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import our database models and settings
-from app.database import DatabaseManager
 from app.config import Settings
 
 # Set target metadata for autogenerate support

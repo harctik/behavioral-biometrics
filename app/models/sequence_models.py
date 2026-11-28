@@ -1,21 +1,35 @@
-import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
 import logging
+from typing import Dict, List, Tuple
+
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
-from app.models.base import FeatureConsistencyMixin
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, precision_score, recall_score
-import joblib
 import os
+
+import joblib
+from sklearn.metrics import accuracy_score, precision_score, recall_score
+from sklearn.preprocessing import StandardScaler
+
+from app.models.base import FeatureConsistencyMixin
+
 try:
     import tensorflow as tf
-    from tensorflow.keras.models import Model, Sequential
-    from tensorflow.keras.layers import GRU, LSTM, Dense, Dropout, Input, RepeatVector, TimeDistributed
-    from tensorflow.keras.optimizers import Adam
     from tensorflow.keras.callbacks import EarlyStopping
+    from tensorflow.keras.layers import (
+        GRU,
+        LSTM,
+        Dense,
+        Dropout,
+        Input,
+        RepeatVector,
+        TimeDistributed,
+    )
+    from tensorflow.keras.models import Model, Sequential
+    from tensorflow.keras.optimizers import Adam
 except ImportError:
     tf = None
+
 
 class GRUSequenceModel(FeatureConsistencyMixin):
     """GRU model for sequential behavioral data analysis"""
@@ -211,7 +225,6 @@ class GRUSequenceModel(FeatureConsistencyMixin):
             return False
 
 
-
 class LSTMSequenceModel(FeatureConsistencyMixin):
     """LSTM model for sequential behavioral data analysis"""
 
@@ -347,5 +360,3 @@ class LSTMSequenceModel(FeatureConsistencyMixin):
         except Exception:
             logger.exception("Failed to load LSTM artifacts from %s", filepath)
             return False
-
-

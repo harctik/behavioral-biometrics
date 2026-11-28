@@ -5,14 +5,13 @@ This module consolidates frequently used operations like JSON handling,
 file operations, and other helper functions to avoid code duplication.
 """
 
+import hashlib
+import hmac
 import json
 import logging
-import hmac
-import hashlib
 import secrets
 import time
-from typing import Any, Dict, Optional, Union
-from pathlib import Path
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 _NONCE_CACHE: Dict[str, float] = {}

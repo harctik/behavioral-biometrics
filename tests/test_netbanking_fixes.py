@@ -7,10 +7,10 @@ Fix 3: Personalised transaction threshold — P90-based step-up trigger
 Fix 4: Device fingerprint anomaly — new device flagged in login response
 """
 
-from conftest import full_login
-import pytest
 import uuid
 
+import pytest
+from conftest import full_login
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Fix 1 — Login keystroke capture
@@ -109,7 +109,6 @@ class TestLoginKeystrokeCapture:
         session_id = resp.get_json()["data"]["session_id"]
 
         from app.extensions import get_db
-        import json
 
         with app.app_context():
             db = get_db()
@@ -201,8 +200,8 @@ class TestPersonalisedTransactionThreshold:
         from app.services.transaction_service import TransactionService
 
         _get_personalised_threshold = TransactionService._get_personalised_threshold
+
         from app.extensions import get_db
-        import json
 
         with app.app_context():
             db = get_db()

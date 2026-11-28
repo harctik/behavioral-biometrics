@@ -4,8 +4,13 @@ Handles registration, login, logout, MFA verification, password reset.
 All responses follow a standardised envelope: ``{"data": {...}}`` on success,
 ``{"error": {...}}`` on failure.
 """
-from flask import request, current_app, make_response, jsonify
-from flask_restx import Namespace, Resource, fields
+import datetime
+import hashlib
+import logging
+import uuid
+
+import pyotp
+from flask import current_app, jsonify, make_response, request
 from flask_jwt_extended import (
     create_access_token,
     get_jwt,
@@ -13,27 +18,21 @@ from flask_jwt_extended import (
     jwt_required,
     set_access_cookies,
 )
+from flask_restx import Namespace, Resource, fields
 from pydantic import ValidationError
-from app.schemas.auth_schemas import (
-    RegisterSchema,
-    LoginSchema,
-    ForgotPasswordSchema,
-    ResetPasswordSchema,
-    MFAVerifySchema,
-    VerifyEmailSchema
-)
-import re
-import hashlib
-import logging
-import uuid
-import datetime
-from typing import Annotated, Optional
 
-from app.demo_login import demo_user
-from app.extensions import get_db, get_redis, limiter
-from app.error_handling import make_error_response
 from app.api.helpers import resolve_query
-import pyotp
+from app.demo_login import demo_user
+from app.error_handling import make_error_response
+from app.extensions import get_db, get_redis, limiter
+from app.schemas.auth_schemas import (
+    ForgotPasswordSchema,
+    LoginSchema,
+    MFAVerifySchema,
+    RegisterSchema,
+    ResetPasswordSchema,
+    VerifyEmailSchema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,9 +227,8 @@ class Register(Resource):
         return {"data": resp_data}, 200
 
 
+from app.schemas.auth_schemas import AccountRecoveryVerifySchema, LoginVerifySchema
 from app.services.auth_service import AuthService
-from app.schemas.auth_schemas import LoginVerifySchema, AccountRecoveryVerifySchema
-
 
 # ── Typing prompts for users without an assigned prompt ──────────────────
 _FALLBACK_PROMPTS = [
@@ -267,12 +265,21 @@ class Login(Resource):
             return make_error_response("RATE_LIMIT_EXCEEDED", stuffing_msg, status=429)
 
         # 2. Account Lockout Check
-        lockout_ok, remaining, lockout_until = AuthService.check_account_lockout(data.username)
+        lockout_ok, remaining, lockout_until = AuthService.check_account_lockout(
+            data.username
+        )
         if not lockout_ok:
-            err_result = make_error_response("ACCOUNT_LOCKED", "Account locked due to too many failed attempts.", status=423)
+            err_result = make_error_response(
+                "ACCOUNT_LOCKED",
+                "Account locked due to too many failed attempts.",
+                status=423,
+            )
             if isinstance(err_result, tuple):
                 resp, status_code = err_result
-                resp["error"]["details"] = {"lockout_until": lockout_until, "remaining_attempts": 0}
+                resp["error"]["details"] = {
+                    "lockout_until": lockout_until,
+                    "remaining_attempts": 0,
+                }
                 return resp, status_code
             return err_result
 
@@ -294,7 +301,9 @@ class Login(Resource):
             rem, until = AuthService.increment_account_lockout(data.username)
 
             # ── Suspicious login alert email ────────────────────────────
-            ALERT_THRESHOLD = current_app.config.get("SUSPICIOUS_LOGIN_ALERT_THRESHOLD", 3)
+            ALERT_THRESHOLD = current_app.config.get(
+                "SUSPICIOUS_LOGIN_ALERT_THRESHOLD", 3
+            )
             try:
                 target_user = db.get_user_by_username(data.username)
                 if not target_user:
@@ -322,15 +331,22 @@ class Login(Resource):
                                     username=target_user["username"],
                                     failed_attempts=failed_count,
                                     ip_address=ip_address,
-                                    user_agent=request.headers.get("User-Agent", "unknown"),
+                                    user_agent=request.headers.get(
+                                        "User-Agent", "unknown"
+                                    ),
                                 )
             except Exception:
                 logger.error("Failed to send suspicious login alert", exc_info=True)
 
-            err_result = make_error_response("INVALID_CREDENTIALS", "Invalid credentials", status=401)
+            err_result = make_error_response(
+                "INVALID_CREDENTIALS", "Invalid credentials", status=401
+            )
             if isinstance(err_result, tuple):
                 resp, status_code = err_result
-                resp["error"]["details"] = {"remaining_attempts": rem, "lockout_until": until}
+                resp["error"]["details"] = {
+                    "remaining_attempts": rem,
+                    "lockout_until": until,
+                }
                 return resp, status_code
             return err_result
 
@@ -345,14 +361,25 @@ class Login(Resource):
         if not typing_prompt:
             # Assign a deterministic prompt based on user_id (no randomness)
             import hashlib
-            idx = int(hashlib.md5(str(user["user_id"]).encode()).hexdigest(), 16) % len(_FALLBACK_PROMPTS)
+
+            idx = int(
+                hashlib.md5(
+                    str(user["user_id"]).encode(), usedforsecurity=False
+                ).hexdigest(),
+                16,
+            ) % len(_FALLBACK_PROMPTS)
             typing_prompt = _FALLBACK_PROMPTS[idx]
             db.set_typing_prompt(user["user_id"], typing_prompt)
 
         # ── Get enrollment status ──────────────────────────────────────────
-        enrollment_info = {"sessions_completed": 0, "sessions_required": 3, "enrolled": False}
+        enrollment_info = {
+            "sessions_completed": 0,
+            "sessions_required": 3,
+            "enrolled": False,
+        }
         try:
             from app.models.passive_enrollment import get_enrollment_manager
+
             enrollment_mgr = get_enrollment_manager()
             enrollment_info = enrollment_mgr.get_enrollment_status(user["user_id"])
         except Exception:
@@ -360,14 +387,17 @@ class Login(Resource):
 
         logger.info(
             "Login Phase 1 passed for user %s — challenge issued (enrollment: %s)",
-            data.username, enrollment_info.get("enrollment_phase", "unknown"),
+            data.username,
+            enrollment_info.get("enrollment_phase", "unknown"),
         )
 
         return {
             "data": {
                 "challenge_token": challenge_token,
                 "typing_prompt": typing_prompt,
-                "enrollment_phase": enrollment_info.get("enrollment_phase", "collecting"),
+                "enrollment_phase": enrollment_info.get(
+                    "enrollment_phase", "collecting"
+                ),
                 "sessions_completed": enrollment_info.get("sessions_completed", 0),
                 "sessions_required": enrollment_info.get("sessions_required", 3),
                 "username": data.username,
@@ -428,6 +458,7 @@ class LoginVerify(Resource):
 
         try:
             from app.models.passive_enrollment import get_enrollment_manager
+
             enrollment_mgr = get_enrollment_manager()
             enrollment_status = enrollment_mgr.get_enrollment_status(user_id)
             enrollment_phase = not enrollment_status.get("enrolled", False)
@@ -436,17 +467,37 @@ class LoginVerify(Resource):
             login_features = {}
             if keystroke_events and len(keystroke_events) >= 2:
                 try:
-                    hold_times = [e.get("hold_time", 0) for e in keystroke_events if e.get("hold_time")]
-                    flight_times = [e.get("flight_time", 0) for e in keystroke_events if e.get("flight_time")]
+                    hold_times = [
+                        e.get("hold_time", 0)
+                        for e in keystroke_events
+                        if e.get("hold_time")
+                    ]
+                    flight_times = [
+                        e.get("flight_time", 0)
+                        for e in keystroke_events
+                        if e.get("flight_time")
+                    ]
                     if hold_times:
-                        login_features["hold_time_mean"] = sum(hold_times) / len(hold_times)
+                        login_features["hold_time_mean"] = sum(hold_times) / len(
+                            hold_times
+                        )
                         login_features["hold_time_std"] = (
-                            sum((h - login_features["hold_time_mean"]) ** 2 for h in hold_times) / len(hold_times)
+                            sum(
+                                (h - login_features["hold_time_mean"]) ** 2
+                                for h in hold_times
+                            )
+                            / len(hold_times)
                         ) ** 0.5
                     if flight_times:
-                        login_features["flight_time_mean"] = sum(flight_times) / len(flight_times)
+                        login_features["flight_time_mean"] = sum(flight_times) / len(
+                            flight_times
+                        )
                         login_features["flight_time_std"] = (
-                            sum((f - login_features["flight_time_mean"]) ** 2 for f in flight_times) / len(flight_times)
+                            sum(
+                                (f - login_features["flight_time_mean"]) ** 2
+                                for f in flight_times
+                            )
+                            / len(flight_times)
                         ) ** 0.5
                 except Exception:
                     pass
@@ -466,12 +517,18 @@ class LoginVerify(Resource):
             elif keystroke_events and len(keystroke_events) >= 3:
                 try:
                     from app.models.digraph_profile import get_digraph_extractor
+
                     extractor = get_digraph_extractor()
-                    digraph_profile = extractor.extract_profile(keystroke_events, source="login")
+                    digraph_profile = extractor.extract_profile(
+                        keystroke_events, source="login"
+                    )
                 except Exception:
                     pass
 
-            if digraph_profile and digraph_profile.get("meta", {}).get("unique_keys", 0) >= 2:
+            if (
+                digraph_profile
+                and digraph_profile.get("meta", {}).get("unique_keys", 0) >= 2
+            ):
                 try:
                     digraph_result = enrollment_mgr.ingest_digraph_profile(
                         user_id=user_id,
@@ -479,12 +536,20 @@ class LoginVerify(Resource):
                         source="login",
                     )
                 except Exception:
-                    logger.error("Digraph profile update at login failed", exc_info=True)
+                    logger.error(
+                        "Digraph profile update at login failed", exc_info=True
+                    )
 
             # ── Compute combined match score ───────────────────────────────
             if not enrollment_phase:
-                agg_score = enrollment_result.get("match_score", 0.5) if enrollment_result else 0.5
-                dig_score = digraph_result.get("match_score", 0.5) if digraph_result else 0.5
+                agg_score = (
+                    enrollment_result.get("match_score", 0.5)
+                    if enrollment_result
+                    else 0.5
+                )
+                dig_score = (
+                    digraph_result.get("match_score", 0.5) if digraph_result else 0.5
+                )
 
                 # Weighted: 60% digraph (more discriminative), 40% aggregate
                 if digraph_result and enrollment_result:
@@ -498,7 +563,10 @@ class LoginVerify(Resource):
 
                 logger.info(
                     "Login Phase 2 for user %d: agg=%.3f dig=%.3f combined=%.3f",
-                    user_id, agg_score, dig_score, match_score,
+                    user_id,
+                    agg_score,
+                    dig_score,
+                    match_score,
                 )
 
             # Refresh enrollment status after ingestion
@@ -517,7 +585,11 @@ class LoginVerify(Resource):
 
         logger.info(
             "Login Phase 2 decision for user %d: decision=%s score=%.3f enrollment=%s device_known=%s",
-            user_id, decision, match_score, enrollment_phase, device_known,
+            user_id,
+            decision,
+            match_score,
+            enrollment_phase,
+            device_known,
         )
 
         # ── Note: Hard blocking is disabled — decision is always grant or step_up ──
@@ -526,7 +598,10 @@ class LoginVerify(Resource):
         session_id = db.create_session(user_id, ip_address, user_agent)
         if device_id:
             with db.get_connection() as conn:
-                query = resolve_query(db, "UPDATE sessions SET device_id = :param WHERE session_id = :param")
+                query = resolve_query(
+                    db,
+                    "UPDATE sessions SET device_id = :param WHERE session_id = :param",
+                )
                 conn.execute(query, (device_id, session_id))
                 conn.commit()
 
@@ -564,7 +639,12 @@ class LoginVerify(Resource):
                 retention_tag="security",
             )
 
-        logger.info("User %d logged in via Phase 2: decision=%s session=%s", user_id, decision, session_id)
+        logger.info(
+            "User %d logged in via Phase 2: decision=%s session=%s",
+            user_id,
+            decision,
+            session_id,
+        )
 
         resp_data = {
             "data": {
@@ -580,8 +660,11 @@ class LoginVerify(Resource):
         resp = make_response(jsonify(resp_data), 200)
         set_access_cookies(resp, access_token)
         resp.set_cookie(
-            "session_id", session_id,
-            httponly=False, samesite="Lax", path="/",
+            "session_id",
+            session_id,
+            httponly=False,
+            samesite="Lax",
+            path="/",
             max_age=int(current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()),
         )
         return resp
@@ -614,6 +697,7 @@ class AccountRecoveryVerify(Resource):
 
         try:
             from app.models.passive_enrollment import get_enrollment_manager
+
             enrollment_mgr = get_enrollment_manager()
 
             # Get stored profile for comparison
@@ -625,18 +709,29 @@ class AccountRecoveryVerify(Resource):
                 if keystroke_events and len(keystroke_events) >= 3:
                     try:
                         from app.models.digraph_profile import get_digraph_extractor
+
                         extractor = get_digraph_extractor()
-                        digraph_profile = extractor.extract_profile(keystroke_events, source="recovery")
-                        if digraph_profile and digraph_profile.get("meta", {}).get("unique_keys", 0) >= 2:
+                        digraph_profile = extractor.extract_profile(
+                            keystroke_events, source="recovery"
+                        )
+                        if (
+                            digraph_profile
+                            and digraph_profile.get("meta", {}).get("unique_keys", 0)
+                            >= 2
+                        ):
                             # Compare without ingesting
                             stored = enrollment_mgr._load_digraph_state(user_id)
                             if stored and stored.get("per_key_hold"):
-                                score = enrollment_mgr._compute_digraph_match_score(stored, digraph_profile)
+                                score = enrollment_mgr._compute_digraph_match_score(
+                                    stored, digraph_profile
+                                )
                                 total_score += score
                                 if score >= 0.6:
                                     match_count += 1
                     except Exception:
-                        logger.error("Recovery sample %d comparison failed", _idx, exc_info=True)
+                        logger.error(
+                            "Recovery sample %d comparison failed", _idx, exc_info=True
+                        )
 
         except Exception:
             logger.error("Recovery verification failed", exc_info=True)
@@ -652,11 +747,18 @@ class AccountRecoveryVerify(Resource):
                 status="ok",
                 user_id=user_id,
                 resource="/api/v1/auth/account-recovery/verify",
-                metadata={"match_count": match_count, "total_score": round(total_score, 4)},
+                metadata={
+                    "match_count": match_count,
+                    "total_score": round(total_score, 4),
+                },
                 retention_tag="security",
             )
 
-            logger.info("Account recovered for user %d: %d/3 samples matched", user_id, match_count)
+            logger.info(
+                "Account recovered for user %d: %d/3 samples matched",
+                user_id,
+                match_count,
+            )
             return {"message": "Account unlocked successfully"}, 200
         else:
             db.log_audit_evidence(
@@ -664,11 +766,18 @@ class AccountRecoveryVerify(Resource):
                 status="blocked",
                 user_id=user_id,
                 resource="/api/v1/auth/account-recovery/verify",
-                metadata={"match_count": match_count, "total_score": round(total_score, 4)},
+                metadata={
+                    "match_count": match_count,
+                    "total_score": round(total_score, 4),
+                },
                 retention_tag="security",
             )
 
-            logger.warning("Account recovery failed for user %d: %d/3 samples matched", user_id, match_count)
+            logger.warning(
+                "Account recovery failed for user %d: %d/3 samples matched",
+                user_id,
+                match_count,
+            )
             return make_error_response(
                 "RECOVERY_FAILED",
                 "Your typing patterns did not match. Recovery attempts remaining: check your email.",
@@ -707,7 +816,9 @@ class ForgotPassword(Resource):
 
         token = str(uuid.uuid4())
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=15)
+        expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+            minutes=15
+        )
 
         # Persist hashed token in DB (authoritative store)
         db.issue_password_reset_token(user["user_id"], token_hash, expires_at)
@@ -722,8 +833,12 @@ class ForgotPassword(Resource):
 
         mail_svc = current_app.extensions.get("mail_service")
         if mail_svc:
-            reset_url_base = current_app.config.get("RESET_URL_BASE", "") or \
-                (current_app.config.get("FRONTEND_URL", "").rstrip("/") + "/reset-password" if current_app.config.get("FRONTEND_URL") else "http://localhost:3000/reset-password")
+            reset_url_base = current_app.config.get("RESET_URL_BASE", "") or (
+                current_app.config.get("FRONTEND_URL", "").rstrip("/")
+                + "/reset-password"
+                if current_app.config.get("FRONTEND_URL")
+                else "http://localhost:3000/reset-password"
+            )
             mail_svc.send_password_reset(
                 to=user["email"],
                 username=user["username"],
@@ -783,7 +898,9 @@ class VerifyEmail(Resource):
                 )
         else:
             return make_error_response(
-                "VALIDATION_ERROR", "Provide either 'code' + 'user_id' or 'token'", status=400
+                "VALIDATION_ERROR",
+                "Provide either 'code' + 'user_id' or 'token'",
+                status=400,
             )
 
         db.set_email_verified(user_id)
@@ -824,7 +941,9 @@ class ResendVerification(Resource):
         raw = request.get_json() or {}
         req_user_id = raw.get("user_id")
         if not req_user_id:
-            return make_error_response("VALIDATION_ERROR", "user_id is required", status=400)
+            return make_error_response(
+                "VALIDATION_ERROR", "user_id is required", status=400
+            )
 
         db = get_db()
         user = db.get_user_by_id(int(req_user_id))
@@ -836,11 +955,14 @@ class ResendVerification(Resource):
 
         # Generate new 6-digit code
         import secrets as _secrets
+
         verification_code = "".join([str(_secrets.choice(range(10))) for _ in range(6)])
         db.store_otp(int(req_user_id), verification_code, ttl_seconds=600)
 
         mail_svc = current_app.extensions.get("mail_service")
-        has_real_mail = mail_svc and getattr(mail_svc, "backend", "console") != "console"
+        has_real_mail = (
+            mail_svc and getattr(mail_svc, "backend", "console") != "console"
+        )
 
         if has_real_mail:
             try:
@@ -955,7 +1077,9 @@ class SendOtpEmail(Resource):
 
         # Determine if we have a real mail backend
         mail_service = current_app.extensions.get("mail_service")
-        is_console_mode = not mail_service or getattr(mail_service, "backend", "console") == "console"
+        is_console_mode = (
+            not mail_service or getattr(mail_service, "backend", "console") == "console"
+        )
 
         # Send via the configured mail service
         email_sent = False
@@ -1000,8 +1124,14 @@ class SendOtpEmail(Resource):
         if is_console_mode:
             response["otp_code"] = otp_code
             response["dev_mode"] = True
-            response["message"] = "OTP generated (dev mode — no email service configured)"
-            logger.info("[DEV OTP] User %d OTP: %s (console backend, code returned in response)", user_id, otp_code)
+            response[
+                "message"
+            ] = "OTP generated (dev mode — no email service configured)"
+            logger.info(
+                "[DEV OTP] User %d OTP: %s (console backend, code returned in response)",
+                user_id,
+                otp_code,
+            )
 
         return response, 200
 
@@ -1139,8 +1269,8 @@ class CSRFToken(Resource):
     @limiter.limit("30 per minute")
     def get(self):
         """Return a signed, time-limited CSRF token for the frontend."""
-        from itsdangerous import URLSafeTimedSerializer
         from flask import g
+        from itsdangerous import URLSafeTimedSerializer
 
         serializer = URLSafeTimedSerializer(
             current_app.config["SECRET_KEY"], salt="csrf-token"

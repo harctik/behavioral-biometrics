@@ -6,6 +6,7 @@ and ``auth_headers`` fixtures so individual test modules stay DRY.
 import os
 import sys
 import uuid
+
 import pytest
 from dotenv import load_dotenv
 
@@ -19,7 +20,6 @@ if root not in sys.path:
 
 from app import create_app
 from app.database import reset_engine
-
 
 # ── 32+ byte keys to silence JWT InsecureKeyLengthWarning ────────────────────
 _TEST_SECRET = "test-secret-key-for-testing-32bytes!"
@@ -53,7 +53,9 @@ def enable_mfa(app, user_id):
 
     with app.app_context():
         with get_db().get_connection() as conn:
-            conn.execute("UPDATE users SET mfa_enabled = ? WHERE user_id = ?", (True, user_id))
+            conn.execute(
+                "UPDATE users SET mfa_enabled = ? WHERE user_id = ?", (True, user_id)
+            )
             conn.commit()
 
 
@@ -76,32 +78,50 @@ def app():
     reset_engine()
 
     application = create_app("testing")
-    
+
     # Truncate tables to ensure isolated state for tests
     with application.app_context():
         from app.extensions import get_db
+
         db = get_db()
         try:
             # PostgreSQL fast truncate
             with db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     TRUNCATE TABLE 
                         users, sessions, behavioral_data, auth_events, model_metadata, 
                         audit_evidence, password_reset_tokens, consent_records, otp_codes, 
                         investments, beneficiaries, cards, notifications,
                         enrollment_state, enrollment_history, digraph_profiles, device_fingerprints
                     CASCADE;
-                """)
+                """
+                )
                 conn.commit()
         except Exception:
             # SQLite fallback
             with db.get_connection() as conn:
                 cursor = conn.cursor()
-                for table in ["users", "sessions", "behavioral_data", "auth_events", "model_metadata", 
-                              "audit_evidence", "password_reset_tokens", "consent_records", "otp_codes", 
-                              "investments", "beneficiaries", "cards", "notifications",
-                              "enrollment_state", "enrollment_history", "digraph_profiles", "device_fingerprints"]:
+                for table in [
+                    "users",
+                    "sessions",
+                    "behavioral_data",
+                    "auth_events",
+                    "model_metadata",
+                    "audit_evidence",
+                    "password_reset_tokens",
+                    "consent_records",
+                    "otp_codes",
+                    "investments",
+                    "beneficiaries",
+                    "cards",
+                    "notifications",
+                    "enrollment_state",
+                    "enrollment_history",
+                    "digraph_profiles",
+                    "device_fingerprints",
+                ]:
                     try:
                         cursor.execute(f"DELETE FROM {table}")
                     except Exception:
@@ -142,6 +162,7 @@ def registered_user(client):
     mfa_secret = ""
     with client.application.app_context():
         from app.extensions import get_db
+
         db = get_db()
         db.set_email_verified(data["user_id"])
 
@@ -191,7 +212,6 @@ def mfa_logged_in_user(client, logged_in_user):
     verifies it, and returns the elevated access token.
     """
     import pyotp
-    from freezegun import freeze_time
 
     mfa_secret = logged_in_user["mfa_secret"]
     assert mfa_secret, "MFA secret is missing — cannot elevate to aal=mfa"
