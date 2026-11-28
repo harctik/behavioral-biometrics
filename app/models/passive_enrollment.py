@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import math
-import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -111,9 +110,11 @@ class PassiveEnrollmentManager:
     def _get_redis(self):
         try:
             from flask import has_app_context
+
             if not has_app_context():
                 return None
             from app.extensions import get_redis
+
             return get_redis()
         except Exception:
             return None
@@ -122,9 +123,11 @@ class PassiveEnrollmentManager:
         """Get database manager, returns None outside Flask app context."""
         try:
             from flask import has_app_context
+
             if not has_app_context():
                 return None
             from app.extensions import get_db
+
             return get_db()
         except Exception:
             return None
@@ -133,6 +136,7 @@ class PassiveEnrollmentManager:
         rc = self._get_redis()
         if rc:
             import json
+
             try:
                 state_str = rc.get(f"passive_enrollment:{user_id}")
                 if state_str:
@@ -142,7 +146,9 @@ class PassiveEnrollmentManager:
                     self._enrollment_status_mem[user_id] = state.get("enrolled", False)
                     return
             except Exception as e:
-                logger.error("Failed to load passive enrollment state from Redis: %s", e)
+                logger.error(
+                    "Failed to load passive enrollment state from Redis: %s", e
+                )
 
         # Fallback: load from database when Redis is unavailable
         if user_id not in self._profiles_mem:
@@ -153,17 +159,23 @@ class PassiveEnrollmentManager:
                     if state:
                         self._profiles_mem[user_id] = state.get("profile", {})
                         self._session_counts_mem[user_id] = state.get("sessions", 0)
-                        self._enrollment_status_mem[user_id] = state.get("enrolled", False)
-                        logger.debug("Loaded enrollment state for user %d from DB (Redis miss)", user_id)
+                        self._enrollment_status_mem[user_id] = state.get(
+                            "enrolled", False
+                        )
+                        logger.debug(
+                            "Loaded enrollment state for user %d from DB (Redis miss)",
+                            user_id,
+                        )
                 except Exception as e:
                     logger.error("Failed to load enrollment state from DB: %s", e)
 
     def _save_state(self, user_id: int):
         import json
+
         state = {
             "profile": self._profiles_mem.get(user_id, {}),
             "sessions": self._session_counts_mem.get(user_id, 0),
-            "enrolled": self._enrollment_status_mem.get(user_id, False)
+            "enrolled": self._enrollment_status_mem.get(user_id, False),
         }
 
         rc = self._get_redis()
@@ -280,8 +292,10 @@ class PassiveEnrollmentManager:
             result = self._process_enrollment(user_id, filtered, source)
         else:
             # ── Post-enrollment: compare + update ──
-            result = self._process_authenticated(user_id, filtered, source, session_context)
-            
+            result = self._process_authenticated(
+                user_id, filtered, source, session_context
+            )
+
         self._save_state(user_id)
 
         # Log enrollment event to database for audit trail
@@ -328,7 +342,9 @@ class PassiveEnrollmentManager:
 
         # Increment session count (only for session-end submissions)
         if source in ("login", "session", "registration"):
-            self._session_counts_mem[user_id] = self._session_counts_mem.get(user_id, 0) + 1
+            self._session_counts_mem[user_id] = (
+                self._session_counts_mem.get(user_id, 0) + 1
+            )
 
         sessions = self._session_counts_mem.get(user_id, 0)
 
@@ -377,7 +393,11 @@ class PassiveEnrollmentManager:
         }
 
     def _process_authenticated(
-        self, user_id: int, features: Dict[str, float], source: str, session_context: Optional[Dict] = None
+        self,
+        user_id: int,
+        features: Dict[str, float],
+        source: str,
+        session_context: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Process data after enrollment — compare against profile."""
         profile = self._profiles_mem.get(user_id, {})
@@ -412,7 +432,8 @@ class PassiveEnrollmentManager:
         else:
             logger.info(
                 "Skipping profile update for user %d: match_score %.2f < 0.7 threshold",
-                user_id, match_score,
+                user_id,
+                match_score,
             )
 
         # Determine action
@@ -524,12 +545,14 @@ class PassiveEnrollmentManager:
 
         return float(match)
 
-    def _update_profile_ema(self, user_id: int, features: Dict[str, float], context_penalty: float = 0.0):
+    def _update_profile_ema(
+        self, user_id: int, features: Dict[str, float], context_penalty: float = 0.0
+    ):
         """Update profile statistics using exponential moving average."""
         profile = self._profiles_mem.get(user_id, {})
         stats = profile.get("feature_stats", {})
         sessions = self._session_counts_mem.get(user_id, 0)
-        
+
         # Dynamic alpha: higher for early sessions, lower as profile matures.
         # Reduce alpha if device context is new (context_penalty > 0)
         base_alpha = max(0.1, 0.5 - (sessions * 0.05))
@@ -622,6 +645,7 @@ class PassiveEnrollmentManager:
         rc = self._get_redis()
         if rc:
             import json
+
             try:
                 state_str = rc.get(f"digraph_profile:{user_id}")
                 if state_str:
@@ -641,6 +665,7 @@ class PassiveEnrollmentManager:
                     # Warm the Redis cache for next time
                     if rc:
                         import json
+
                         try:
                             rc.set(f"digraph_profile:{user_id}", json.dumps(profile))
                         except Exception:
@@ -669,6 +694,7 @@ class PassiveEnrollmentManager:
         rc = self._get_redis()
         if rc:
             import json
+
             try:
                 rc.set(f"digraph_profile:{user_id}", json.dumps(profile))
             except Exception as e:
@@ -711,7 +737,11 @@ class PassiveEnrollmentManager:
             if stored_std < 1:
                 stored_std = 1
 
-            obs_mean = incoming_data.get("mean", 0) if isinstance(incoming_data, dict) else incoming_data
+            obs_mean = (
+                incoming_data.get("mean", 0)
+                if isinstance(incoming_data, dict)
+                else incoming_data
+            )
             if obs_mean <= 0:
                 continue
 
@@ -730,7 +760,11 @@ class PassiveEnrollmentManager:
             if stored_std < 1:
                 stored_std = 1
 
-            obs_mean = incoming_data.get("mean", 0) if isinstance(incoming_data, dict) else incoming_data
+            obs_mean = (
+                incoming_data.get("mean", 0)
+                if isinstance(incoming_data, dict)
+                else incoming_data
+            )
             if obs_mean <= 0:
                 continue
 
@@ -764,14 +798,16 @@ class PassiveEnrollmentManager:
           - Narrow posteriors (many logins): stable, resistant to noise
           - Single outlier sessions don't corrupt the profile
         """
-        prior_var = max(prior_std ** 2, 1e-6)
-        obs_var = max(observation_noise ** 2, 1e-6)
+        prior_var = max(prior_std**2, 1e-6)
+        obs_var = max(observation_noise**2, 1e-6)
 
         prior_precision = 1.0 / prior_var
         obs_precision = 1.0 / obs_var
 
         post_precision = prior_precision + obs_precision
-        post_mean = (prior_mean * prior_precision + observed_value * obs_precision) / post_precision
+        post_mean = (
+            prior_mean * prior_precision + observed_value * obs_precision
+        ) / post_precision
         post_std = math.sqrt(1.0 / post_precision)
 
         # Floor the std to prevent collapse to zero
@@ -943,7 +979,12 @@ class PassiveEnrollmentManager:
         # Confidence grows with more updates and more keys
         n_keys = len(stored["per_key_hold"])
         n_digraphs = len(stored["per_digraph_flight"])
-        confidence = min(1.0, (updates_count / 5.0) * 0.5 + (n_keys / 20.0) * 0.3 + (n_digraphs / 30.0) * 0.2)
+        confidence = min(
+            1.0,
+            (updates_count / 5.0) * 0.5
+            + (n_keys / 20.0) * 0.3
+            + (n_digraphs / 30.0) * 0.2,
+        )
 
         # Determine action based on match score
         if match_score >= 0.7:
@@ -956,7 +997,13 @@ class PassiveEnrollmentManager:
         logger.info(
             "Digraph profile updated for user %d: score=%.3f, keys=%d, "
             "digraphs=%d, updates=%d, confidence=%.3f (source=%s)",
-            user_id, match_score, n_keys, n_digraphs, updates_count, confidence, source,
+            user_id,
+            match_score,
+            n_keys,
+            n_digraphs,
+            updates_count,
+            confidence,
+            source,
         )
 
         return {
@@ -1032,4 +1079,3 @@ def get_enrollment_manager() -> PassiveEnrollmentManager:
     if _enrollment_manager is None:
         _enrollment_manager = PassiveEnrollmentManager()
     return _enrollment_manager
-

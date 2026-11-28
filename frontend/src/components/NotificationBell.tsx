@@ -1,5 +1,6 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Bell, X, ShieldCheck, AlertTriangle, ArrowRightLeft, LogIn, Info } from "lucide-react";
 
@@ -12,7 +13,7 @@ interface Notification {
   read: boolean;
 }
 
-const ICON_MAP: Record<string, any> = {
+const ICON_MAP: Record<string, LucideIcon> = {
   security: ShieldCheck,
   transaction: ArrowRightLeft,
   login: LogIn,
@@ -87,7 +88,7 @@ export function NotificationBell() {
       >
         <Bell className="w-4 h-4 text-muted" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-[0_0_6px_rgba(239,68,68,0.5)]">
+          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white">
             {unreadCount}
           </span>
         )}

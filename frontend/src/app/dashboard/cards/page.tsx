@@ -41,18 +41,36 @@ const MOCK_CARDS: Card[] = [
   }
 ];
 
+// The API sends type, number, status and brand; the screen uses these names.
+type ApiCard = Pick<Card, "id" | "expiry" | "limit" | "spent" | "cvv"> &
+  Partial<Pick<Card, "network" | "last4" | "holder" | "frozen" | "fullNumber">> & {
+    type: string;
+    number?: string;
+    status?: string;
+    brand?: string;
+  };
+
+function toCard(c: ApiCard): Card {
+  const last4 = c.last4 ?? String(c.number ?? "").slice(-4);
+  return {
+    ...c,
+    type: String(c.type).toLowerCase() as Card["type"],
+    network: (c.network ?? c.brand) as Card["network"],
+    last4,
+    fullNumber: c.fullNumber ?? `•••• •••• •••• ${last4}`,
+    holder: c.holder ?? "",
+    frozen: c.frozen ?? c.status === "Frozen",
+  };
+}
+
 function CardVisual({ card, revealed }: { card: Card; revealed: boolean }) {
   const gradients: Record<string, string> = {
-    debit: "from-slate-800 via-slate-700 to-slate-900",
-    credit: "from-indigo-900 via-purple-900 to-slate-900",
+    debit: "bg-[#1b1b1a]",
+    credit: "bg-[#2b2b29]",
   };
 
   return (
-    <div className={`relative w-full aspect-[1.586/1] max-w-sm bg-gradient-to-br ${gradients[card.type]} rounded-2xl p-6 flex flex-col justify-between border border-white/10 shadow-2xl overflow-hidden`}>
-      {/* Decorative circles */}
-      <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full" />
-      <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-white/5 rounded-full" />
-
+    <div className={`relative w-full aspect-[1.586/1] max-w-sm ${gradients[card.type]} rounded-2xl p-6 flex flex-col justify-between border border-white/10 shadow-2xl overflow-hidden`}>
       <div className="flex justify-between items-start relative z-10">
         <div>
           <div className="text-[10px] uppercase tracking-widest text-white/50 font-bold">{card.type} card</div>
@@ -70,10 +88,12 @@ function CardVisual({ card, revealed }: { card: Card; revealed: boolean }) {
           {card.fullNumber}
         </div>
         <div className="flex justify-between items-end">
-          <div>
-            <div className="text-[9px] text-white/40 uppercase tracking-wider">Card Holder</div>
-            <div className="text-xs text-white/80 font-medium tracking-wider">{card.holder}</div>
-          </div>
+          {card.holder && (
+            <div>
+              <div className="text-[9px] text-white/40 uppercase tracking-wider">Card Holder</div>
+              <div className="text-xs text-white/80 font-medium tracking-wider">{card.holder}</div>
+            </div>
+          )}
           <div>
             <div className="text-[9px] text-white/40 uppercase tracking-wider">Expires</div>
             <div className="text-xs text-white/80 font-mono">{card.expiry}</div>
@@ -116,7 +136,7 @@ export default function CardsPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.cards && data.cards.length > 0) {
-            setCards(data.cards);
+            setCards(data.cards.map(toCard));
             setSelectedCard(data.cards[0].id);
           } else {
             setCards(MOCK_CARDS);
@@ -427,7 +447,7 @@ export default function CardsPage() {
                   <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
                   <div>
                     <div className="text-sm font-medium text-blue-400">Card is frozen</div>
-                    <p className="text-xs text-muted mt-1">All transactions on this card are temporarily blocked. Tap "Unfreeze" to re-enable.</p>
+                    <p className="text-xs text-muted mt-1">All transactions on this card are temporarily blocked. Tap &quot;Unfreeze&quot; to re-enable.</p>
                   </div>
                 </div>
               )}
@@ -489,7 +509,7 @@ export default function CardsPage() {
               <button
                 onClick={handleStepUpSubmit}
                 disabled={verifying || !stepUpPassword}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-accent-primary text-white text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-40"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-accent-primary text-black text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-40"
               >
                 {verifying ? "Verifying..." : "Confirm"}
               </button>

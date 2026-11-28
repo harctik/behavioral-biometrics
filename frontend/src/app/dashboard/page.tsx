@@ -1,5 +1,7 @@
 "use client";
 
+import type { ApiBeneficiary, ApiTransaction } from "@/lib/api-types";
+import { useStoredString } from "@/hooks/useBrowser";
 import {
   TrendingUp, ArrowDownLeft, ArrowUpRight, ShieldAlert,
   Check, Activity, Fingerprint
@@ -74,7 +76,7 @@ function TypingRhythmWaveform() {
         const collector = getCollector();
         const snap = collector.getBufferSnapshot();
         const holds = snap.keystroke_events
-          .map((k: any) => k.hold_time)
+          .map((k) => k.hold_time)
           .filter((h: number) => h > 0 && h < 500);
         if (holds.length > 0) {
           setPoints(holds.slice(-30));
@@ -105,42 +107,40 @@ function TypingRhythmWaveform() {
     <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="rounded">
       <defs>
         <linearGradient id="rhythmGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(139, 92, 246, 0.3)" />
-          <stop offset="100%" stopColor="rgba(139, 92, 246, 0)" />
+          <stop offset="0%" stopColor="rgba(189,189,184, 0.3)" />
+          <stop offset="100%" stopColor="rgba(189,189,184, 0)" />
         </linearGradient>
       </defs>
       <path d={fillPath} fill="url(#rhythmGrad)" />
-      <path d={linePath} fill="none" stroke="rgba(139, 92, 246, 0.8)" strokeWidth="1.5" />
+      <path d={linePath} fill="none" stroke="rgba(189,189,184, 0.8)" strokeWidth="1.5" />
       {/* Latest point indicator */}
       <circle
         cx={(points.length - 1) / (points.length - 1) * w}
         cy={h - ((points[points.length - 1] - minH) / range) * (h - 4) - 2}
         r="2.5"
-        fill="rgba(139, 92, 246, 1)"
+        fill="rgba(189,189,184, 1)"
       />
     </svg>
   );
 }
 
 
+interface PendingApproval {
+  txn_id: string;
+  beneficiary: string;
+  maker_id: string;
+  amount: string;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [username, setUsername] = useState("User");
-  const [demoMode, setDemoMode] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('bba_demo_mode');
-      if (saved !== null) {
-        setDemoMode(saved === 'true');
-      }
-    }
-  }, []);
+  const [storedDemoMode, setStoredDemoMode] = useStoredString('bba_demo_mode');
+  const demoMode = storedDemoMode === 'true';
 
   const toggleDemoMode = () => {
     const newVal = !demoMode;
-    setDemoMode(newVal);
-    localStorage.setItem('bba_demo_mode', newVal.toString());
+    setStoredDemoMode(String(newVal));
   };
   const { score, events, backendMetrics, enrollment, digraphProfile } = useTelemetry();
   const [currentContext, setCurrentContext] = useState<string>("DASHBOARD");
@@ -161,18 +161,18 @@ export default function DashboardPage() {
 
   // New states for tabs
   const [activeTab, setActiveTab] = useState<'retail' | 'corporate' | 'insights'>('retail');
-  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [approvalState, setApprovalState] = useState<Record<string, string>>({}); // track approval status by txn_id
 
   // Backend-driven account data
   const [balance, setBalance] = useState<number | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<{name: string, date: string, amount: string, type: 'in'|'out', category: string}[]>([]);
-  const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
+  const [beneficiaries, setBeneficiaries] = useState<ApiBeneficiary[]>([]);
 
   // Poll live behavioral stats from collector every 500ms
   useEffect(() => {
-    let prevKs = 0;
-    let prevMs = 0;
+    const prevKs = 0;
+    const prevMs = 0;
     const interval = setInterval(async () => {
       try {
         const collector = getCollector();
@@ -258,10 +258,10 @@ export default function DashboardPage() {
           if (txRes.ok) {
             const txData = await txRes.json();
             if (txData.transactions && txData.transactions.length > 0) {
-              setRecentTransactions(txData.transactions.map((tx: any) => ({
-                name: tx.merchant || tx.operation,
+              setRecentTransactions(txData.transactions.map((tx: ApiTransaction) => ({
+                name: tx.merchant || tx.operation || "Transaction",
                 date: new Date(tx.date).toLocaleDateString(),
-                amount: parseFloat(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }),
+                amount: parseFloat(String(tx.amount)).toLocaleString(undefined, { minimumFractionDigits: 2 }),
                 type: (tx.type as 'in' | 'out') || 'out',
                 category: tx.category || 'Transfer'
               })));
@@ -451,7 +451,7 @@ export default function DashboardPage() {
           setTransferError(assessData.error || assessData.msg || "Transaction denied.");
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Transfer failed:", err);
       // Network errors should not hard-block — offer retry
       setTransferState('blocked');
@@ -503,9 +503,9 @@ export default function DashboardPage() {
       <main className="flex-1 flex flex-col min-w-0 relative z-0">
         
         {/* Topbar */}
-        <header className="h-16 px-8 flex items-center justify-between shrink-0 border-b border-border bg-surface/40 backdrop-blur-sm z-10">
+        <header className="min-h-16 px-4 py-2 md:px-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 shrink-0 border-b border-border bg-surface/40 backdrop-blur-sm z-10">
           <h1 className="text-xl font-medium text-fg">Account Overview</h1>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             {enrollment && (
               <div className="flex flex-col items-end">
                 <span className="text-[10px] uppercase tracking-wider text-muted font-bold">
@@ -574,7 +574,7 @@ export default function DashboardPage() {
                   </p>
                   <div className="mt-3 h-2 w-full bg-black/40 rounded-full overflow-hidden border border-border">
                     <div 
-                      className="h-full bg-gradient-to-r from-accent-warning to-amber-400 transition-all duration-500"
+                      className="h-full bg-accent-warning transition-all duration-500"
                       style={{ width: `${Math.min(100, Math.max(5, (enrollment.completed / enrollment.required) * 100))}%` }}
                     />
                   </div>
@@ -631,7 +631,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="mt-3 h-1.5 w-full bg-black/40 rounded-full overflow-hidden border border-border/20">
                   <div 
-                    className="h-full bg-gradient-to-r from-accent-primary via-purple-500 to-cyan-400 transition-all duration-700"
+                    className="h-full bg-accent-primary transition-all duration-700"
                     style={{ width: `${Math.min(100, Math.round(digraphProfile.confidence * 100))}%` }}
                   />
                 </div>
@@ -745,7 +745,7 @@ export default function DashboardPage() {
                         )}
                         <button 
                           type="submit"
-                          className="w-full bg-accent-primary text-white font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors"
+                          className="w-full bg-accent-primary text-black font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors"
                         >
                           Review Transfer
                         </button>
@@ -822,7 +822,7 @@ export default function DashboardPage() {
                           <div className="text-[10px] uppercase tracking-widest font-bold text-accent-success mb-1.5">Behavioral Assessment</div>
                           <div className="text-[11px] font-mono text-muted space-y-1">
                             <div>Keystroke confidence: <span className="text-fg">{behavioralScore?.authenticity_score ? ((behavioralScore.authenticity_score) * 100).toFixed(0) : '--'}%</span> · No hesitation detected ✓</div>
-                            <div>Amount typed manually ✓ · Beneficiary {liveStats.copyPaste ? 'pasted ⚠' : 'typed manually ✓'}</div>
+                            <div>Amount typed manually ✓ · Beneficiary {liveStats.copyPaste ? 'pasted' : 'typed manually ✓'}</div>
                           </div>
                         </div>
                       </div>
@@ -849,7 +849,7 @@ export default function DashboardPage() {
                             <div className="text-xs text-muted mt-1">Maker ID: {approval.maker_id} • Amount: <span className="text-accent-primary font-mono tabular-nums">₹{parseFloat(approval.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
                             {approvalState[approval.txn_id]?.startsWith('error') && (
                               <div className="text-xs text-red-400 mt-2 bg-red-500/10 px-2 py-1 rounded inline-block border border-red-500/20">
-                                ⚠ {approvalState[approval.txn_id].replace('error: ', '')}
+                                {approvalState[approval.txn_id].replace('error: ', '')}
                               </div>
                             )}
                           </div>
@@ -865,7 +865,7 @@ export default function DashboardPage() {
                             ) : (
                               <button
                                 onClick={() => handleCorporateApprove(approval.txn_id)}
-                                className="px-6 py-2 bg-accent-primary hover:bg-blue-600 transition-colors text-white font-medium text-sm rounded-lg"
+                                className="px-6 py-2 bg-accent-primary hover:bg-blue-600 transition-colors text-black font-medium text-sm rounded-lg"
                               >
                                 Approve
                               </button>
@@ -965,10 +965,10 @@ export default function DashboardPage() {
                             animate={{ height: `${Math.max(d.value, hasData ? 2 : 0)}%` }}
                             transition={{ duration: 0.8, delay: i * 0.1, type: "spring", bounce: 0.3 }}
                             className={`w-full max-w-[40px] rounded-t-lg relative overflow-hidden group-hover:brightness-110 transition-all ${
-                              d.day === peakDay.day && d.amount > 0 ? 'bg-gradient-to-t from-accent-primary to-blue-400' : 'bg-surface-2 border border-border/50 border-b-0'
+                              d.day === peakDay.day && d.amount > 0 ? 'bg-accent-primary' : 'bg-surface-2 border border-border/50 border-b-0'
                             }`}
                           >
-                            <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/10"></div>
+                            <div className="absolute inset-0 bg-transparent/10"></div>
                           </motion.div>
                         </div>
                         <div className={`text-[10px] uppercase font-bold mt-3 ${d.day === peakDay.day && d.amount > 0 ? 'text-accent-primary' : 'text-muted'}`}>{d.day}</div>
@@ -1010,7 +1010,7 @@ export default function DashboardPage() {
                 <span className="text-xs font-bold tracking-widest uppercase text-fg">Continuous Auth</span>
               </div>
               <div className="flex items-center gap-3">
-                <div className={`w-2 h-2 rounded-full ${score !== null && score > 75 ? 'bg-accent-success' : 'bg-accent-danger'} shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse`}></div>
+                <div className={`w-2 h-2 rounded-full ${score !== null && score > 75 ? 'bg-accent-success' : 'bg-accent-danger'} animate-pulse`}></div>
                 <button onClick={toggleDemoMode} className="text-muted hover:text-white transition-colors" title="Hide Panel">×</button>
               </div>
             </div>
@@ -1034,7 +1034,7 @@ export default function DashboardPage() {
                   <span className="text-[9px] text-muted uppercase tracking-wider">Signal Strength</span>
                   <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-gradient-to-r from-violet-500 to-blue-400 transition-all duration-500"
+                      className="h-full bg-violet-500 transition-all duration-500"
                       style={{ width: `${Math.round((backendMetrics.feature_richness || 0) * 100)}%` }}
                     />
                   </div>
@@ -1130,17 +1130,16 @@ export default function DashboardPage() {
                 <div className="text-[9px] text-muted uppercase tracking-wider mb-2">Category Risk</div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                   {[
-                    { label: 'Mouse', key: 'mouse_anomaly', icon: '🖱' },
-                    { label: 'Keystroke', key: 'keystroke_anomaly', icon: '⌨' },
-                    { label: 'Cognitive', key: 'cognitive_risk', icon: '🧠' },
-                    { label: 'Physiology', key: 'physiological_anomaly', icon: '🫀' },
-                    { label: 'Temporal', key: 'temporal_rhythm_risk', icon: '⏱' },
-                    { label: 'Bot Detect', key: 'challenge_bot_risk', icon: '🤖' },
-                  ].map(({ label, key, icon }) => {
-                    const val = backendMetrics.category_scores[key] || 0;
+                    { label: 'Mouse', key: 'mouse_anomaly' },
+                    { label: 'Keystroke', key: 'keystroke_anomaly' },
+                    { label: 'Cognitive', key: 'cognitive_risk' },
+                    { label: 'Physiology', key: 'physiological_anomaly' },
+                    { label: 'Temporal', key: 'temporal_rhythm_risk' },
+                    { label: 'Bot Detect', key: 'challenge_bot_risk' },
+                  ].map(({ label, key }) => {
+                    const val = backendMetrics.category_scores?.[key] || 0;
                     return (
                       <div key={key} className="flex items-center gap-1.5">
-                        <span className="text-[10px]">{icon}</span>
                         <span className="text-[9px] text-muted w-14">{label}</span>
                         <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
                           <div 

@@ -1,15 +1,18 @@
-import numpy as np
-from collections import deque
-from typing import Dict, List, Tuple, Optional, Any
 import logging
+from collections import deque
+from typing import Dict, List, Tuple
+
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
-from app.models.base import FeatureConsistencyMixin
-from sklearn.neighbors import NearestNeighbors
+
+import joblib
 from sklearn.linear_model import PassiveAggressiveClassifier
 from sklearn.preprocessing import StandardScaler
-import joblib
-import os
+
+from app.models.base import FeatureConsistencyMixin
+
 
 class IncrementalKNNClassifier(FeatureConsistencyMixin):
     """Incremental k-NN with sliding window for adaptive learning"""
@@ -139,7 +142,6 @@ class IncrementalKNNClassifier(FeatureConsistencyMixin):
             return False
 
 
-
 class PassiveAggressiveDetector(FeatureConsistencyMixin):
     """Passive-Aggressive classifier for online learning"""
 
@@ -244,5 +246,3 @@ class PassiveAggressiveDetector(FeatureConsistencyMixin):
                 "Failed to load passive-aggressive artifacts from %s", filepath
             )
             return False
-
-

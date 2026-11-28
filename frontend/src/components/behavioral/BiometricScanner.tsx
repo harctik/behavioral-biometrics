@@ -59,8 +59,8 @@ export function BiometricScanner({
                 className="absolute inset-0 rounded-full"
                 style={{
                   border: "2px solid transparent",
-                  borderTopColor: "rgba(59, 130, 246, 0.7)",
-                  borderRightColor: "rgba(139, 92, 246, 0.4)",
+                  borderTopColor: "rgba(244,244,242, 0.7)",
+                  borderRightColor: "rgba(189,189,184, 0.4)",
                 }}
                 animate={{ rotate: 360 }}
                 transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
@@ -76,8 +76,8 @@ export function BiometricScanner({
               </div>
               {/* Horizontal scan line */}
               <motion.div
-                className="absolute left-2 right-2 h-[1px] bg-gradient-to-r from-transparent via-blue-400 to-transparent"
-                style={{ boxShadow: "0 0 8px rgba(59, 130, 246, 0.6)" }}
+                className="absolute left-2 right-2 h-[1px] bg-transparent"
+                style={{ boxShadow: "0 0 8px rgba(244,244,242, 0.6)" }}
                 animate={{ top: ["10%", "90%", "10%"] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
               />
@@ -100,7 +100,7 @@ export function BiometricScanner({
             {progress !== undefined && (
               <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden">
                 <motion.div
-                  className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+                  className="h-full bg-blue-500 rounded-full"
                   initial={{ width: 0 }}
                   animate={{ width: `${progress}%` }}
                   transition={{ duration: 0.3 }}

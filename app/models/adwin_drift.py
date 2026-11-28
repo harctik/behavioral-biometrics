@@ -3,10 +3,11 @@ ADWIN (Adaptive Windowing) Drift Detection
 Replaces fixed window with adaptive threshold for dynamic drift detection
 """
 
-import numpy as np
-from typing import List, Dict, Optional, Tuple
 import logging
 from collections import deque
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +290,9 @@ class BehavioralDriftDetector:
 
         self.user_drifts[user_id].append(
             {
-                "timestamp": drift_info["timestamp"] if drift_info else self.adwin.total_observations,
+                "timestamp": drift_info["timestamp"]
+                if drift_info
+                else self.adwin.total_observations,
                 "context": context,
                 "score": value,
                 "action": "drift_detected",
@@ -304,7 +307,10 @@ class BehavioralDriftDetector:
 
         logger.warning(
             "Drift on stream '%s' for user %d (obs=%d, val=%.4f)",
-            context, user_id, self.adwin.total_observations, value,
+            context,
+            user_id,
+            self.adwin.total_observations,
+            value,
         )
 
     def check_user_drift(self, user_id: int) -> Tuple[bool, List[dict]]:
@@ -341,9 +347,7 @@ class BehavioralDriftDetector:
 
         # Or if many recent drifts across multiple streams
         recent_drifts = [
-            d
-            for d in drifts
-            if d["timestamp"] > self.adwin.total_observations - 100
+            d for d in drifts if d["timestamp"] > self.adwin.total_observations - 100
         ]
         unique_streams = len(set(d.get("stream", "") for d in recent_drifts))
         if len(recent_drifts) > 5 or unique_streams >= 3:

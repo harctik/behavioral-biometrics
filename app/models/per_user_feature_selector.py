@@ -25,8 +25,6 @@ import logging
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
-
 logger = logging.getLogger(__name__)
 
 # Maximum features to select per user

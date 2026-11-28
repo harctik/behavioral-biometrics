@@ -1,12 +1,14 @@
+import re
+from typing import Annotated, Optional
+
 from pydantic import (
     BaseModel,
     EmailStr,
+    StringConstraints,
     field_validator,
     model_validator,
-    StringConstraints,
 )
-from typing import Annotated, Optional
-import re
+
 
 class RegisterSchema(BaseModel):
     username: Annotated[str, StringConstraints(min_length=3, max_length=50)]
@@ -29,6 +31,7 @@ class RegisterSchema(BaseModel):
 
 class LoginSchema(BaseModel):
     """Phase 1: Credentials only — no behavioral data yet."""
+
     username: str
     password: str
     device_id: str = ""
@@ -36,6 +39,7 @@ class LoginSchema(BaseModel):
 
 class LoginVerifySchema(BaseModel):
     """Phase 2: Behavioral verification with typing challenge."""
+
     challenge_token: str
     typed_text: str = ""
     behavioral_data: dict = {}
@@ -44,6 +48,7 @@ class LoginVerifySchema(BaseModel):
 
 class AccountRecoveryVerifySchema(BaseModel):
     """Account recovery: re-verify identity via multiple typing samples."""
+
     recovery_token: str
     typed_texts: list = []
     behavioral_data: dict = {}

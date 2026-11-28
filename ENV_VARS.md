@@ -32,8 +32,7 @@ Complete reference for all environment variables used by the Behavioral Biometri
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SQLALCHEMY_DATABASE_URI` | **Yes** (production) | `sqlite:///behavioral_auth.db` | PostgreSQL connection string. Format: `postgresql://user:pass@host:port/db` |
-| `DATABASE_PATH` | No | `behavioral_auth.db` | SQLite database file path (development only). |
+| `SQLALCHEMY_DATABASE_URI` | **Yes** (production) | `sqlite:///database/auth_system.db` | Database URL. PostgreSQL format: `postgresql://user:pass@host:port/db`. For a local SQLite file, set this too. |
 
 ### Redis
 

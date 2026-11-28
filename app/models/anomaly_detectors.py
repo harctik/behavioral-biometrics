@@ -1,21 +1,34 @@
-import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
 import logging
+from typing import Dict, List
+
 import joblib
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
-from app.models.base import FeatureConsistencyMixin
-from sklearn.svm import OneClassSVM
 from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.svm import OneClassSVM
+
+from app.models.base import FeatureConsistencyMixin
+
 try:
     import tensorflow as tf
-    from tensorflow.keras.models import Model, Sequential
-    from tensorflow.keras.layers import GRU, LSTM, Dense, Dropout, Input, RepeatVector, TimeDistributed
-    from tensorflow.keras.optimizers import Adam
     from tensorflow.keras.callbacks import EarlyStopping
+    from tensorflow.keras.layers import (
+        GRU,
+        LSTM,
+        Dense,
+        Dropout,
+        Input,
+        RepeatVector,
+        TimeDistributed,
+    )
+    from tensorflow.keras.models import Model, Sequential
+    from tensorflow.keras.optimizers import Adam
 except ImportError:
     tf = None
+
 
 class AutoencoderAnomalyDetector(FeatureConsistencyMixin):
     """Autoencoder for detecting behavioral anomalies"""
@@ -165,7 +178,6 @@ class AutoencoderAnomalyDetector(FeatureConsistencyMixin):
             return False
 
 
-
 class OneClassSVMDetector(FeatureConsistencyMixin):
     """One-Class SVM for outlier detection"""
 
@@ -256,7 +268,6 @@ class OneClassSVMDetector(FeatureConsistencyMixin):
         except Exception:
             logger.exception("Failed to load SVM artifacts from %s", filepath)
             return False
-
 
 
 class IsolationForestDetector(FeatureConsistencyMixin):
@@ -353,7 +364,6 @@ class IsolationForestDetector(FeatureConsistencyMixin):
                 "Failed to load isolation forest artifacts from %s", filepath
             )
             return False
-
 
 
 class VariationalAutoencoder(FeatureConsistencyMixin):
@@ -509,5 +519,3 @@ class VariationalAutoencoder(FeatureConsistencyMixin):
         except Exception:
             logger.exception("Failed to load VAE artifacts from %s", filepath)
             return False
-
-

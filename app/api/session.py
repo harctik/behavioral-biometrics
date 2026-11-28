@@ -1,25 +1,26 @@
 """Session management API blueprint."""
-from flask import request, Response, stream_with_context, current_app
-from flask_restx import Namespace, Resource, fields
-from flask_jwt_extended import jwt_required
-import json
-import time
 import csv
 import io
+import json
 import logging
 import threading
+import time
 
-from app.extensions import get_db, limiter, get_redis
+from flask import Response, current_app, request, stream_with_context
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource, fields
+
 from app.api.helpers import (
-    get_session_cached,
-    validate_session_context,
     get_current_user_id,
-    validate_session_ownership,
+    get_session_cached,
     resolve_query,
+    validate_session_context,
+    validate_session_ownership,
 )
 from app.extended_risk_scorer import score_extended_features
-from app.models.cognitive_engine import run_cognitive_analysis
+from app.extensions import get_db, get_redis, limiter
 from app.ml_ensemble import score_with_ensemble
+from app.models.cognitive_engine import run_cognitive_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ def _clear_cached_ensemble(session_id: str):
     """Invalidate cached ensemble for a session (e.g. after anomaly injection)."""
     with _ensemble_cache_lock:
         _ensemble_cache.pop(session_id, None)
+
 
 session_ns = Namespace(
     "session", description="Session management and behavioral monitoring"
@@ -115,7 +117,9 @@ silent_challenge_output = session_ns.model(
 # ── Feature Synthesizer (fills gap when BehavioralProvider hasn't flushed extended features) ──
 
 
-def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, anomaly_count):
+def _synthesize_features_from_raw(
+    db, session_id, keystroke_count, mouse_count, anomaly_count
+):
     """Synthesize a minimal extended-feature dict from raw keystroke/mouse data.
 
     When the BehavioralProvider hasn't flushed extended features yet (or Redis
@@ -142,6 +146,7 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
         fernet_key = current_app.config.get("BACKUP_FERNET")
         if fernet_key:
             from cryptography.fernet import Fernet
+
             _fernet = Fernet(fernet_key.encode("utf-8"))
     except Exception:
         pass
@@ -172,10 +177,11 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
             # ── Try to load the latest extended features directly ──────────
             # If we can decrypt them, they already have the full feature set
             cursor.execute(
-                resolve_query(db,
+                resolve_query(
+                    db,
                     "SELECT features FROM behavioral_data "
                     "WHERE session_id = :param AND data_type = 'extended' "
-                    "ORDER BY timestamp DESC LIMIT 1"
+                    "ORDER BY timestamp DESC LIMIT 1",
                 ),
                 (session_id,),
             )
@@ -188,10 +194,11 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
 
             # ── Load raw keystroke data (fallback if no extended features) ──
             cursor.execute(
-                resolve_query(db,
+                resolve_query(
+                    db,
                     "SELECT raw_data, features FROM behavioral_data "
                     "WHERE session_id = :param AND data_type IN ('keystroke', 'extended') "
-                    "ORDER BY timestamp DESC LIMIT 20"
+                    "ORDER BY timestamp DESC LIMIT 20",
                 ),
                 (session_id,),
             )
@@ -202,7 +209,9 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
                     if raw:
                         raw = _decrypt_field(raw) if isinstance(raw, str) else raw
                         if isinstance(raw, dict):
-                            ks_events = raw.get("keystroke_events") or raw.get("events") or []
+                            ks_events = (
+                                raw.get("keystroke_events") or raw.get("events") or []
+                            )
                             if isinstance(ks_events, list):
                                 for evt in ks_events:
                                     if not isinstance(evt, dict):
@@ -221,11 +230,20 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
 
                 # Also try to extract computed features from the features column
                 try:
-                    feat_data = _decrypt_field(row["features"]) if isinstance(row["features"], str) else row["features"]
+                    feat_data = (
+                        _decrypt_field(row["features"])
+                        if isinstance(row["features"], str)
+                        else row["features"]
+                    )
                     if isinstance(feat_data, dict):
                         # Pull any pre-computed features
-                        for key in ("extended_risk", "event_count", "touch_events",
-                                    "scroll_events", "cognitive_events"):
+                        for key in (
+                            "extended_risk",
+                            "event_count",
+                            "touch_events",
+                            "scroll_events",
+                            "cognitive_events",
+                        ):
                             if key in feat_data and key not in features:
                                 features[key] = feat_data[key]
                 except Exception:
@@ -235,10 +253,11 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
             mouse_velocities.clear()
             mouse_positions.clear()
             cursor.execute(
-                resolve_query(db,
+                resolve_query(
+                    db,
                     "SELECT raw_data FROM behavioral_data "
                     "WHERE session_id = :param AND data_type = 'mouse' "
-                    "ORDER BY timestamp DESC LIMIT 10"
+                    "ORDER BY timestamp DESC LIMIT 10",
                 ),
                 (session_id,),
             )
@@ -266,17 +285,29 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
 
     # ── Compute keystroke features ──────────────────────────────────────────
     if all_hold_times:
-        features["typing_hold_variance"] = statistics.variance(all_hold_times) if len(all_hold_times) > 1 else 0.0
+        features["typing_hold_variance"] = (
+            statistics.variance(all_hold_times) if len(all_hold_times) > 1 else 0.0
+        )
         hold_mean = statistics.mean(all_hold_times)
-        hold_std = statistics.stdev(all_hold_times) if len(all_hold_times) > 1 else hold_mean * 0.3
-        features["keystroke_rhythm_consistency"] = max(0, 1.0 - (hold_std / max(hold_mean, 1)))
+        hold_std = (
+            statistics.stdev(all_hold_times)
+            if len(all_hold_times) > 1
+            else hold_mean * 0.3
+        )
+        features["keystroke_rhythm_consistency"] = max(
+            0, 1.0 - (hold_std / max(hold_mean, 1))
+        )
     else:
         features["typing_hold_variance"] = 0.0
         features["keystroke_rhythm_consistency"] = 0.0
 
     if all_flight_times:
         ft_mean = statistics.mean(all_flight_times)
-        ft_std = statistics.stdev(all_flight_times) if len(all_flight_times) > 1 else ft_mean * 0.3
+        ft_std = (
+            statistics.stdev(all_flight_times)
+            if len(all_flight_times) > 1
+            else ft_mean * 0.3
+        )
         features["flight_time_cv"] = ft_std / max(ft_mean, 1)
         features["bigram_speed_mean"] = ft_mean
 
@@ -320,7 +351,9 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
         burst_count += 1
         burst_lengths.append(current_burst)
     features["typing_burst_count"] = burst_count
-    features["typing_burst_mean_length"] = statistics.mean(burst_lengths) if burst_lengths else 0
+    features["typing_burst_mean_length"] = (
+        statistics.mean(burst_lengths) if burst_lengths else 0
+    )
     features["typing_burst_ratio"] = sum(burst_lengths) / max(total_ks, 1)
 
     # WPM estimate
@@ -331,20 +364,29 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
         features["typing_speed_wpm"] = 0.0
 
     # Data familiarity: higher correction rate + longer flight times = unfamiliar
-    familiarity = min(1.0, features["correction_rate"] * 2 + (1 if features.get("bigram_speed_mean", 0) > 300 else 0) * 0.3)
+    familiarity = min(
+        1.0,
+        features["correction_rate"] * 2
+        + (1 if features.get("bigram_speed_mean", 0) > 300 else 0) * 0.3,
+    )
     features["data_familiarity_signal"] = familiarity
 
     # ── Compute mouse features ──────────────────────────────────────────────
     if mouse_velocities:
         features["mouse_acceleration_mean"] = statistics.mean(mouse_velocities)
-        features["trajectory_curvature"] = statistics.stdev(mouse_velocities) / max(statistics.mean(mouse_velocities), 0.01) if len(mouse_velocities) > 1 else 0.0
+        features["trajectory_curvature"] = (
+            statistics.stdev(mouse_velocities)
+            / max(statistics.mean(mouse_velocities), 0.01)
+            if len(mouse_velocities) > 1
+            else 0.0
+        )
 
         # Mouse direction entropy
         if mouse_positions and len(mouse_positions) > 2:
             dirs = []
             for i in range(1, len(mouse_positions)):
-                dx = mouse_positions[i][0] - mouse_positions[i-1][0]
-                dy = mouse_positions[i][1] - mouse_positions[i-1][1]
+                dx = mouse_positions[i][0] - mouse_positions[i - 1][0]
+                dy = mouse_positions[i][1] - mouse_positions[i - 1][1]
                 if abs(dx) > 0.001 or abs(dy) > 0.001:
                     angle = math.atan2(dy, dx)
                     bin_idx = int(((angle + math.pi) / (2 * math.pi)) * 8) % 8
@@ -372,15 +414,23 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
             straightness_ratios = []
             segment_size = max(3, len(mouse_positions) // 10)
             for start in range(0, len(mouse_positions) - segment_size, segment_size):
-                segment = mouse_positions[start:start+segment_size]
-                direct_dist = math.sqrt((segment[-1][0] - segment[0][0])**2 + (segment[-1][1] - segment[0][1])**2)
+                segment = mouse_positions[start : start + segment_size]
+                direct_dist = math.sqrt(
+                    (segment[-1][0] - segment[0][0]) ** 2
+                    + (segment[-1][1] - segment[0][1]) ** 2
+                )
                 path_dist = sum(
-                    math.sqrt((segment[j][0] - segment[j-1][0])**2 + (segment[j][1] - segment[j-1][1])**2)
+                    math.sqrt(
+                        (segment[j][0] - segment[j - 1][0]) ** 2
+                        + (segment[j][1] - segment[j - 1][1]) ** 2
+                    )
                     for j in range(1, len(segment))
                 )
                 if path_dist > 0:
                     straightness_ratios.append(direct_dist / path_dist)
-            features["mouse_path_straightness"] = statistics.mean(straightness_ratios) if straightness_ratios else 0.5
+            features["mouse_path_straightness"] = (
+                statistics.mean(straightness_ratios) if straightness_ratios else 0.5
+            )
         else:
             features["mouse_path_straightness"] = 0.5
     else:
@@ -391,9 +441,13 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
 
     # ── Session-level features (realistic human defaults to avoid false bot alerts) ──
     features["total_keystrokes"] = total_ks or keystroke_count
-    features["total_active_ms"] = sum(all_flight_times) + sum(all_hold_times) if all_flight_times else 0
+    features["total_active_ms"] = (
+        sum(all_flight_times) + sum(all_hold_times) if all_flight_times else 0
+    )
     features["idle_ratio"] = 0.15  # Humans have natural pauses
-    features["hesitation_count"] = max(1, total_ks // 15)  # Humans hesitate ~once per 15 keys
+    features["hesitation_count"] = max(
+        1, total_ks // 15
+    )  # Humans hesitate ~once per 15 keys
     features["hesitation_duration_mean"] = 800  # ~800ms is natural thinking pause
     features["copy_paste_count"] = 0
     features["reread_count"] = 0
@@ -414,7 +468,9 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
     features["nav_dwell_mean"] = 1500  # Humans dwell ~1.5s on page elements
     features["nav_dwell_std"] = 800  # With natural variation
     features["nav_field_revisit_count"] = 1
-    features["nav_focus_sequence_entropy"] = 1.8  # Natural navigation is somewhat random
+    features[
+        "nav_focus_sequence_entropy"
+    ] = 1.8  # Natural navigation is somewhat random
     features["motion_acc_mean"] = 0
     features["motion_acc_std"] = 0
     features["motion_rotation_mean"] = 0
@@ -426,7 +482,9 @@ def _synthesize_features_from_raw(db, session_id, keystroke_count, mouse_count, 
     if total_ks > 10:
         features["modifier_overlap_mean"] = 85  # ~85ms shift-key overlap is natural
         features["modifier_overlap_std"] = 35
-        features["modifier_overlap_count"] = max(1, total_ks // 8)  # ~12.5% of keys involve shift
+        features["modifier_overlap_count"] = max(
+            1, total_ks // 8
+        )  # ~12.5% of keys involve shift
     else:
         features["modifier_overlap_mean"] = 0
         features["modifier_overlap_std"] = 0
@@ -454,7 +512,10 @@ def _build_session_metrics(session_id: str):
     with db.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            resolve_query(db, "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'keystroke'"),
+            resolve_query(
+                db,
+                "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'keystroke'",
+            ),
             (session_id,),
         )
         keystroke_count = 0
@@ -470,7 +531,10 @@ def _build_session_metrics(session_id: str):
                 keystroke_count += 1
 
         cursor.execute(
-            resolve_query(db, "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'mouse'"),
+            resolve_query(
+                db,
+                "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'mouse'",
+            ),
             (session_id,),
         )
         mouse_count = 0
@@ -488,7 +552,10 @@ def _build_session_metrics(session_id: str):
         # Also count 'extended' rows — the BehavioralProvider sends combined
         # keystroke+mouse+touch data as type='extended', not separate types.
         cursor.execute(
-            resolve_query(db, "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'extended'"),
+            resolve_query(
+                db,
+                "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'extended'",
+            ),
             (session_id,),
         )
         _fernet_for_count = None
@@ -496,6 +563,7 @@ def _build_session_metrics(session_id: str):
             fkey = current_app.config.get("BACKUP_FERNET")
             if fkey:
                 from cryptography.fernet import Fernet
+
                 _fernet_for_count = Fernet(fkey.encode("utf-8"))
         except Exception:
             pass
@@ -508,7 +576,9 @@ def _build_session_metrics(session_id: str):
                 if _fernet_for_count and raw.startswith("gAAAAA"):
                     try:
                         feats = json.loads(
-                            _fernet_for_count.decrypt(raw.encode("utf-8")).decode("utf-8")
+                            _fernet_for_count.decrypt(raw.encode("utf-8")).decode(
+                                "utf-8"
+                            )
                         )
                     except Exception:
                         pass
@@ -544,7 +614,10 @@ def _build_session_metrics(session_id: str):
         if keystroke_count == 0:
             try:
                 cursor.execute(
-                    resolve_query(db, "SELECT COUNT(*) AS cnt FROM keystroke_events WHERE session_id = :param"),
+                    resolve_query(
+                        db,
+                        "SELECT COUNT(*) AS cnt FROM keystroke_events WHERE session_id = :param",
+                    ),
                     (session_id,),
                 )
                 keystroke_count = int(cursor.fetchone()["cnt"])
@@ -554,20 +627,27 @@ def _build_session_metrics(session_id: str):
         if mouse_count == 0:
             try:
                 cursor.execute(
-                    resolve_query(db, "SELECT COUNT(*) AS cnt FROM mouse_events WHERE session_id = :param"),
+                    resolve_query(
+                        db,
+                        "SELECT COUNT(*) AS cnt FROM mouse_events WHERE session_id = :param",
+                    ),
                     (session_id,),
                 )
                 mouse_count = int(cursor.fetchone()["cnt"])
             except Exception:
                 pass
 
-        from datetime import datetime as _dt, timedelta, timezone
+        from datetime import datetime as _dt
+        from datetime import timedelta, timezone
 
         anomaly_cutoff = (_dt.now(timezone.utc) - timedelta(days=1)).isoformat()
         cursor.execute(
-            resolve_query(db, """SELECT COUNT(*) AS anomaly_count FROM auth_events
+            resolve_query(
+                db,
+                """SELECT COUNT(*) AS anomaly_count FROM auth_events
                WHERE user_id = :param AND event_type = 'anomaly'
-               AND timestamp > :param"""),
+               AND timestamp > :param""",
+            ),
             (user_id, anomaly_cutoff),
         )
         anomaly_count = int(cursor.fetchone()["anomaly_count"])
@@ -647,10 +727,11 @@ def _build_session_metrics(session_id: str):
                     with db.get_connection() as conn2:
                         cursor2 = conn2.cursor()
                         cursor2.execute(
-                            resolve_query(db,
+                            resolve_query(
+                                db,
                                 "SELECT features FROM behavioral_data "
                                 "WHERE session_id = :param AND data_type = 'extended' "
-                                "ORDER BY timestamp DESC LIMIT 1"
+                                "ORDER BY timestamp DESC LIMIT 1",
                             ),
                             (session_id,),
                         )
@@ -663,16 +744,23 @@ def _build_session_metrics(session_id: str):
                                 if raw_feat.startswith("gAAAAA"):
                                     try:
                                         from cryptography.fernet import Fernet
-                                        fernet_key = current_app.config.get("BACKUP_FERNET")
+
+                                        fernet_key = current_app.config.get(
+                                            "BACKUP_FERNET"
+                                        )
                                         if fernet_key:
                                             fernet = Fernet(fernet_key.encode("utf-8"))
                                             decoded = json.loads(
-                                                fernet.decrypt(raw_feat.encode("utf-8")).decode("utf-8")
+                                                fernet.decrypt(
+                                                    raw_feat.encode("utf-8")
+                                                ).decode("utf-8")
                                             )
                                     except Exception:
                                         pass
                                 # Try plaintext JSON if not encrypted or decryption failed
-                                if decoded is None and not raw_feat.startswith("gAAAAA"):
+                                if decoded is None and not raw_feat.startswith(
+                                    "gAAAAA"
+                                ):
                                     try:
                                         decoded = json.loads(raw_feat)
                                     except Exception:
@@ -699,11 +787,15 @@ def _build_session_metrics(session_id: str):
                 if user_id:
                     try:
                         from app.models.passive_enrollment import get_enrollment_manager
+
                         mgr = get_enrollment_manager()
                         profile = mgr.get_profile_summary(int(user_id))
                         stats = profile.get("feature_stats", {})
                         if stats:
-                            user_baseline = {k: v.get("mean", 0.0) if isinstance(v, dict) else v for k, v in stats.items()}
+                            user_baseline = {
+                                k: v.get("mean", 0.0) if isinstance(v, dict) else v
+                                for k, v in stats.items()
+                            }
                     except Exception:
                         pass
 
@@ -714,9 +806,30 @@ def _build_session_metrics(session_id: str):
                     ms_feats = {}
                     if stored_features:
                         for k, v in stored_features.items():
-                            if any(t in k for t in ("hold", "flight", "keystroke", "typing", "bigram", "correction", "burst", "rhythm")):
+                            if any(
+                                t in k
+                                for t in (
+                                    "hold",
+                                    "flight",
+                                    "keystroke",
+                                    "typing",
+                                    "bigram",
+                                    "correction",
+                                    "burst",
+                                    "rhythm",
+                                )
+                            ):
                                 ks_feats[k] = v
-                            elif any(t in k for t in ("mouse", "trajectory", "click", "hover", "path")):
+                            elif any(
+                                t in k
+                                for t in (
+                                    "mouse",
+                                    "trajectory",
+                                    "click",
+                                    "hover",
+                                    "path",
+                                )
+                            ):
                                 ms_feats[k] = v
 
                     # Build session_history from recent behavioral data rows
@@ -726,10 +839,11 @@ def _build_session_metrics(session_id: str):
                         with db.get_connection() as conn_hist:
                             hist_cursor = conn_hist.cursor()
                             hist_cursor.execute(
-                                resolve_query(db,
+                                resolve_query(
+                                    db,
                                     "SELECT features FROM behavioral_data "
                                     "WHERE session_id = :param "
-                                    "ORDER BY timestamp ASC LIMIT 50"
+                                    "ORDER BY timestamp ASC LIMIT 50",
                                 ),
                                 (session_id,),
                             )
@@ -738,6 +852,7 @@ def _build_session_metrics(session_id: str):
                                 fkey_h = current_app.config.get("BACKUP_FERNET")
                                 if fkey_h:
                                     from cryptography.fernet import Fernet as _Fh
+
                                     _fernet_hist = _Fh(fkey_h.encode("utf-8"))
                             except Exception:
                                 pass
@@ -749,7 +864,9 @@ def _build_session_metrics(session_id: str):
                                     if _fernet_hist and hraw.startswith("gAAAAA"):
                                         try:
                                             hfeats = json.loads(
-                                                _fernet_hist.decrypt(hraw.encode("utf-8")).decode("utf-8")
+                                                _fernet_hist.decrypt(
+                                                    hraw.encode("utf-8")
+                                                ).decode("utf-8")
                                             )
                                         except Exception:
                                             pass
@@ -778,10 +895,13 @@ def _build_session_metrics(session_id: str):
 
             # 6. Cache the result in-memory for subsequent polls
             if ensemble_data or stored_features:
-                _set_cached_ensemble(session_id, {
-                    "ensemble": ensemble_data,
-                    "features": stored_features,
-                })
+                _set_cached_ensemble(
+                    session_id,
+                    {
+                        "ensemble": ensemble_data,
+                        "features": stored_features,
+                    },
+                )
     except Exception as exc:
         logger.debug("Ensemble scoring skipped: %s", exc)
 
@@ -815,6 +935,7 @@ def _build_session_metrics(session_id: str):
 
         if feat_source:
             from app.behavioral_feature_engine import get_behavioral_engine
+
             bfe = get_behavioral_engine()
             extracted = bfe.extract({"extended_features": feat_source})
             category_scores = bfe.get_category_scores(extracted)
@@ -827,6 +948,7 @@ def _build_session_metrics(session_id: str):
     digraph_info = {}
     try:
         from app.models.passive_enrollment import get_enrollment_manager
+
         em = get_enrollment_manager()
         enrollment_info = em.get_enrollment_status(int(user_id))
 
@@ -843,13 +965,19 @@ def _build_session_metrics(session_id: str):
                         1.0,
                         (dgp.get("updates_count", 0) / 5.0) * 0.5
                         + (len(dgp.get("per_key_hold", {})) / 20.0) * 0.3
-                        + (len(dgp.get("per_digraph_flight", {})) / 30.0) * 0.2
+                        + (len(dgp.get("per_digraph_flight", {})) / 30.0) * 0.2,
                     ),
                     "created_at": dgp.get("created_at", ""),
                     "last_updated": dgp.get("last_updated", ""),
                 }
             else:
-                digraph_info = {"has_profile": False, "per_key_count": 0, "per_digraph_count": 0, "updates_count": 0, "confidence": 0}
+                digraph_info = {
+                    "has_profile": False,
+                    "per_key_count": 0,
+                    "per_digraph_count": 0,
+                    "updates_count": 0,
+                    "confidence": 0,
+                }
         except Exception:
             pass
     except Exception:
@@ -860,13 +988,17 @@ def _build_session_metrics(session_id: str):
         try:
             stats = db.get_user_stats(int(user_id))
             active_sessions = stats.get("total_sessions", 0)
-            required = enrollment_info.get("sessions_required", 5) if enrollment_info else 5
-            
+            required = (
+                enrollment_info.get("sessions_required", 5) if enrollment_info else 5
+            )
+
             enrollment_info = {
                 "enrolled": active_sessions >= required,
                 "sessions_completed": active_sessions,
                 "sessions_required": required,
-                "enrollment_phase": "active" if active_sessions >= required else "collecting"
+                "enrollment_phase": "active"
+                if active_sessions >= required
+                else "collecting",
             }
         except Exception as exc:
             logger.debug("Failed to load user stats for enrollment fallback: %s", exc)
@@ -875,11 +1007,18 @@ def _build_session_metrics(session_id: str):
     if feature_richness == 0.0 and total_activity > 0:
         # Multi-factor signal strength: data volume + diversity + consistency
         volume_score = min(1.0, total_activity / 50.0)  # Saturates at 50 events
-        diversity_score = min(1.0, (1 if keystroke_count > 0 else 0) * 0.5 + (1 if mouse_count > 0 else 0) * 0.5)
+        diversity_score = min(
+            1.0,
+            (1 if keystroke_count > 0 else 0) * 0.5
+            + (1 if mouse_count > 0 else 0) * 0.5,
+        )
         # Features count from synthesized/stored features as quality indicator
         feat_count = len(stored_features) if stored_features else 0
         quality_score = min(1.0, feat_count / 30.0)  # 30+ features = max quality
-        feature_richness = round(min(1.0, volume_score * 0.4 + diversity_score * 0.3 + quality_score * 0.3), 2)
+        feature_richness = round(
+            min(1.0, volume_score * 0.4 + diversity_score * 0.3 + quality_score * 0.3),
+            2,
+        )
 
     # ── Persist session snapshot + risk timeline (non-blocking) ────────────
     try:
@@ -945,7 +1084,9 @@ def _build_session_metrics(session_id: str):
                 "enrollment_status": ensemble_data.get("enrollment_status") or {},
                 "drift_risk": ensemble_data.get("drift_risk", 0.0),
                 "composite_analysis": ensemble_data.get("composite_analysis") or {},
-                "synthetic_probability": ensemble_data.get("synthetic_probability", 0.0),
+                "synthetic_probability": ensemble_data.get(
+                    "synthetic_probability", 0.0
+                ),
                 "risk_attribution": ensemble_data.get("risk_attribution", {}),
                 "digraph_match_score": ensemble_data.get("digraph_match_score", 0.5),
                 "digraph_confidence": ensemble_data.get("digraph_confidence", 0.0),
@@ -970,32 +1111,35 @@ def _build_trust_timeline(session_id: str, window_minutes: int, severity: str):
     if not session:
         return None, ("Invalid session", 404)
     user_id = session["user_id"]
-    from datetime import datetime as _dt, timedelta, timezone
+    from datetime import datetime as _dt
+    from datetime import timedelta, timezone
 
-    try:
-        from app.database_pg import DatabaseManager as PostgresDatabaseManager
-        is_pg = isinstance(db, PostgresDatabaseManager)
-    except ImportError:
-        is_pg = False
+    is_pg = db.is_pg
 
     cutoff_dt = _dt.now(timezone.utc) - timedelta(minutes=window_minutes)
     cutoff = cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")
     with db.get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            resolve_query(db, """SELECT timestamp, data_type, COUNT(*) AS activity
+            resolve_query(
+                db,
+                """SELECT timestamp, data_type, COUNT(*) AS activity
                FROM behavioral_data
                WHERE session_id = :param AND timestamp > :param
-               GROUP BY timestamp, data_type ORDER BY timestamp ASC"""),
+               GROUP BY timestamp, data_type ORDER BY timestamp ASC""",
+            ),
             (session_id, cutoff),
         )
         rows = cursor.fetchall()
         cursor.execute(
-            resolve_query(db, """SELECT timestamp, COUNT(*) AS anomaly_count
+            resolve_query(
+                db,
+                """SELECT timestamp, COUNT(*) AS anomaly_count
                FROM auth_events
                WHERE user_id = :param AND event_type = 'anomaly'
                  AND timestamp > :param
-               GROUP BY timestamp ORDER BY timestamp ASC"""),
+               GROUP BY timestamp ORDER BY timestamp ASC""",
+            ),
             (user_id, cutoff),
         )
         anomaly_rows = cursor.fetchall()
@@ -1250,7 +1394,10 @@ class CognitiveProfile(Resource):
         try:
             with db.get_connection() as conn:
                 for row in conn.execute(
-                    resolve_query(db, "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'extended' ORDER BY timestamp DESC LIMIT 10"),
+                    resolve_query(
+                        db,
+                        "SELECT features FROM behavioral_data WHERE session_id = :param AND data_type = 'extended' ORDER BY timestamp DESC LIMIT 10",
+                    ),
                     (sid,),
                 ).fetchall():
                     try:
@@ -1416,7 +1563,10 @@ class SilentChallenge(Resource):
 
         try:
             with db.get_connection() as conn:
-                query = resolve_query(db, "UPDATE sessions SET updated_at = :param WHERE session_id = :param")
+                query = resolve_query(
+                    db,
+                    "UPDATE sessions SET updated_at = :param WHERE session_id = :param",
+                )
                 conn.execute(
                     query,
                     (datetime.now(timezone.utc).isoformat(), sid),

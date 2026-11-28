@@ -231,7 +231,7 @@ export function BehavioralProvider() {
     >
       <div
         style={{
-          background: "linear-gradient(135deg, rgba(220, 38, 38, 0.95), rgba(185, 28, 28, 0.95))",
+          background: "#b91c1c",
           backdropFilter: "blur(12px)",
           border: "1px solid rgba(239, 68, 68, 0.5)",
           borderRadius: 12,
@@ -242,7 +242,7 @@ export function BehavioralProvider() {
           boxShadow: "0 8px 32px rgba(220, 38, 38, 0.4), 0 0 0 1px rgba(0,0,0,0.1)",
           maxWidth: 520,
           color: "white",
-          fontFamily: "'Inter', -apple-system, sans-serif",
+          fontFamily: "var(--font-sans)",
         }}
       >
         <div style={{
@@ -259,11 +259,11 @@ export function BehavioralProvider() {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.5, marginBottom: 2, textTransform: "uppercase" }}>
-            ⚠ Copy-Paste Detected
+            Copy-paste detected
           </div>
           <div style={{ fontSize: 12, opacity: 0.9, lineHeight: 1.4 }}>
             Paste #{pasteWarning.count} flagged by behavioral security.
-            This action has been logged and may trigger additional verification.
+            This may trigger additional verification.
           </div>
         </div>
         <button

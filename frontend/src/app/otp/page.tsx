@@ -213,7 +213,7 @@ export default function OtpPage() {
 
         {/* Dev mode OTP display — large, copy-able, prominent */}
         {devMode && devOtp && !expired && (
-          <div className="relative bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/30 rounded-xl p-5 text-center">
+          <div className="relative bg-amber-500/5 border border-amber-500/30 rounded-xl p-5 text-center">
             <div className="text-[10px] uppercase tracking-widest font-bold text-amber-500/80 mb-2">
               Development OTP Code
             </div>
@@ -309,7 +309,7 @@ export default function OtpPage() {
             />
           </div>
           <div className="mt-2 flex items-center gap-2 text-[10px] text-muted font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.5)]"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
             Typing pattern analysis active — digit-by-digit behavior monitored
           </div>
         </div>
@@ -332,7 +332,7 @@ export default function OtpPage() {
               type="button"
               onClick={handleResend}
               disabled={isLoading}
-              className="w-full bg-accent-primary text-white font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full bg-accent-primary text-black font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               {isLoading ? 'Sending...' : 'Retry Sending OTP'}
@@ -352,7 +352,7 @@ export default function OtpPage() {
           <button
             type="button"
             onClick={handleResend}
-            className="w-full bg-accent-primary text-white font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-accent-primary text-black font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors flex items-center justify-center gap-2"
           >
             <RefreshCw className="w-4 h-4" />
             Resend OTP Code
@@ -367,7 +367,7 @@ export default function OtpPage() {
             className="w-full text-center text-xs text-muted hover:text-accent-primary transition-colors py-2 cursor-pointer mt-1 flex items-center justify-center gap-1"
           >
             <Mail className="w-3 h-3" />
-            Didn't receive it? Resend OTP
+            Didn&apos;t receive it? Resend OTP
           </button>
         )}
 

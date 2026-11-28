@@ -8,8 +8,8 @@ export function AuthInput(props: React.ComponentProps<"input">) {
   return (
     <input
       className={cn(
-        "w-full h-11 rounded-lg border border-slate-700/50 bg-slate-900/50 px-4 text-sm text-slate-100 placeholder:text-slate-500",
-        "focus:outline-none focus:border-blue-500/50 focus:bg-slate-900/80 focus:ring-4 focus:ring-blue-500/10 transition-all shadow-inner",
+        "w-full h-11 rounded-md border border-slate-700 px-3.5 text-sm text-fg placeholder:text-slate-600",
+        "focus:border-fg transition-colors",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         className
       )}
@@ -23,9 +23,9 @@ export function AuthButton(props: React.ComponentProps<"button">) {
   return (
     <button
       className={cn(
-        "w-full relative overflow-hidden bg-blue-600 hover:bg-blue-500 text-white font-medium h-11 rounded-lg shadow-[0_0_15px_rgba(37,99,235,0.2)] hover:shadow-[0_0_25px_rgba(37,99,235,0.4)]",
-        "transition-all duration-300 flex items-center justify-center border border-blue-400/20",
-        "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 disabled:hover:shadow-none",
+        "w-full bg-fg hover:bg-white text-black font-semibold h-11 rounded-md",
+        "transition-colors flex items-center justify-center gap-2",
+        "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-fg",
         className
       )}
       {...rest}

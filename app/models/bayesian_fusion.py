@@ -26,11 +26,11 @@ Mathematical foundation:
 
 from __future__ import annotations
 
-import math
 import logging
+import math
 import time
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +38,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class EngineEvidence:
     """A single piece of evidence from an ML engine."""
+
     engine_name: str
-    risk_score: float          # 0.0 = safe, 1.0 = fraud
-    confidence: float          # 0.0 = no signal, 1.0 = certain
+    risk_score: float  # 0.0 = safe, 1.0 = fraud
+    confidence: float  # 0.0 = no signal, 1.0 = certain
     execution_time_ms: float = 0.0
     flags: List[str] = field(default_factory=list)
     raw_output: Dict[str, Any] = field(default_factory=dict)
@@ -49,13 +50,14 @@ class EngineEvidence:
 @dataclass
 class FusionResult:
     """Complete output from the Bayesian fusion process."""
-    posterior_risk: float               # Final calibrated risk score [0, 1]
-    prior_risk: float                   # Prior before evidence
-    log_odds_shift: float               # Total shift in log-odds space
-    decision: str                       # "allow" | "silent_challenge" | "step_up" | "block"
-    confidence: float                   # Meta-confidence in the decision
-    evidence_trail: List[Dict]          # Ordered list of how each engine shifted belief
-    top_risk_drivers: List[Dict]        # Top 3 engines by contribution
+
+    posterior_risk: float  # Final calibrated risk score [0, 1]
+    prior_risk: float  # Prior before evidence
+    log_odds_shift: float  # Total shift in log-odds space
+    decision: str  # "allow" | "silent_challenge" | "step_up" | "block"
+    confidence: float  # Meta-confidence in the decision
+    evidence_trail: List[Dict]  # Ordered list of how each engine shifted belief
+    top_risk_drivers: List[Dict]  # Top 3 engines by contribution
     execution_time_ms: float
     engines_used: int
     engines_skipped: int
@@ -79,19 +81,19 @@ class BayesianRiskFusion:
     # Engine reliability priors — learned from historical accuracy
     # Higher = more trusted, 0.0 = disabled
     ENGINE_RELIABILITY: Dict[str, float] = {
-        "cognitive":            0.90,
-        "duress":               0.95,   # Duress detection is highest priority
-        "liveness":             0.85,
-        "invisible_challenge":  0.75,
-        "device_intelligence":  0.80,
-        "composite_fraud":      0.70,
-        "passive_enrollment":   0.80,
-        "feature_selection":    0.75,
-        "transaction":          0.85,
-        "replay_detection":     0.80,
-        "concept_drift":        0.65,
-        "gan_adversarial":      0.70,
-        "transformer":          0.88,
+        "cognitive": 0.90,
+        "duress": 0.95,  # Duress detection is highest priority
+        "liveness": 0.85,
+        "invisible_challenge": 0.75,
+        "device_intelligence": 0.80,
+        "composite_fraud": 0.70,
+        "passive_enrollment": 0.80,
+        "feature_selection": 0.75,
+        "transaction": 0.85,
+        "replay_detection": 0.80,
+        "concept_drift": 0.65,
+        "gan_adversarial": 0.70,
+        "transformer": 0.88,
     }
 
     # Adaptive thresholds by enrollment phase
@@ -106,7 +108,9 @@ class BayesianRiskFusion:
 
     def __init__(self, enrollment_phase: str = "mature"):
         self.enrollment_phase = enrollment_phase
-        self._thresholds = self.THRESHOLDS.get(enrollment_phase, self.THRESHOLDS["mature"])
+        self._thresholds = self.THRESHOLDS.get(
+            enrollment_phase, self.THRESHOLDS["mature"]
+        )
 
     def fuse(self, evidences: List[EngineEvidence]) -> FusionResult:
         """Run Bayesian belief update across all engine evidences.
@@ -151,18 +155,20 @@ class BayesianRiskFusion:
             old_risk = self._from_log_odds(old_log_odds)
             new_risk = self._from_log_odds(log_odds)
 
-            evidence_trail.append({
-                "engine": ev.engine_name,
-                "risk_score": round(ev.risk_score, 4),
-                "confidence": round(ev.confidence, 4),
-                "reliability": round(reliability, 2),
-                "llr": round(damped_llr, 4),
-                "belief_before": round(old_risk, 4),
-                "belief_after": round(new_risk, 4),
-                "shift": round(new_risk - old_risk, 4),
-                "flags": ev.flags,
-                "exec_ms": round(ev.execution_time_ms, 1),
-            })
+            evidence_trail.append(
+                {
+                    "engine": ev.engine_name,
+                    "risk_score": round(ev.risk_score, 4),
+                    "confidence": round(ev.confidence, 4),
+                    "reliability": round(reliability, 2),
+                    "llr": round(damped_llr, 4),
+                    "belief_before": round(old_risk, 4),
+                    "belief_after": round(new_risk, 4),
+                    "shift": round(new_risk - old_risk, 4),
+                    "flags": ev.flags,
+                    "exec_ms": round(ev.execution_time_ms, 1),
+                }
+            )
 
         posterior = self._from_log_odds(log_odds)
         total_shift = log_odds - self._to_log_odds(prior)
@@ -174,7 +180,9 @@ class BayesianRiskFusion:
         confidence = self._compute_meta_confidence(evidences, skipped)
 
         # Top risk drivers: sorted by absolute belief shift
-        sorted_trail = sorted(evidence_trail, key=lambda x: abs(x["shift"]), reverse=True)
+        sorted_trail = sorted(
+            evidence_trail, key=lambda x: abs(x["shift"]), reverse=True
+        )
         top_drivers = [
             {"engine": t["engine"], "shift": t["shift"], "risk_score": t["risk_score"]}
             for t in sorted_trail[:3]
@@ -206,9 +214,17 @@ class BayesianRiskFusion:
         """
         # Hard overrides — these bypass threshold logic
         for ev in evidences:
-            if ev.engine_name == "duress" and ev.risk_score >= 0.7 and ev.confidence >= 0.5:
+            if (
+                ev.engine_name == "duress"
+                and ev.risk_score >= 0.7
+                and ev.confidence >= 0.5
+            ):
                 return "block"
-            if ev.engine_name == "liveness" and ev.risk_score >= 0.8 and ev.confidence >= 0.5:
+            if (
+                ev.engine_name == "liveness"
+                and ev.risk_score >= 0.8
+                and ev.confidence >= 0.5
+            ):
                 return "block"
             if ev.engine_name == "replay_detection" and ev.risk_score >= 0.7:
                 return "block"
@@ -223,7 +239,9 @@ class BayesianRiskFusion:
         else:
             return "allow"
 
-    def _compute_meta_confidence(self, evidences: List[EngineEvidence], skipped: int) -> float:
+    def _compute_meta_confidence(
+        self, evidences: List[EngineEvidence], skipped: int
+    ) -> float:
         """Compute how confident we are in the fusion result itself.
 
         High confidence when:

@@ -19,13 +19,14 @@ Stress Features Analyzed:
 - Cognitive load indicators (decision time on routine fields)
 """
 
+import logging
+from datetime import datetime
+from typing import Dict, List, Optional
+
+import joblib
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
-from typing import Dict, List, Tuple, Optional
-import joblib
-import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -293,8 +294,8 @@ class DuressDetector:
         mod_std = keystroke_features.get("modifier_overlap_std", 0.0)
         mod_mean = keystroke_features.get("modifier_overlap_mean", 0.0)
         baseline_mod_std = baseline.get("modifier_overlap_std", {}).get("mean", mod_std)
-        duress["modifier_overlap_instability"] = (
-            abs(mod_std - baseline_mod_std) / (baseline_mod_std + 1e-6)
+        duress["modifier_overlap_instability"] = abs(mod_std - baseline_mod_std) / (
+            baseline_mod_std + 1e-6
         )
 
         # Digraph rhythm deviation (specific key-pair timing breaks down under stress)

@@ -2,16 +2,15 @@
 UserManager: Lazy-load and cache per-user ML components.
 """
 
-from typing import Dict
-from collections import deque
-import os
 import logging
-
-from app.feature_extractor import BehavioralFeatureExtractor
-from app.drift_detector import BehavioralDriftDetector
-from app.models.ml_models import EnsembleBehavioralClassifier
+import os
+from collections import deque
+from typing import Dict
 
 from app.config import Settings
+from app.drift_detector import BehavioralDriftDetector
+from app.feature_extractor import BehavioralFeatureExtractor
+from app.models.ml_models import EnsembleBehavioralClassifier
 
 settings = Settings()
 

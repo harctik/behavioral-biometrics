@@ -17,11 +17,7 @@ Signals processed:
 from __future__ import annotations
 
 import logging
-import math
-import time
 from typing import Any
-
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +187,9 @@ class CognitiveEngine:
         wpm = f.get("typing_speed_wpm", 0)
         if wpm > 0 and wpm < 15 and hesitation_count >= 2:
             risk += 0.2
-            flags.append(f"duress:slow_anxious_typing({wpm:.0f} WPM + {hesitation_count} hesitations)")
+            flags.append(
+                f"duress:slow_anxious_typing({wpm:.0f} WPM + {hesitation_count} hesitations)"
+            )
 
         return min(1.0, risk)
 

@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import math
 import random
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -135,14 +135,12 @@ class SyntheticDataGenerator:
         """
         logger.info(
             "Generating synthetic dataset: %d users × %d samples",
-            n_users, samples_per_user,
+            n_users,
+            samples_per_user,
         )
 
         # Create user profiles
-        profiles = [
-            UserProfile(user_id=i + 1, rng=self.rng)
-            for i in range(n_users)
-        ]
+        profiles = [UserProfile(user_id=i + 1, rng=self.rng) for i in range(n_users)]
 
         dataset = []
         for i, profile in enumerate(profiles):
@@ -159,12 +157,14 @@ class SyntheticDataGenerator:
                 other = self.random.choice(other_profiles)
                 impostor.append(self._generate_sample(other, session_idx=j))
 
-            dataset.append({
-                "user_id": profile.user_id,
-                "profile": self._profile_metadata(profile),
-                "genuine": genuine,
-                "impostor": impostor,
-            })
+            dataset.append(
+                {
+                    "user_id": profile.user_id,
+                    "profile": self._profile_metadata(profile),
+                    "genuine": genuine,
+                    "impostor": impostor,
+                }
+            )
 
         logger.info(
             "Dataset generated: %d users, %d total genuine, %d total impostor",
@@ -174,7 +174,9 @@ class SyntheticDataGenerator:
         )
         return dataset
 
-    def _generate_sample(self, profile: UserProfile, session_idx: int = 0) -> Dict[str, float]:
+    def _generate_sample(
+        self, profile: UserProfile, session_idx: int = 0
+    ) -> Dict[str, float]:
         """Generate a single behavioral feature vector from a user profile.
 
         Adds realistic session-to-session variation (circadian rhythms,
@@ -201,7 +203,9 @@ class SyntheticDataGenerator:
         features["mouse_decel_rate"] = max(0, rng.normal(0.3, 0.1))
         features["mouse_jerk_mean"] = max(0, rng.normal(0.2, 0.1))
         features["mouse_jerk_std"] = max(0, rng.uniform(0.05, 0.3))
-        features["trajectory_curvature"] = np.clip(profile.trajectory_curvature + ns(0.05), 0, 1)
+        features["trajectory_curvature"] = np.clip(
+            profile.trajectory_curvature + ns(0.05), 0, 1
+        )
         features["angular_deviation"] = max(0, rng.normal(15, 5))
         features["overshoot_distance"] = max(0, rng.normal(5, 3))
         features["click_precision"] = np.clip(rng.normal(0.85, 0.1), 0, 1)
@@ -239,17 +243,25 @@ class SyntheticDataGenerator:
         features["key_hold_mean"] = max(10, profile.key_hold_mean + ns(10))
         features["key_hold_std"] = max(1, profile.key_hold_std + ns(5))
         features["key_hold_median"] = max(10, profile.key_hold_mean + ns(8))
-        features["key_hold_cv"] = np.clip(features["key_hold_std"] / max(features["key_hold_mean"], 1), 0, 2)
+        features["key_hold_cv"] = np.clip(
+            features["key_hold_std"] / max(features["key_hold_mean"], 1), 0, 2
+        )
         features["flight_time_mean"] = max(10, profile.flight_time_mean + ns(20))
         features["flight_time_std"] = max(1, profile.flight_time_std + ns(10))
         features["flight_time_median"] = max(10, profile.flight_time_mean + ns(15))
         features["inter_key_gap_cv"] = np.clip(rng.normal(0.4, 0.15), 0, 2)
         features["typing_speed_wpm"] = max(5, profile.typing_speed_wpm + ns(5))
         features["typing_speed_variance"] = max(0, rng.normal(3, 1.5))
-        features["digraph_timing_consistency"] = np.clip(profile.rhythm_consistency + ns(0.1), 0, 1)
-        features["trigraph_timing_consistency"] = np.clip(profile.rhythm_consistency - 0.1 + ns(0.1), 0, 1)
+        features["digraph_timing_consistency"] = np.clip(
+            profile.rhythm_consistency + ns(0.1), 0, 1
+        )
+        features["trigraph_timing_consistency"] = np.clip(
+            profile.rhythm_consistency - 0.1 + ns(0.1), 0, 1
+        )
         features["ngram_pattern_entropy"] = max(0, rng.normal(3.0, 0.8))
-        features["rhythm_consistency"] = np.clip(profile.rhythm_consistency + ns(0.05), 0, 1)
+        features["rhythm_consistency"] = np.clip(
+            profile.rhythm_consistency + ns(0.05), 0, 1
+        )
         features["burst_count"] = max(0, int(rng.normal(5, 2)))
         features["burst_mean_length"] = max(1, rng.normal(4, 1.5))
         features["burst_to_pause_ratio"] = np.clip(rng.normal(0.6, 0.2), 0, 1)
@@ -274,7 +286,9 @@ class SyntheticDataGenerator:
         features["keystroke_event_count"] = max(5, int(rng.normal(80, 30)))
         features["total_keys_pressed"] = max(5, int(rng.normal(75, 25)))
         features["keystroke_pressure_variance"] = max(0, rng.normal(0.05, 0.02))
-        features["keystroke_rhythm_consistency"] = np.clip(profile.rhythm_consistency + ns(0.08), 0, 1)
+        features["keystroke_rhythm_consistency"] = np.clip(
+            profile.rhythm_consistency + ns(0.08), 0, 1
+        )
         features["typing_hold_variance"] = max(0, rng.normal(20, 10))
 
         # ── Category 3: Cognitive (27 features) ──────────────────────────
@@ -331,7 +345,9 @@ class SyntheticDataGenerator:
 
         # ── Category 6: Physiological (15 features) ──────────────────────
         features["hand_dominance_score"] = profile.hand_dominance
-        features["touch_force_mean"] = np.clip(profile.touch_force_mean + ns(0.05), 0, 1)
+        features["touch_force_mean"] = np.clip(
+            profile.touch_force_mean + ns(0.05), 0, 1
+        )
         features["touch_force_std"] = max(0, profile.touch_force_std + ns(0.02))
         features["touch_area_mean"] = np.clip(rng.normal(0.4, 0.1), 0, 1)
         features["touch_area_std"] = max(0, rng.uniform(0.02, 0.1))
@@ -409,7 +425,11 @@ class SyntheticDataGenerator:
             "flight_time_mean_ms": round(profile.flight_time_mean, 1),
             "rhythm_consistency": round(profile.rhythm_consistency, 3),
             "error_rate": round(profile.error_rate, 4),
-            "hand_dominance": "right" if profile.hand_dominance > 0 else "left" if profile.hand_dominance < 0 else "ambidextrous",
+            "hand_dominance": "right"
+            if profile.hand_dominance > 0
+            else "left"
+            if profile.hand_dominance < 0
+            else "ambidextrous",
             "screen_resolution": f"{profile.screen_width}x{profile.screen_height}",
         }
 
@@ -434,7 +454,9 @@ def generate_and_save(
         samples_per_user=samples_per_user,
     )
 
-    filepath = os.path.join(output_dir, f"synthetic_{n_users}users_{samples_per_user}samples.json")
+    filepath = os.path.join(
+        output_dir, f"synthetic_{n_users}users_{samples_per_user}samples.json"
+    )
     with open(filepath, "w") as f:
         json.dump(dataset, f, indent=2)
 

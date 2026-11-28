@@ -34,6 +34,9 @@ export function DataQualityRadar({
 }: DataQualityRadarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Side padding keeps the axis labels inside the canvas.
+  const width = size + 112;
+
   // Normalize all values to 0-1
   const axes = [
     { label: "Digraphs", value: Math.min(1, digraphs / 25) },
@@ -50,12 +53,12 @@ export function DataQualityRadar({
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = size * dpr;
+    canvas.width = width * dpr;
     canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, size, size);
+    ctx.clearRect(0, 0, width, size);
 
-    const cx = size / 2;
+    const cx = width / 2;
     const cy = size / 2;
     const maxR = size / 2 - 24;
     const n = axes.length;
@@ -102,13 +105,13 @@ export function DataQualityRadar({
 
     // Fill
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
-    grad.addColorStop(0, "rgba(59, 130, 246, 0.25)");
-    grad.addColorStop(1, "rgba(139, 92, 246, 0.1)");
+    grad.addColorStop(0, "rgba(244,244,242, 0.25)");
+    grad.addColorStop(1, "rgba(189,189,184, 0.1)");
     ctx.fillStyle = grad;
     ctx.fill();
 
     // Stroke
-    ctx.strokeStyle = "rgba(59, 130, 246, 0.6)";
+    ctx.strokeStyle = "rgba(244,244,242, 0.6)";
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -130,23 +133,24 @@ export function DataQualityRadar({
 
     // Draw labels
     ctx.font = "9px ui-monospace, monospace";
-    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     axes.forEach((axis, i) => {
       const angle = startAngle + i * angleStep;
       const labelR = maxR + 16;
       const x = cx + Math.cos(angle) * labelR;
       const y = cy + Math.sin(angle) * labelR;
+      const side = Math.cos(angle);
+      ctx.textAlign = side > 0.3 ? "left" : side < -0.3 ? "right" : "center";
       ctx.fillStyle = axis.value > 0.6 ? "rgba(148, 163, 184, 0.9)" : "rgba(148, 163, 184, 0.5)";
       ctx.fillText(axis.label, x, y);
     });
-  }, [axes, size]);
+  }, [axes, size, width]);
 
   return (
     <canvas
       ref={canvasRef}
       className={className}
-      style={{ width: size, height: size }}
+      style={{ width, height: size, maxWidth: "100%" }}
     />
   );
 }

@@ -1,5 +1,6 @@
 """MFA end-to-end flow test using shared conftest fixtures."""
 import pyotp
+from conftest import full_login
 from freezegun import freeze_time
 
 
@@ -22,12 +23,12 @@ def test_mfa_flow(client):
     user_id = data["user_id"]
     with app.app_context():
         from app.extensions import get_db
+
         db = get_db()
         db.set_email_verified(user_id)
         with db.get_connection() as conn:
             conn.execute(
-                "UPDATE users SET mfa_enabled = 1 WHERE user_id = :p0",
-                {"p0": user_id}
+                "UPDATE users SET mfa_enabled = 1 WHERE user_id = :p0", {"p0": user_id}
             )
             conn.commit()
         user_record = db.get_user_for_mfa(user_id)
@@ -36,8 +37,8 @@ def test_mfa_flow(client):
     assert secret is not None
 
     # Login
-    login_resp = client.post(
-        "/api/v1/auth/login",
+    login_resp = full_login(
+        client,
         json={"username": "mfa_user", "password": "StrongPass123!"},
     )
     assert login_resp.status_code == 200

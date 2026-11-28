@@ -1,19 +1,19 @@
 """Banking-grade API blueprint (APP fraud, maker-checker, CBS health)."""
-from flask import request, current_app
-from flask_restx import Namespace, Resource
-from flask_jwt_extended import jwt_required
+import json
 import logging
 
-from app.extensions import get_db, limiter
+from flask import request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource
+
 from app.api.helpers import (
-    get_session_cached,
-    require_role,
-    require_mfa,
     get_current_user_id,
+    get_session_cached,
+    require_mfa,
+    require_role,
     validate_session_ownership,
-    resolve_query,
 )
-import json
+from app.extensions import get_db, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +34,12 @@ class AccountBalance(Resource):
         db = get_db()
 
         # Detect database backend
-        try:
-            from app.database_pg import DatabaseManager as PostgresDatabaseManager
-            is_pg = isinstance(db, PostgresDatabaseManager)
-        except ImportError:
-            is_pg = False
+        is_pg = db.is_pg
 
         # Real deployment: query the Core Banking System (CBS)
         try:
             from app.banking.cbs_adapters import get_cbs_adapter
+
             cbs = get_cbs_adapter("finacle")
             profile = cbs.get_customer_risk_profile(str(uid))
             initial_balance = profile.get("averageTransactionAmount", 50000.00) * 5.0
@@ -218,6 +215,7 @@ class CBSHealth(Resource):
             results = {"error": "CBS adapters unavailable"}
         return {"cbs_status": results}, 200
 
+
 @banking_ns.route("/statements")
 class AccountStatements(Resource):
     @jwt_required()
@@ -227,11 +225,7 @@ class AccountStatements(Resource):
         uid = get_current_user_id()
         db = get_db()
         statements = []
-        try:
-            from app.database_pg import PostgresDatabaseManager
-            is_pg = isinstance(db, PostgresDatabaseManager)
-        except ImportError:
-            is_pg = False
+        is_pg = db.is_pg
         try:
             with db.get_connection() as conn:
                 if is_pg:
@@ -247,9 +241,15 @@ class AccountStatements(Resource):
                            GROUP BY TO_CHAR(created_at, 'YYYY-MM')
                            ORDER BY month_str DESC
                            LIMIT 12""",
-                        (uid,)
+                        (uid,),
                     ).fetchall()
-                    rows_parsed = [{"month_str": r["month_str"], "total_out": float(r["total_out"] or 0.0)} for r in rows]
+                    rows_parsed = [
+                        {
+                            "month_str": r["month_str"],
+                            "total_out": float(r["total_out"] or 0.0),
+                        }
+                        for r in rows
+                    ]
                 else:
                     # SQLite fallback
                     db_rows = conn.execute(
@@ -257,9 +257,9 @@ class AccountStatements(Resource):
                            WHERE user_id = ? 
                            AND action = 'transaction_assess'
                            ORDER BY created_at DESC""",
-                        (uid,)
+                        (uid,),
                     ).fetchall()
-                    
+
                     months_data = {}
                     for r in db_rows:
                         meta = r["metadata"]
@@ -279,37 +279,47 @@ class AccountStatements(Resource):
                             else:
                                 date_str = str(created_at)
                             month_str = date_str[:7]
-                            months_data[month_str] = months_data.get(month_str, 0.0) + float(meta["amount"])
-                            
+                            months_data[month_str] = months_data.get(
+                                month_str, 0.0
+                            ) + float(meta["amount"])
+
                     sorted_months = sorted(months_data.keys(), reverse=True)[:12]
-                    rows_parsed = [{"month_str": m, "total_out": months_data[m]} for m in sorted_months]
-                
-                import uuid
+                    rows_parsed = [
+                        {"month_str": m, "total_out": months_data[m]}
+                        for m in sorted_months
+                    ]
+
                 import datetime
-                
+                import uuid
+
                 initial_balance = 50000.00
                 running_balance = initial_balance
                 for row in reversed(rows_parsed):
                     m_out = float(row["total_out"] or 0)
                     running_balance -= m_out
-                    
+
                     month_str = row["month_str"]
-                    year, month = month_str.split('-')
-                    month_name = datetime.date(int(year), int(month), 1).strftime('%B %Y')
-                    
+                    year, month = month_str.split("-")
+                    month_name = datetime.date(int(year), int(month), 1).strftime(
+                        "%B %Y"
+                    )
+
                     m_in = 75000.00  # Simulated monthly salary credit
                     running_balance += m_in
-                    
-                    statements.insert(0, {
-                        "id": str(uuid.uuid4())[:8],
-                        "month": month_name,
-                        "date": f"{month_str}-28",  # Statement generation date
-                        "amount_in": round(m_in, 2),
-                        "amount_out": round(m_out, 2),
-                        "closing_balance": round(running_balance, 2),
-                        "document_url": f"/api/v1/banking/statements/{uid}/download?month={month_str}"
-                    })
+
+                    statements.insert(
+                        0,
+                        {
+                            "id": str(uuid.uuid4())[:8],
+                            "month": month_name,
+                            "date": f"{month_str}-28",  # Statement generation date
+                            "amount_in": round(m_in, 2),
+                            "amount_out": round(m_out, 2),
+                            "closing_balance": round(running_balance, 2),
+                            "document_url": f"/api/v1/banking/statements/{uid}/download?month={month_str}",
+                        },
+                    )
         except Exception as e:
             logger.error("Failed to generate statements: %s", e)
-            
+
         return {"statements": statements}, 200

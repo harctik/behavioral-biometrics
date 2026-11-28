@@ -3,17 +3,20 @@
 Centralises session caching, role checking, AAL enforcement and session context
 validation so each blueprint imports a single canonical implementation.
 """
-from typing import Optional, Dict, Any, Set
-from functools import wraps
-from flask import request, current_app
-from flask_jwt_extended import get_jwt_identity, get_jwt
 import hashlib
 import logging
+from functools import wraps
+from typing import Any, Dict, Optional, Set
 
-from app.extensions import get_db, get_redis
+from flask import current_app, request
+from flask_jwt_extended import get_jwt, get_jwt_identity
+
 from app.error_handling import make_error_response
+from app.extensions import get_db, get_redis
 from app.redis_store import (
     get_session as cache_get_session,
+)
+from app.redis_store import (
     set_session as cache_set_session,
 )
 
@@ -54,7 +57,7 @@ def require_mfa(fn):
 
 def get_session_cached(session_id: str) -> Optional[Dict[str, Any]]:
     """Fetch a session, checking Redis cache first then database.
-    
+
     Transparently populates the cache on miss so subsequent lookups within
     the same request or neighbouring requests benefit.
     """
@@ -131,23 +134,33 @@ def check_session_inactivity(session: Dict[str, Any]) -> tuple:
     last_activity_str = session.get("last_activity")
     if not last_activity_str:
         return True, ""
-        
-    from datetime import datetime, timezone, timedelta
+
+    from datetime import datetime, timedelta, timezone
+
     try:
         if isinstance(last_activity_str, str):
             # Normalise naive DB strings to UTC
-            if not last_activity_str.endswith('+00:00') and not last_activity_str.endswith('Z') and '+' not in last_activity_str:
-                last_activity_str += '+00:00'
-            last_activity = datetime.fromisoformat(last_activity_str.replace('Z', '+00:00'))
+            if (
+                not last_activity_str.endswith("+00:00")
+                and not last_activity_str.endswith("Z")
+                and "+" not in last_activity_str
+            ):
+                last_activity_str += "+00:00"
+            last_activity = datetime.fromisoformat(
+                last_activity_str.replace("Z", "+00:00")
+            )
         else:
             last_activity = last_activity_str
             if last_activity.tzinfo is None:
                 last_activity = last_activity.replace(tzinfo=timezone.utc)
-                
+
         now = datetime.now(timezone.utc)
         if (now - last_activity) > timedelta(minutes=timeout_minutes):
-            return False, f"Session timed out due to {timeout_minutes} minutes of inactivity"
-            
+            return (
+                False,
+                f"Session timed out due to {timeout_minutes} minutes of inactivity",
+            )
+
         # Optional: touch the session in Redis to update last_activity
         # We only touch it every minute to avoid spamming Redis
         rc = get_redis()
@@ -156,14 +169,24 @@ def check_session_inactivity(session: Dict[str, Any]) -> tuple:
             if not rc.exists(cache_key):
                 rc.setex(cache_key, 60, "1")
                 session["last_activity"] = now.isoformat()
-                cache_set_session(rc, session["session_id"], session, int(current_app.config.get("SESSION_CACHE_TTL_SECONDS", 28800)))
+                cache_set_session(
+                    rc,
+                    session["session_id"],
+                    session,
+                    int(current_app.config.get("SESSION_CACHE_TTL_SECONDS", 28800)),
+                )
     except Exception as e:
         logger.warning(f"Error checking session inactivity: {e}")
-        
+
     return True, ""
 
 
-_LOCALHOST_IPS = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
+_LOCALHOST_IPS = {
+    "127.0.0.1",
+    "::1",
+    "localhost",
+    "0.0.0.0",
+}  # nosec B104 - compares addresses, binds nothing
 
 
 def _is_localhost(ip: str) -> bool:

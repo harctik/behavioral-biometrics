@@ -37,7 +37,7 @@ const complianceSections: ComplianceSection[] = [
   {
     framework: "RBI Master Direction 2021",
     icon: <Shield size={18} />,
-    color: "#3b82f6",
+    color: "#e9e9e6",
     score: 96,
     controls: [
       { id: "RBI-1", control: "Continuous authentication mechanism", status: "PASS", evidence: "38-feature behavioral biometrics with 8-model ensemble" },
@@ -52,7 +52,7 @@ const complianceSections: ComplianceSection[] = [
   {
     framework: "PCI DSS 4.0",
     icon: <BookOpen size={18} />,
-    color: "#8b5cf6",
+    color: "#a8a8a3",
     score: 94,
     controls: [
       { id: "8.3.1", control: "MFA for administrative access", status: "PASS", evidence: "TOTP-based MFA with behavioral step-up" },
@@ -144,11 +144,15 @@ export default function CompliancePage() {
       {/* Header */}
       <div style={{ marginBottom: "24px" }}>
         <h1 style={{ fontSize: "1.5rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "10px" }}>
-          <Shield size={24} style={{ color: "#3b82f6" }} />
+          <Shield size={24} style={{ color: "#e9e9e6" }} />
           Compliance Dashboard
         </h1>
         <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "4px" }}>
           RBI · PCI DSS 4.0 · DPDP Act 2023 · NPCI Guidelines
+        </p>
+        <p role="note" style={{ marginTop: "12px", padding: "10px 14px", border: "1px solid var(--border-strong)", borderRadius: "6px", fontSize: "0.8rem", lineHeight: 1.5 }}>
+          Self-assessment by the project author. These statuses are written into the app. They have not been
+          audited or certified by any regulator or assessor.
         </p>
       </div>
 
@@ -160,20 +164,20 @@ export default function CompliancePage() {
           style={{
             padding: "20px",
             borderRadius: "var(--radius-lg)",
-            background: "linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.1))",
-            border: "1px solid rgba(59,130,246,0.2)",
+            background: "var(--surface)",
+            border: "1px solid rgba(244,244,242,0.2)",
             textAlign: "center",
           }}
         >
           <div style={{ fontSize: "2rem", fontWeight: 800, color: overallScore > 90 ? "#22c55e" : "#eab308" }}>
             {overallScore}%
           </div>
-          <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Overall Score</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Self-assessed score</div>
         </motion.div>
 
         <div style={{ padding: "20px", borderRadius: "var(--radius-lg)", background: "var(--surface)", border: "1px solid var(--border)", textAlign: "center" }}>
           <div style={{ fontSize: "2rem", fontWeight: 800, color: "#22c55e" }}>{passedControls}</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Controls Passed</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Marked as met</div>
         </div>
 
         <div style={{ padding: "20px", borderRadius: "var(--radius-lg)", background: "var(--surface)", border: "1px solid var(--border)", textAlign: "center" }}>
@@ -267,13 +271,13 @@ export default function CompliancePage() {
       ))}
 
       {/* Action Buttons */}
-      <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "24px" }}>
         <button 
           onClick={() => handleExport("rbi")}
           style={{
             padding: "10px 20px", borderRadius: "8px",
-            background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)",
-            color: "#60a5fa", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+            background: "rgba(244,244,242,0.15)", border: "1px solid rgba(244,244,242,0.3)",
+            color: "#d9d9d4", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
             fontSize: "0.85rem", fontWeight: 600,
           }}
         >
@@ -283,8 +287,8 @@ export default function CompliancePage() {
           onClick={() => handleExport("pci_dss")}
           style={{
             padding: "10px 20px", borderRadius: "8px",
-            background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)",
-            color: "#a78bfa", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+            background: "rgba(189,189,184,0.15)", border: "1px solid rgba(189,189,184,0.3)",
+            color: "#bdbdb8", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
             fontSize: "0.85rem", fontWeight: 600,
           }}
         >

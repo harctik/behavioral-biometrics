@@ -6,10 +6,8 @@ Tests for new banking intelligence layer:
 - Time-of-day risk
 """
 
-import pytest
-import json
-from unittest.mock import patch
 from datetime import datetime
+from unittest.mock import patch
 
 
 class TestBankingVelocityChecks:
@@ -42,7 +40,9 @@ class TestBankingVelocityChecks:
 
     def test_velocity_unit_function(self, app):
         """Direct test of _check_velocity function."""
-        from app.api.transaction import _check_velocity
+        from app.services.transaction_service import TransactionService
+
+        _check_velocity = TransactionService._check_velocity
         from app.extensions import get_db
 
         with app.app_context():
@@ -53,7 +53,9 @@ class TestBankingVelocityChecks:
 
     def test_daily_limit_unit_function(self, app):
         """Direct test of _check_daily_limit function."""
-        from app.api.transaction import _check_daily_limit
+        from app.services.transaction_service import TransactionService
+
+        _check_daily_limit = TransactionService._check_daily_limit
         from app.extensions import get_db
 
         with app.app_context():
@@ -63,7 +65,9 @@ class TestBankingVelocityChecks:
 
     def test_daily_limit_exceeded(self, app):
         """Daily limit should block when exceeded."""
-        from app.api.transaction import _check_daily_limit
+        from app.services.transaction_service import TransactionService
+
+        _check_daily_limit = TransactionService._check_daily_limit
         from app.extensions import get_db
 
         with app.app_context():
@@ -89,7 +93,7 @@ class TestPaymentRailMultiplier:
     """Verify payment rail multiplier is applied correctly."""
 
     def test_rail_multiplier_constants(self):
-        from app.api.transaction import RAIL_RISK_MULTIPLIER
+        from app.services.transaction_service import RAIL_RISK_MULTIPLIER
 
         assert RAIL_RISK_MULTIPLIER["upi"] > RAIL_RISK_MULTIPLIER["neft"]
         assert RAIL_RISK_MULTIPLIER["internal"] < RAIL_RISK_MULTIPLIER["transfer"]
@@ -145,9 +149,11 @@ class TestTimeOfDayRisk:
     """_time_of_day_risk function."""
 
     def test_daytime_no_risk(self):
-        from app.api.transaction import _time_of_day_risk
+        from app.services.transaction_service import TransactionService
 
-        with patch("app.api.transaction.datetime") as mock_dt:
+        _time_of_day_risk = TransactionService._time_of_day_risk
+
+        with patch("app.services.transaction_service.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 4, 28, 14, 0)  # 2 PM
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             flagged, reason = _time_of_day_risk(50000)
@@ -155,18 +161,22 @@ class TestTimeOfDayRisk:
             assert flagged is False
 
     def test_late_night_high_value(self):
-        from app.api.transaction import _time_of_day_risk
+        from app.services.transaction_service import TransactionService
 
-        with patch("app.api.transaction.datetime") as mock_dt:
+        _time_of_day_risk = TransactionService._time_of_day_risk
+
+        with patch("app.services.transaction_service.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 4, 28, 3, 0)  # 3 AM
             flagged, reason = _time_of_day_risk(50000)
             assert flagged is True
             assert "Late-night" in reason
 
     def test_late_night_low_value(self):
-        from app.api.transaction import _time_of_day_risk
+        from app.services.transaction_service import TransactionService
 
-        with patch("app.api.transaction.datetime") as mock_dt:
+        _time_of_day_risk = TransactionService._time_of_day_risk
+
+        with patch("app.services.transaction_service.datetime") as mock_dt:
             mock_dt.now.return_value = datetime(2026, 4, 28, 3, 0)  # 3 AM
             flagged, reason = _time_of_day_risk(1000)  # Below 10000
             assert flagged is False

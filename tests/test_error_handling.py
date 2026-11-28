@@ -5,6 +5,7 @@ Exercises ApiError hierarchy, ErrorContext manager, and response formatters.
 
 import os
 import sys
+
 import pytest
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
@@ -13,17 +14,16 @@ if root not in sys.path:
 
 from app.error_handling import (
     ApiError,
-    ValidationError,
     AuthenticationError,
     AuthorizationError,
-    ResourceNotFoundError,
-    RateLimitError,
     BusinessLogicError,
-    ExternalServiceError,
     ErrorContext,
+    ExternalServiceError,
+    RateLimitError,
+    ResourceNotFoundError,
+    ValidationError,
     create_error_response,
 )
-
 
 # ============================================================================
 # Exception Classes
@@ -166,7 +166,11 @@ class TestCreateErrorResponse:
     def test_basic_response(self):
         err = ApiError("Test", "TEST_ERR", 400)
         # Need Flask app context for request_id lookup
-        response = create_error_response.__wrapped__(err) if hasattr(create_error_response, '__wrapped__') else None
+        response = (
+            create_error_response.__wrapped__(err)
+            if hasattr(create_error_response, "__wrapped__")
+            else None
+        )
 
         # Test the error object structure directly
         assert err.error_code == "TEST_ERR"

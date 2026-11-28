@@ -7,11 +7,11 @@ for consistent error handling across the application.
 
 import traceback
 import uuid
-from typing import Optional, Dict, Any, Type
 from datetime import datetime, timezone
-from flask import request, jsonify, Response
-from werkzeug.exceptions import HTTPException
+from typing import Any, Dict, Optional
 
+from flask import Response, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 # ============================================================================
 # Custom Exception Classes
@@ -148,8 +148,13 @@ def create_error_response(
         Dictionary with standardized error format
     """
     from flask import g
-    rid = request_id or getattr(g, "request_id", None) or request.headers.get("X-Request-ID")
-    
+
+    rid = (
+        request_id
+        or getattr(g, "request_id", None)
+        or request.headers.get("X-Request-ID")
+    )
+
     response = {
         "error": {
             "id": error.error_id,
@@ -270,8 +275,6 @@ class ErrorHandler:
                     del response_data["error"]["traceback"]
 
             return jsonify(response_data), 500
-
-
 
 
 # ============================================================================

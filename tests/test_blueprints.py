@@ -5,10 +5,9 @@ namespaces registered under ``/api/v1/...``.
 
 Uses shared fixtures from ``conftest.py``.
 """
-import pytest
-from freezegun import freeze_time
 import pyotp
-
+from conftest import enable_mfa, full_login
+from freezegun import freeze_time
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SESSION NAMESPACE
@@ -138,6 +137,7 @@ class TestSessionNamespace:
 
 class TestBehavioralNamespace:
     def test_behavioral_data_missing_session(self, client, auth_headers):
+        client.delete_cookie("session_id")  # otherwise it supplies the session
         resp = client.post("/api/v1/behavioral/data", json={}, headers=auth_headers)
         assert resp.status_code == 400
 
@@ -262,7 +262,7 @@ class TestTransactionNamespace:
     def test_assess_replayed_nonce_rejected(
         self, client, mfa_logged_in_user, mfa_auth_headers
     ):
-        from app.utils import sign_operation, consume_nonce
+        from app.utils import consume_nonce, sign_operation
 
         nonce = client.get(
             "/api/v1/transaction/nonce", headers=mfa_auth_headers
@@ -339,11 +339,11 @@ class TestAuthNamespace:
                 "password": "AnotherPassword123!",
             },
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 409
 
     def test_login_wrong_password(self, client, registered_user):
-        resp = client.post(
-            "/api/v1/auth/login",
+        resp = full_login(
+            client,
             json={"username": registered_user["username"], "password": "wrongpassword"},
         )
         assert resp.status_code == 401
@@ -362,8 +362,8 @@ class TestAuthNamespace:
 
     @freeze_time("2023-01-01 17:30:00")
     def test_mfa_full_flow(self, client, registered_user):
-        login = client.post(
-            "/api/v1/auth/login",
+        login = full_login(
+            client,
             json={
                 "username": registered_user["username"],
                 "password": registered_user["password"],
@@ -372,6 +372,7 @@ class TestAuthNamespace:
         data = login.get_json()["data"]
         token, sid = data["access_token"], data["session_id"]
 
+        enable_mfa(client.application, registered_user["user_id"])
         otp = pyotp.TOTP(registered_user["mfa_secret"]).now()
         resp = client.post(
             "/api/v1/auth/mfa/verify",

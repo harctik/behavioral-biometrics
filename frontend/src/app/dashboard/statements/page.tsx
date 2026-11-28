@@ -1,5 +1,6 @@
 "use client";
 
+import type { ApiTransaction } from "@/lib/api-types";
 import { useState, useEffect } from "react";
 import {
   FileText, Download, Calendar, Filter, Search,
@@ -59,13 +60,13 @@ export default function StatementsPage() {
           const txns = data.transactions || [];
           
           // Sort newest-first to compute running balance correctly
-          txns.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          txns.sort((a: ApiTransaction, b: ApiTransaction) => new Date(b.date).getTime() - new Date(a.date).getTime());
           
           let runningBalance = currentBalance;
-          const mapped = txns.map((t: any) => {
-            const isDebit = t.transaction_type === "debit" || t.type === "transfer" || t.type === "debit" || (t.amount < 0);
+          const mapped = txns.map((t: ApiTransaction) => {
+            const isDebit = t.transaction_type === "debit" || t.type === "out" || t.type === "transfer" || t.type === "debit" || (Number(t.amount) < 0);
             const rowBalance = runningBalance;
-            const absAmount = Math.abs(t.amount);
+            const absAmount = Math.abs(Number(t.amount));
             
             // Walk backward: current row = runningBalance, then adjust for previous row
             if (isDebit) runningBalance += absAmount;
@@ -325,7 +326,7 @@ export default function StatementsPage() {
           </div>
 
           <div className="flex items-center gap-2 text-[10px] text-muted font-mono bg-black/20 border border-border/50 rounded-lg p-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.5)]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Statement browsing pattern captured — scroll and search telemetry active
           </div>
         </div>

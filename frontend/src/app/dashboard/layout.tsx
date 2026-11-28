@@ -1,12 +1,14 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import { Wordmark } from "@/components/Mark";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import {
   LayoutGrid, ArrowLeftRight, CreditCard, PieChart, FileText,
-  Settings, LogOut, Menu, X, Shield, Activity, Fingerprint, Brain
+  Settings, LogOut, Menu, X, Activity, Fingerprint, Brain
 } from "lucide-react";
 import { TelemetryProvider, useTelemetry } from "@/components/TelemetryProvider";
 
@@ -19,7 +21,7 @@ const navItems = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
-const SidebarItem = ({ icon: Icon, label, active, href }: { icon: any; label: string; active?: boolean; href: string }) => (
+const SidebarItem = ({ icon: Icon, label, active, href }: { icon: LucideIcon; label: string; active?: boolean; href: string }) => (
   <Link href={href} className="no-underline">
     <div className={`flex items-center gap-3 px-3 py-2 text-sm rounded-md cursor-pointer transition-colors ${active ? 'bg-surface-2 text-fg font-medium' : 'text-muted hover:text-fg hover:bg-surface-2'}`}>
       <Icon className="w-4 h-4" />
@@ -38,10 +40,10 @@ const GlobalTrustWidget = () => {
       </div>
       <div className="flex items-end justify-between">
         <span className="text-xl font-medium tracking-tighter tabular-nums text-fg">
-          {score !== null ? `${score}%` : <div className="h-6 w-12 bg-black/20 animate-pulse rounded"></div>}
+          {score !== null ? `${score}%` : <span className="text-muted">--</span>}
         </span>
         <span className="text-[10px] text-muted">
-          {enrollment && !enrollment.enrolled ? `Learning (${Math.round((enrollment.completed/enrollment.required)*100)}%)` : 'Secured'}
+          {enrollment && !enrollment.enrolled ? `Learning (${Math.round((enrollment.completed/enrollment.required)*100)}%)` : score === null ? 'Waiting for data' : 'Monitoring'}
         </span>
       </div>
       <div className="mt-2 h-1 w-full bg-black/40 rounded-full overflow-hidden">
@@ -85,7 +87,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [router]);
 
   // Close mobile sidebar on route change
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  const [lastPath, setLastPath] = useState(pathname);
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
+    setMobileOpen(false);
+  }
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -100,10 +106,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <>
       {/* Logo */}
       <div className="h-16 px-6 flex items-center gap-3 border-b border-border shrink-0">
-        <div className="w-8 h-8 bg-accent-primary/20 rounded-lg flex items-center justify-center border border-accent-primary/30">
-          <Shield className="w-4 h-4 text-accent-primary" />
-        </div>
-        <span className="font-semibold tracking-tight text-lg">AetherAuth</span>
+        <Wordmark />
       </div>
 
       {/* Navigation */}

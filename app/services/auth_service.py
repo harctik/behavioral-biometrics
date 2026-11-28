@@ -1,9 +1,12 @@
 import logging
+
 from flask import current_app
-from app.extensions import get_redis
+
 from app.api.helpers import resolve_query
+from app.extensions import get_redis
 
 logger = logging.getLogger(__name__)
+
 
 class AuthService:
     @staticmethod
@@ -12,15 +15,20 @@ class AuthService:
         rc = get_redis()
         if not rc:
             return True, ""
-        
-        max_attempts = current_app.config.get("CREDENTIAL_STUFFING_MAX_ATTEMPTS_PER_IP", 10)
+
+        max_attempts = current_app.config.get(
+            "CREDENTIAL_STUFFING_MAX_ATTEMPTS_PER_IP", 10
+        )
         window = current_app.config.get("CREDENTIAL_STUFFING_WINDOW_SECONDS", 300)
-        
+
         key = f"stuffing:{ip_address}"
         try:
             attempts = int(rc.get(key) or 0)
             if attempts >= max_attempts:
-                return False, f"Too many failed login attempts from this IP. Blocked for {window // 60} minutes."
+                return (
+                    False,
+                    f"Too many failed login attempts from this IP. Blocked for {window // 60} minutes.",
+                )
         except Exception:
             pass
         return True, ""
@@ -46,9 +54,9 @@ class AuthService:
         rc = get_redis()
         if not rc:
             return True, current_app.config.get("MAX_LOGIN_ATTEMPTS", 5), None
-            
+
         max_attempts = current_app.config.get("MAX_LOGIN_ATTEMPTS", 5)
-        
+
         key = f"lockout:{username}"
         try:
             attempts = int(rc.get(key) or 0)
@@ -56,6 +64,7 @@ class AuthService:
                 ttl = rc.ttl(key)
                 if ttl > 0:
                     from datetime import datetime, timedelta, timezone
+
                     lockout_until = datetime.now(timezone.utc) + timedelta(seconds=ttl)
                     return False, 0, lockout_until.isoformat()
             return True, max(0, max_attempts - attempts), None
@@ -68,10 +77,10 @@ class AuthService:
         rc = get_redis()
         if not rc:
             return current_app.config.get("MAX_LOGIN_ATTEMPTS", 5), None
-            
+
         max_attempts = current_app.config.get("MAX_LOGIN_ATTEMPTS", 5)
         lockout_minutes = current_app.config.get("LOCKOUT_DURATION_MINUTES", 15)
-        
+
         key = f"lockout:{username}"
         try:
             if rc.exists(key):
@@ -79,10 +88,11 @@ class AuthService:
             else:
                 rc.setex(key, lockout_minutes * 60, 1)
                 attempts = 1
-                
+
             if attempts >= max_attempts:
                 ttl = rc.ttl(key)
                 from datetime import datetime, timedelta, timezone
+
                 lockout_until = datetime.now(timezone.utc) + timedelta(seconds=ttl)
                 return 0, lockout_until.isoformat()
             return max(0, max_attempts - attempts), None
@@ -140,7 +150,10 @@ class AuthService:
         """
         from flask import current_app
         from itsdangerous import URLSafeTimedSerializer
-        s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="login-challenge")
+
+        s = URLSafeTimedSerializer(
+            current_app.config["SECRET_KEY"], salt="login-challenge"
+        )
         token = s.dumps({"uid": user_id})
         return token
 
@@ -152,8 +165,11 @@ class AuthService:
         Token is valid for 5 minutes (300 seconds).
         """
         from flask import current_app
-        from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-        s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="login-challenge")
+        from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+
+        s = URLSafeTimedSerializer(
+            current_app.config["SECRET_KEY"], salt="login-challenge"
+        )
         try:
             data = s.loads(token, max_age=300)
             return data.get("uid")
@@ -215,6 +231,7 @@ class AuthService:
     def create_recovery_token(user_id: int) -> str:
         """Generate a recovery token for blocked accounts. 30-minute TTL."""
         import uuid
+
         token = str(uuid.uuid4())
         rc = get_redis()
         if rc:
@@ -258,4 +275,3 @@ class AuthService:
                 rc.delete(f"recovery_token:{token}")
             except Exception:
                 pass
-

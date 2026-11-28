@@ -1,4 +1,5 @@
 "use client";
+import type { DigraphProfileInfo, SessionMetrics } from "@/lib/api-types";
 import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
 
 
@@ -6,20 +7,10 @@ import React, { createContext, useContext, useState, useEffect, useRef } from "r
 import { toast } from "sonner";
 import { getCollector } from "@/lib/behavioral-collector";
 
-interface DigraphProfileInfo {
-  has_profile: boolean;
-  per_key_count: number;
-  per_digraph_count: number;
-  updates_count: number;
-  confidence: number;
-  created_at?: string;
-  last_updated?: string;
-}
-
 interface TelemetryContextValue {
   score: number | null;
   events: { time: string; msg: string }[];
-  backendMetrics: any;
+  backendMetrics: SessionMetrics | null;
   enrollment: { enrolled: boolean; phase: string; completed: number; required: number } | null;
   digraphProfile: DigraphProfileInfo | null;
 }
@@ -35,7 +26,7 @@ const TelemetryContext = createContext<TelemetryContextValue>({
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [score, setScore] = useState<number | null>(null);
   const [events, setEvents] = useState<{ time: string; msg: string }[]>([]);
-  const [backendMetrics, setBackendMetrics] = useState<any>(null);
+  const [backendMetrics, setBackendMetrics] = useState<SessionMetrics | null>(null);
   const [enrollment, setEnrollment] = useState<{ enrolled: boolean; phase: string; completed: number; required: number } | null>(null);
   const [digraphProfile, setDigraphProfile] = useState<DigraphProfileInfo | null>(null);
 
@@ -124,8 +115,8 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-      } catch (err: any) {
-        if (isMounted && err.name !== 'AbortError') {
+      } catch (err) {
+        if (isMounted && (err as { name?: string })?.name !== 'AbortError') {
           setTimeout(() => { 
             if (isMounted) {
               abortController = new AbortController();

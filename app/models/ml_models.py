@@ -2,7 +2,7 @@ import numpy as np
 
 try:
     import tensorflow as tf
-    from tensorflow.keras.models import Model, Sequential
+    from tensorflow.keras.callbacks import EarlyStopping
     from tensorflow.keras.layers import (
         GRU,
         LSTM,
@@ -12,29 +12,29 @@ try:
         RepeatVector,
         TimeDistributed,
     )
+    from tensorflow.keras.models import Model, Sequential
     from tensorflow.keras.optimizers import Adam
-    from tensorflow.keras.callbacks import EarlyStopping
 
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
     tf = None
 
-from sklearn.svm import OneClassSVM
-from sklearn.ensemble import IsolationForest
-from sklearn.neighbors import NearestNeighbors
-from sklearn.linear_model import PassiveAggressiveClassifier
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.metrics import accuracy_score, precision_score, recall_score
-import joblib
-import os
 import hashlib
 import logging
-from logging.handlers import RotatingFileHandler
-from datetime import datetime
-from typing import Dict, List, Tuple, Optional, Any
-from collections import deque
+import os
 import warnings
+from collections import deque
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
+from typing import Any, Dict, List, Tuple
+
+import joblib
+from sklearn.ensemble import IsolationForest
+from sklearn.linear_model import PassiveAggressiveClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.svm import OneClassSVM
 
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="sklearn")
 warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
@@ -1545,10 +1545,21 @@ class EnsembleBehavioralClassifier:
 
     ENROLLMENT_PHASES = {
         "bootstrap": {"days": 3, "models": ["svm", "isolation", "knn"]},
-        "building": {"days": 7, "models": ["svm", "isolation", "knn", "transformer", "pa"]},
+        "building": {
+            "days": 7,
+            "models": ["svm", "isolation", "knn", "transformer", "pa"],
+        },
         "mature": {
             "days": float("inf"),
-            "models": ["transformer", "autoencoder", "svm", "knn", "pa", "isolation", "gru"],
+            "models": [
+                "transformer",
+                "autoencoder",
+                "svm",
+                "knn",
+                "pa",
+                "isolation",
+                "gru",
+            ],
         },
     }
 
@@ -1584,20 +1595,22 @@ class EnsembleBehavioralClassifier:
             "svm": 0.15,
             "knn": 0.15,
             "isolation": 0.10,
-            "gru": 0.10,          # Legacy recurrent — lower weight
+            "gru": 0.10,  # Legacy recurrent — lower weight
             "pa": 0.05,
         }
 
     def _init_transformer(self):
         """Initialize BehavioralTransformerEncoder (lazy — tolerates import failures)."""
         try:
-            from app.models.transformer_model import BehavioralTransformerEncoder
             from app.behavioral_feature_engine import BehavioralFeatureEngine
+            from app.models.transformer_model import BehavioralTransformerEncoder
 
-            feature_dim = BehavioralFeatureEngine.FEATURE_COUNT  # Dynamic — matches actual engine
+            feature_dim = (
+                BehavioralFeatureEngine.FEATURE_COUNT
+            )  # Dynamic — matches actual engine
 
             self.transformer_model = BehavioralTransformerEncoder(
-                sequence_length=50,   # Match GRU's default for feature dicts
+                sequence_length=50,  # Match GRU's default for feature dicts
                 feature_dim=feature_dim,
                 d_model=64,
                 nhead=4,
@@ -1606,9 +1619,14 @@ class EnsembleBehavioralClassifier:
                 dropout=0.1,
                 embedding_dim=128,
             )
-            logger.info("BehavioralTransformerEncoder initialized (d=64, h=4, L=2, features=%d)", feature_dim)
+            logger.info(
+                "BehavioralTransformerEncoder initialized (d=64, h=4, L=2, features=%d)",
+                feature_dim,
+            )
         except Exception:
-            logger.warning("BehavioralTransformerEncoder not available — falling back to GRU-only")
+            logger.warning(
+                "BehavioralTransformerEncoder not available — falling back to GRU-only"
+            )
             self.transformer_model = None
 
     def _init_banking_models(self):
@@ -1636,7 +1654,9 @@ class EnsembleBehavioralClassifier:
                 "progress_pct": 0,
                 "active_models": self.ENROLLMENT_PHASES["bootstrap"]["models"],
                 "total_models": len(self.model_weights),
-                "active_model_count": len(self.ENROLLMENT_PHASES["bootstrap"]["models"]),
+                "active_model_count": len(
+                    self.ENROLLMENT_PHASES["bootstrap"]["models"]
+                ),
             }
 
         days = (datetime.now() - self.enrollment_start).days
@@ -1676,7 +1696,9 @@ class EnsembleBehavioralClassifier:
             # Train BehavioralTransformerEncoder (primary)
             if self.transformer_model is not None and len(genuine_features) >= 50:
                 try:
-                    results["transformer"] = self.transformer_model.train_model(genuine_features)
+                    results["transformer"] = self.transformer_model.train_model(
+                        genuine_features
+                    )
                 except Exception as e:
                     logger.error("Transformer training failed: %s", e)
                     results["transformer"] = {"error": str(e)}
@@ -1854,9 +1876,15 @@ class EnsembleBehavioralClassifier:
         weights = []
 
         # Transformer score (primary)
-        if "transformer" in predictions and predictions["transformer"]["confidence"] > 0.1:
+        if (
+            "transformer" in predictions
+            and predictions["transformer"]["confidence"] > 0.1
+        ):
             scores.append(predictions["transformer"]["score"])
-            weights.append(self.model_weights["transformer"] * predictions["transformer"]["confidence"])
+            weights.append(
+                self.model_weights["transformer"]
+                * predictions["transformer"]["confidence"]
+            )
 
         # GRU score (legacy)
         if "gru" in predictions and predictions["gru"]["confidence"] > 0.1:

@@ -5,7 +5,6 @@ Exercises default values, type coercion, and production guards.
 
 import os
 import sys
-import pytest
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if root not in sys.path:
@@ -88,4 +87,6 @@ class TestSettingsProductionGuards:
         os.environ.pop("BACKUP_FERNET", None)
         settings = Settings()
         # Should have auto-generated a Fernet key
-        assert settings.BACKUP_FERNET is not None or True  # May be None in minimal config
+        assert (
+            settings.BACKUP_FERNET is not None or True
+        )  # May be None in minimal config

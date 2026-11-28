@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useStoredString } from "@/hooks/useBrowser";
+import { useState, useMemo, useEffect } from "react";
 import {
   PieChart as PieChartIcon, TrendingUp, TrendingDown, BarChart3, ArrowUpRight, ArrowDownRight, Search
 } from "lucide-react";
@@ -35,12 +36,22 @@ const MOCK_HOLDINGS: Holding[] = [
 const TYPE_LABELS: Record<string, string> = { equity: "Equity", mf: "Mutual Fund", bond: "Bond", fd: "Fixed Deposit" };
 const TYPE_COLORS: Record<string, string> = { equity: "text-blue-400", mf: "text-purple-400", bond: "text-amber-400", fd: "text-emerald-400" };
 
+function parseNotes(raw: string | null): Record<string, string> {
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function InvestmentsPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [filter, setFilter] = useState<string>("all");
   const [holdingSearch, setHoldingSearch] = useState("");
   const [expandedHolding, setExpandedHolding] = useState<string | null>(null);
-  const [holdingNotes, setHoldingNotes] = useState<Record<string, string>>({});
+  const [storedNotes, setStoredNotes] = useStoredString("bba_holding_notes");
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+  const holdingNotes = useMemo(() => ({ ...parseNotes(storedNotes), ...draftNotes }), [storedNotes, draftNotes]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,22 +63,12 @@ export default function InvestmentsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const savedNotes = localStorage.getItem("bba_holding_notes");
-    if (savedNotes) {
-      try {
-        setHoldingNotes(JSON.parse(savedNotes));
-      } catch {}
-    }
-  }, []);
-
   const updateHoldingNote = (id: string, note: string) => {
-    setHoldingNotes(prev => ({ ...prev, [id]: note }));
+    setDraftNotes(prev => ({ ...prev, [id]: note }));
   };
 
   const saveHoldingNote = (id: string) => {
-    localStorage.setItem("bba_holding_notes", JSON.stringify(holdingNotes));
+    setStoredNotes(JSON.stringify(holdingNotes));
     toast.success("Note saved");
   };
 
@@ -167,17 +168,17 @@ export default function InvestmentsPage() {
                       >
                         {allocation.map((entry, index) => {
                           const tailwindColorClass = TYPE_COLORS[entry.type];
-                          let hexColor = "#94a3b8"; // default slate-400
-                          if (tailwindColorClass.includes("blue")) hexColor = "#60a5fa";
-                          if (tailwindColorClass.includes("purple")) hexColor = "#c084fc";
+                          let hexColor = "#9a9a96"; // default slate-400
+                          if (tailwindColorClass.includes("blue")) hexColor = "#d9d9d4";
+                          if (tailwindColorClass.includes("purple")) hexColor = "#cfcfca";
                           if (tailwindColorClass.includes("amber")) hexColor = "#fbbf24";
                           if (tailwindColorClass.includes("emerald")) hexColor = "#34d399";
                           return <Cell key={`cell-${index}`} fill={hexColor} />;
                         })}
                       </Pie>
                       <Tooltip 
-                        formatter={(value: any) => `₹${Number(value).toLocaleString()}`}
-                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
+                        formatter={(value) => `₹${Number(value).toLocaleString()}`}
+                        contentStyle={{ backgroundColor: '#0b0b0b', borderColor: '#333331', borderRadius: '8px' }}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -307,7 +308,7 @@ export default function InvestmentsPage() {
 
           {/* Behavioral notice */}
           <div className="flex items-center gap-2 text-[10px] text-muted font-mono bg-black/20 border border-border/50 rounded-lg p-3">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.5)]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Investment page browsing patterns captured — portfolio interaction telemetry active
           </div>
         </div>

@@ -27,14 +27,14 @@ Architecture:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import time
-import hashlib
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TrainingReport:
     """Structured output from a full training run."""
+
     user_id: int
     started_at: str
     completed_at: str = ""
@@ -93,24 +94,40 @@ class TrainingOrchestrator:
 
     # Minimum samples required per enrollment phase
     MIN_SAMPLES = {
-        "bootstrap": 30,     # Day 1-3: OC-SVM + Isolation Forest only
-        "building": 100,     # Day 4-7: Adds Transformer + k-NN
-        "mature": 200,       # Day 8+: Full ensemble
+        "bootstrap": 30,  # Day 1-3: OC-SVM + Isolation Forest only
+        "building": 100,  # Day 4-7: Adds Transformer + k-NN
+        "mature": 200,  # Day 8+: Full ensemble
     }
 
     # Models per enrollment phase
     PHASE_MODELS = {
         "bootstrap": [
-            "ocsvm", "isolation_forest", "knn", "passive_aggressive",
+            "ocsvm",
+            "isolation_forest",
+            "knn",
+            "passive_aggressive",
         ],
         "building": [
-            "ocsvm", "isolation_forest", "knn", "passive_aggressive",
-            "autoencoder", "transformer", "gru",
+            "ocsvm",
+            "isolation_forest",
+            "knn",
+            "passive_aggressive",
+            "autoencoder",
+            "transformer",
+            "gru",
         ],
         "mature": [
-            "ocsvm", "isolation_forest", "knn", "passive_aggressive",
-            "autoencoder", "transformer", "gru",
-            "siamese", "simclr", "gan_discriminator", "duress_baseline",
+            "ocsvm",
+            "isolation_forest",
+            "knn",
+            "passive_aggressive",
+            "autoencoder",
+            "transformer",
+            "gru",
+            "siamese",
+            "simclr",
+            "gan_discriminator",
+            "duress_baseline",
         ],
     }
 
@@ -167,19 +184,25 @@ class TrainingOrchestrator:
         if len(features) < min_required:
             logger.warning(
                 "Insufficient data: %d samples (need %d for %s phase)",
-                len(features), min_required, phase,
+                len(features),
+                min_required,
+                phase,
             )
 
         logger.info(
             "Phase 1 complete: %d samples, phase=%s, hash=%s",
-            len(features), phase, report.data_hash[:12],
+            len(features),
+            phase,
+            report.data_hash[:12],
         )
 
         # ── Phase 2: Synthetic Data Augmentation ──────────────────────────
         logger.info("Phase 2: Generating synthetic impostor data...")
         synthetic_impostors = self._generate_synthetic_impostors(features)
         report.synthetic_samples = len(synthetic_impostors)
-        logger.info("Phase 2 complete: %d synthetic samples generated", len(synthetic_impostors))
+        logger.info(
+            "Phase 2 complete: %d synthetic samples generated", len(synthetic_impostors)
+        )
 
         # ── Phase 3: Model Training ───────────────────────────────────────
         logger.info("Phase 3: Training ML models for %s phase...", phase)
@@ -192,14 +215,19 @@ class TrainingOrchestrator:
             try:
                 t_model = time.monotonic()
                 metrics = self._train_single_model(
-                    model_name, features, synthetic_impostors, base_path, user_id,
+                    model_name,
+                    features,
+                    synthetic_impostors,
+                    base_path,
+                    user_id,
                 )
                 elapsed = time.monotonic() - t_model
                 metrics["training_time_seconds"] = round(elapsed, 3)
                 report.models_trained[model_name] = metrics
                 logger.info(
                     "  ✓ %s trained in %.2fs — %s",
-                    model_name, elapsed,
+                    model_name,
+                    elapsed,
                     {k: v for k, v in metrics.items() if k != "training_time_seconds"},
                 )
             except Exception as e:
@@ -223,7 +251,8 @@ class TrainingOrchestrator:
         logger.info("═══════════════════════════════════════════════════════")
         logger.info(
             "  Training complete: %d models trained, %d failed, %.1fs total",
-            len(report.models_trained), len(report.models_failed),
+            len(report.models_trained),
+            len(report.models_failed),
             report.duration_seconds,
         )
         logger.info("═══════════════════════════════════════════════════════")
@@ -265,6 +294,7 @@ class TrainingOrchestrator:
         """Extract features from raw keystroke/telemetry data."""
         try:
             from app.behavioral_feature_engine import get_behavioral_engine
+
             engine = get_behavioral_engine()
 
             features = []
@@ -320,8 +350,12 @@ class TrainingOrchestrator:
             shuffled = genuine[base_idx].copy()
             # Shuffle timing-related features (the most discriminative)
             timing_keys = [
-                k for k in feature_keys
-                if any(t in k for t in ["hold", "flight", "dwell", "speed", "interval", "pause"])
+                k
+                for k in feature_keys
+                if any(
+                    t in k
+                    for t in ["hold", "flight", "dwell", "speed", "interval", "pause"]
+                )
             ]
             if timing_keys:
                 vals = [shuffled.get(k, 0.0) for k in timing_keys]
@@ -366,6 +400,7 @@ class TrainingOrchestrator:
     def _train_ocsvm(self, genuine, impostors, base_path, user_id):
         """One-Class SVM — boundary-based anomaly detection."""
         from app.models.anomaly_detectors import OneClassSVMDetector
+
         model = OneClassSVMDetector()
         metrics = model.train(genuine)
         model.save(base_path)
@@ -374,6 +409,7 @@ class TrainingOrchestrator:
     def _train_isolation_forest(self, genuine, impostors, base_path, user_id):
         """Isolation Forest — ensemble tree anomaly isolation."""
         from app.models.anomaly_detectors import IsolationForestDetector
+
         model = IsolationForestDetector()
         metrics = model.train(genuine)
         model.save(base_path)
@@ -382,20 +418,25 @@ class TrainingOrchestrator:
     def _train_knn(self, genuine, impostors, base_path, user_id):
         """Incremental k-NN with sliding window."""
         from app.models.incremental_classifiers import IncrementalKNNClassifier
+
         model = IncrementalKNNClassifier()
         for feat in genuine:
             model.update(feat, is_genuine=True)
-        for feat in impostors[:len(genuine) // 4]:
+        for feat in impostors[: len(genuine) // 4]:
             model.update(feat, is_genuine=False)
         model.save(base_path)
-        return {"genuine_samples": len(genuine), "impostor_samples": len(impostors[:len(genuine) // 4])}
+        return {
+            "genuine_samples": len(genuine),
+            "impostor_samples": len(impostors[: len(genuine) // 4]),
+        }
 
     def _train_passive_aggressive(self, genuine, impostors, base_path, user_id):
         """Passive-Aggressive online classifier."""
         from app.models.incremental_classifiers import PassiveAggressiveDetector
+
         model = PassiveAggressiveDetector()
         labels = [1] * len(genuine) + [0] * min(len(impostors), len(genuine))
-        combined = genuine + impostors[:len(genuine)]
+        combined = genuine + impostors[: len(genuine)]
         model.partial_fit(combined, labels)
         model.save(base_path)
         return {"samples": len(combined), "genuine_ratio": len(genuine) / len(combined)}
@@ -403,6 +444,7 @@ class TrainingOrchestrator:
     def _train_autoencoder(self, genuine, impostors, base_path, user_id):
         """Autoencoder reconstruction anomaly detector."""
         from app.models.anomaly_detectors import AutoencoderAnomalyDetector
+
         model = AutoencoderAnomalyDetector()
         metrics = model.train(genuine)
         model.save(base_path)
@@ -410,19 +452,29 @@ class TrainingOrchestrator:
 
     def _train_transformer(self, genuine, impostors, base_path, user_id):
         """4-head Behavioral Transformer Encoder with label smoothing."""
-        from app.models.transformer_model import BehavioralTransformerEncoder
         from app.behavioral_feature_engine import BehavioralFeatureEngine
+        from app.models.transformer_model import BehavioralTransformerEncoder
+
         feature_dim = BehavioralFeatureEngine.FEATURE_COUNT
 
         model = BehavioralTransformerEncoder(
-            sequence_length=50, feature_dim=feature_dim,
-            d_model=64, nhead=4, num_layers=2,
-            dim_feedforward=128, dropout=0.1, embedding_dim=128,
+            sequence_length=50,
+            feature_dim=feature_dim,
+            d_model=64,
+            nhead=4,
+            num_layers=2,
+            dim_feedforward=128,
+            dropout=0.1,
+            embedding_dim=128,
         )
         metrics = model.train_model(
-            genuine, imposter_features=impostors,
-            epochs=150, lr=1e-3, batch_size=32,
-            label_smoothing=0.05, patience=20,
+            genuine,
+            imposter_features=impostors,
+            epochs=150,
+            lr=1e-3,
+            batch_size=32,
+            label_smoothing=0.05,
+            patience=20,
         )
         model.save(base_path)
         return metrics
@@ -430,8 +482,9 @@ class TrainingOrchestrator:
     def _train_gru(self, genuine, impostors, base_path, user_id):
         """GRU recurrent sequence model."""
         try:
-            from app.models.sequence_models import GRUSequenceModel
             from app.behavioral_feature_engine import BehavioralFeatureEngine
+            from app.models.sequence_models import GRUSequenceModel
+
             model = GRUSequenceModel(feature_dim=BehavioralFeatureEngine.FEATURE_COUNT)
             metrics = model.train(genuine, impostors)
             model.save(base_path)
@@ -442,15 +495,17 @@ class TrainingOrchestrator:
     def _train_siamese(self, genuine, impostors, base_path, user_id):
         """Siamese Network for maker-checker verification."""
         try:
-            from app.models.siamese_network import SiameseNetwork
             from app.behavioral_feature_engine import BehavioralFeatureEngine
-            
-            model = SiameseNetwork(input_dim=BehavioralFeatureEngine.FEATURE_COUNT, embedding_dim=64)
-            
+            from app.models.siamese_network import SiameseNetwork
+
+            model = SiameseNetwork(
+                input_dim=BehavioralFeatureEngine.FEATURE_COUNT, embedding_dim=64
+            )
+
             mid = len(genuine) // 2
             same_user_pairs = [(genuine[:mid], genuine[mid:])]
             diff_user_pairs = [(genuine, impostors)]
-            
+
             metrics = model.train_model(same_user_pairs, diff_user_pairs)
             model.save(f"{base_path}_siamese.pt")
             return metrics
@@ -460,16 +515,23 @@ class TrainingOrchestrator:
     def _train_simclr(self, genuine, impostors, base_path, user_id):
         """SimCLR contrastive learning for enrollment embeddings."""
         try:
-            from app.models.transformer_model import BehavioralTransformerEncoder
             from app.behavioral_feature_engine import BehavioralFeatureEngine
+            from app.models.transformer_model import BehavioralTransformerEncoder
+
             feature_dim = BehavioralFeatureEngine.FEATURE_COUNT
 
             model = BehavioralTransformerEncoder(
-                sequence_length=50, feature_dim=feature_dim,
-                d_model=64, nhead=4, num_layers=2,
+                sequence_length=50,
+                feature_dim=feature_dim,
+                d_model=64,
+                nhead=4,
+                num_layers=2,
             )
             embedding = model.train_contrastive(
-                genuine, temperature=0.5, epochs=100, batch_size=32,
+                genuine,
+                temperature=0.5,
+                epochs=100,
+                batch_size=32,
             )
             model.save(f"{base_path}_simclr")
             return {
@@ -482,10 +544,12 @@ class TrainingOrchestrator:
     def _train_gan(self, genuine, impostors, base_path, user_id):
         """GAN Adversarial discriminator hardening."""
         try:
-            from app.models.gan_adversarial import AdversarialTrainer
             from app.behavioral_feature_engine import BehavioralFeatureEngine
-            
-            detector = AdversarialTrainer(input_dim=BehavioralFeatureEngine.FEATURE_COUNT)
+            from app.models.gan_adversarial import AdversarialTrainer
+
+            detector = AdversarialTrainer(
+                input_dim=BehavioralFeatureEngine.FEATURE_COUNT
+            )
             detector.train_gan(genuine, epochs=100)
             detector.save(f"{base_path}_gan.pt")
             return {"trained": True, "genuine_samples": len(genuine)}
@@ -496,6 +560,7 @@ class TrainingOrchestrator:
         """Duress detector baseline calibration."""
         try:
             from app.models.duress_detector import DuressDetector
+
             model = DuressDetector()
             model.set_user_baseline(user_id, genuine)
             model.save(base_path)
@@ -558,7 +623,11 @@ class TrainingOrchestrator:
         """Compute weighted accuracy across all trained models."""
         accuracies = []
         for name, metrics in report.models_trained.items():
-            acc = metrics.get("accuracy") or metrics.get("inlier_ratio") or metrics.get("genuine_ratio")
+            acc = (
+                metrics.get("accuracy")
+                or metrics.get("inlier_ratio")
+                or metrics.get("genuine_ratio")
+            )
             if acc is not None:
                 accuracies.append(float(acc))
         return np.mean(accuracies) if accuracies else 0.0
@@ -593,7 +662,13 @@ class TrainingOrchestrator:
     @staticmethod
     def _hash_data(features: List[Dict]) -> str:
         """Create SHA-256 fingerprint of training data for reproducibility."""
-        raw = json.dumps([{k: round(v, 6) if isinstance(v, float) else v for k, v in f.items()} for f in features[:100]], sort_keys=True)
+        raw = json.dumps(
+            [
+                {k: round(v, 6) if isinstance(v, float) else v for k, v in f.items()}
+                for f in features[:100]
+            ],
+            sort_keys=True,
+        )
         return hashlib.sha256(raw.encode()).hexdigest()
 
 
@@ -602,7 +677,9 @@ class TrainingOrchestrator:
 _orchestrator: Optional[TrainingOrchestrator] = None
 
 
-def get_training_orchestrator(db=None, models_dir: str = "models") -> TrainingOrchestrator:
+def get_training_orchestrator(
+    db=None, models_dir: str = "models"
+) -> TrainingOrchestrator:
     """Get or create the training orchestrator singleton."""
     global _orchestrator
     if _orchestrator is None or db is not None:

@@ -41,7 +41,10 @@ export default function CalibrationPage() {
   const [mouseHits, setMouseHits] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [phraseAccuracies, setPhraseAccuracies] = useState<number[]>([]);
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef(0);
+  useEffect(() => {
+    startTimeRef.current = Date.now();
+  }, []);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Generate random mouse targets
@@ -232,7 +235,7 @@ export default function CalibrationPage() {
                 </div>
                 <button
                   onClick={() => { setPhase('typing'); startTimeRef.current = Date.now(); getCollector().reset(); getCollector().start(); }}
-                  className="bg-accent-primary hover:bg-blue-600 text-white font-medium text-sm px-8 py-3 rounded-xl transition-colors"
+                  className="bg-accent-primary hover:bg-blue-600 text-black font-medium text-sm px-8 py-3 rounded-xl transition-colors"
                 >
                   Begin Calibration
                 </button>
@@ -280,7 +283,7 @@ export default function CalibrationPage() {
                 <button
                   onClick={handlePhraseComplete}
                   disabled={typedText.length < CALIBRATION_PHRASES[currentPhrase].length * 0.5}
-                  className="bg-accent-primary hover:bg-blue-600 disabled:opacity-30 disabled:cursor-not-allowed text-white font-medium text-sm px-6 py-2.5 rounded-xl transition-colors"
+                  className="bg-accent-primary hover:bg-blue-600 disabled:opacity-30 disabled:cursor-not-allowed text-black font-medium text-sm px-6 py-2.5 rounded-xl transition-colors"
                 >
                   {currentPhrase < CALIBRATION_PHRASES.length - 1 ? 'Next Phrase →' : 'Continue to Mouse →'}
                 </button>
@@ -374,7 +377,7 @@ export default function CalibrationPage() {
                 <button
                   onClick={handleSubmitCalibration}
                   disabled={submitting}
-                  className="w-full bg-accent-primary hover:bg-blue-600 disabled:opacity-50 text-white font-medium text-sm py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  className="w-full bg-accent-primary hover:bg-blue-600 disabled:opacity-50 text-black font-medium text-sm py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
                 >
                   {submitting ? (
                     <>

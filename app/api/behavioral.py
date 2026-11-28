@@ -1,22 +1,21 @@
 """Behavioral data collection API blueprint."""
-from flask import request, current_app
-from flask_restx import Namespace, Resource, fields
-from flask_jwt_extended import jwt_required
 import logging
-from pydantic import ValidationError
-from typing import Optional, Any
-from app.schemas.behavioral_schemas import BehavioralPayloadSchema
 
-from app.extensions import get_db, limiter
-from app.error_handling import make_error_response
+from flask import current_app, request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource, fields
+from pydantic import ValidationError
+
 from app.api.helpers import (
+    get_current_user_id,
     get_session_cached,
     validate_session_context,
-    get_current_user_id,
     validate_session_ownership,
 )
+from app.error_handling import make_error_response
 from app.extended_risk_scorer import score_extended_features
-from app.ml_ensemble import score_with_ensemble
+from app.extensions import get_db, limiter
+from app.schemas.behavioral_schemas import BehavioralPayloadSchema
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +84,9 @@ class BehavioralData(Resource):
         data_type = payload.get("type", "keystroke")
         event_count = payload.get("event_count", 1)
         raw_data = payload.get("events") or []
-        mouse_events_list = payload.get("mouse_events") or raw_data  # Frontend sends mouse_events, legacy sends events
+        mouse_events_list = (
+            payload.get("mouse_events") or raw_data
+        )  # Frontend sends mouse_events, legacy sends events
         extended_features = payload.get("extended_features") or {}
         keystroke_events = payload.get("keystroke_events") or []
         touch_events = payload.get("touch_events") or []
@@ -104,7 +105,9 @@ class BehavioralData(Resource):
         navigation_events = navigation_events[:MAX_EVENTS_PER_ARRAY]
 
         if not session_id:
-            return make_error_response("MISSING_SESSION", "Missing session_id", status=400)
+            return make_error_response(
+                "MISSING_SESSION", "Missing session_id", status=400
+            )
         if data_type not in {"keystroke", "mouse", "extended"}:
             data_type = "keystroke"
 
@@ -114,11 +117,15 @@ class BehavioralData(Resource):
             db = get_db()
             db_session = db.get_session(session_id)
             if not db_session:
-                return make_error_response("INVALID_SESSION", "Invalid session", status=404)
+                return make_error_response(
+                    "INVALID_SESSION", "Invalid session", status=404
+                )
             session = db_session
 
         if not validate_session_context(session):
-            return make_error_response("SESSION_CONTEXT_MISMATCH", "Session context mismatch", status=403)
+            return make_error_response(
+                "SESSION_CONTEXT_MISMATCH", "Session context mismatch", status=403
+            )
         err = validate_session_ownership(session)
         if err:
             return err
@@ -239,6 +246,7 @@ class BehavioralData(Resource):
         ensemble_result: dict = {}
         if extended_features:
             import json
+
             from app.extensions import get_redis
             from app.ml_ensemble import score_with_ensemble
 
@@ -247,6 +255,7 @@ class BehavioralData(Resource):
             if uid:
                 try:
                     from app.models.passive_enrollment import get_enrollment_manager
+
                     mgr = get_enrollment_manager()
                     profile = mgr.get_profile_summary(int(uid))
                     baseline = profile.get("feature_stats")
@@ -259,7 +268,9 @@ class BehavioralData(Resource):
                 incoming_profile = payload.get("keystroke_profile") or {}
                 if incoming_profile:
                     ks_feats["per_key_hold"] = incoming_profile.get("per_key_hold", {})
-                    ks_feats["per_digraph_flight"] = incoming_profile.get("per_digraph_flight", {})
+                    ks_feats["per_digraph_flight"] = incoming_profile.get(
+                        "per_digraph_flight", {}
+                    )
 
                 # Run synchronously to return the latest risk score immediately
                 res = score_with_ensemble(
@@ -282,7 +293,11 @@ class BehavioralData(Resource):
                 rc = get_redis()
                 if rc:
                     rc.setex(f"ensemble_score:{session_id}", 3600, json.dumps(res))
-                    rc.setex(f"behavioral_features:{session_id}", 3600, json.dumps(extended_features))
+                    rc.setex(
+                        f"behavioral_features:{session_id}",
+                        3600,
+                        json.dumps(extended_features),
+                    )
             except Exception as exc:
                 logger.error("ML ensemble scoring failed: %s", exc)
 
@@ -343,18 +358,26 @@ class CalibrationComplete(Resource):
         session_id = payload.get("session_id") or request.cookies.get("session_id")
         keystroke_data = payload.get("keystroke_data") or []
         if not session_id:
-            return make_error_response("MISSING_SESSION", "Missing session_id", status=400)
+            return make_error_response(
+                "MISSING_SESSION", "Missing session_id", status=400
+            )
         session = get_session_cached(session_id)
         if not session:
             return make_error_response("INVALID_SESSION", "Invalid session", status=404)
         if not validate_session_context(session):
-            return make_error_response("SESSION_CONTEXT_MISMATCH", "Session context mismatch", status=403)
+            return make_error_response(
+                "SESSION_CONTEXT_MISMATCH", "Session context mismatch", status=403
+            )
         err = validate_session_ownership(session)
         if err:
             return err
         min_samples = current_app.config.get("CALIBRATION_MIN_SAMPLES", 30)
         if not isinstance(keystroke_data, list) or len(keystroke_data) < min_samples:
-            return make_error_response("INSUFFICIENT_DATA", f"Need at least {min_samples} keystrokes for calibration", status=400)
+            return make_error_response(
+                "INSUFFICIENT_DATA",
+                f"Need at least {min_samples} keystrokes for calibration",
+                status=400,
+            )
 
         db = get_db()
         uid = get_current_user_id()
@@ -372,7 +395,9 @@ class CalibrationComplete(Resource):
             )
         except Exception:
             logger.exception("Failed to persist calibration data")
-            return make_error_response("CALIBRATION_FAILED", "Calibration persistence failed", status=500)
+            return make_error_response(
+                "CALIBRATION_FAILED", "Calibration persistence failed", status=500
+            )
 
         # ── Step 2: Extract features and store as behavioral profile ──────
         training_dispatched = False
@@ -382,17 +407,20 @@ class CalibrationComplete(Resource):
 
         try:
             from app.behavioral_feature_engine import get_behavioral_engine
+
             engine = get_behavioral_engine()
 
             # Convert raw keystroke data into feature-engineered samples
             feature_samples = []
             for ks_event in keystroke_data:
                 if isinstance(ks_event, dict):
-                    feat = engine.extract({
-                        "extended_features": ks_event,
-                        "categories": {},
-                        "device_context": payload.get("device_context", {}),
-                    })
+                    feat = engine.extract(
+                        {
+                            "extended_features": ks_event,
+                            "categories": {},
+                            "device_context": payload.get("device_context", {}),
+                        }
+                    )
                     feature_samples.append(feat)
 
             if feature_samples:
@@ -410,13 +438,15 @@ class CalibrationComplete(Resource):
             # ── Step 3: Dispatch async ML training ────────────────────────
             try:
                 from app.tasks import train_user_models_async
+
                 task = train_user_models_async.delay(uid)
                 training_dispatched = True
                 training_mode = "async_celery"
                 training_task_id = task.id
                 logger.info(
                     "ML training dispatched via Celery for user %d (task=%s)",
-                    uid, task.id,
+                    uid,
+                    task.id,
                 )
             except Exception:
                 # Celery not available — fall back to synchronous training
@@ -426,6 +456,7 @@ class CalibrationComplete(Resource):
                 )
                 try:
                     from app.training_orchestrator import TrainingOrchestrator
+
                     orchestrator = TrainingOrchestrator(db=db, models_dir="models")
                     report = orchestrator.train_all(user_id=uid)
                     training_dispatched = True
@@ -437,7 +468,9 @@ class CalibrationComplete(Resource):
                         "enrollment_phase": report.enrollment_phase,
                     }
                 except Exception:
-                    logger.exception("Synchronous training also failed for user %d", uid)
+                    logger.exception(
+                        "Synchronous training also failed for user %d", uid
+                    )
                     training_mode = "failed"
 
         except Exception:
@@ -454,7 +487,9 @@ class CalibrationComplete(Resource):
                 resource="/api/calibration/complete",
                 metadata={
                     "sample_count": len(keystroke_data),
-                    "features_extracted": len(feature_samples) if 'feature_samples' in dir() else 0,
+                    "features_extracted": len(feature_samples)
+                    if "feature_samples" in dir()
+                    else 0,
                     "training_mode": training_mode,
                     "training_task_id": training_task_id,
                 },
@@ -512,7 +547,9 @@ class PassiveEnrollmentStatus(Resource):
             }, 200
         except Exception:
             logger.exception("Enrollment status check failed")
-            return make_error_response("ENROLLMENT_UNAVAILABLE", "Enrollment status unavailable", status=500)
+            return make_error_response(
+                "ENROLLMENT_UNAVAILABLE", "Enrollment status unavailable", status=500
+            )
 
     @behavioral_ns.response(200, "Enrollment reset")
     @limiter.limit("3 per minute")
@@ -546,7 +583,9 @@ class PassiveEnrollmentStatus(Resource):
             }, 200
         except Exception:
             logger.exception("Enrollment reset failed")
-            return make_error_response("ENROLLMENT_RESET_FAILED", "Enrollment reset failed", status=500)
+            return make_error_response(
+                "ENROLLMENT_RESET_FAILED", "Enrollment reset failed", status=500
+            )
 
 
 @behavioral_ns.route("/enrollment/feature-selection")
@@ -584,7 +623,11 @@ class FeatureSelectionStatus(Resource):
             }, 200
         except Exception:
             logger.exception("Feature selection check failed")
-            return make_error_response("FEATURE_SELECTION_UNAVAILABLE", "Feature selection unavailable", status=500)
+            return make_error_response(
+                "FEATURE_SELECTION_UNAVAILABLE",
+                "Feature selection unavailable",
+                status=500,
+            )
 
 
 @behavioral_ns.route("/training/trigger")
@@ -609,6 +652,7 @@ class TrainingTrigger(Resource):
 
         try:
             from app.tasks import train_user_models_async
+
             task = train_user_models_async.delay(uid, force_phase=force_phase)
 
             db.log_audit_evidence(
@@ -630,9 +674,12 @@ class TrainingTrigger(Resource):
             }, 200
         except Exception:
             # Celery unavailable — try synchronous fallback
-            logger.warning("Celery unavailable; attempting synchronous training for user %d", uid)
+            logger.warning(
+                "Celery unavailable; attempting synchronous training for user %d", uid
+            )
             try:
                 from app.training_orchestrator import TrainingOrchestrator
+
                 orchestrator = TrainingOrchestrator(db=db, models_dir="models")
                 report = orchestrator.train_all(user_id=uid, force_phase=force_phase)
                 return {
@@ -680,20 +727,29 @@ class TrainingStatus(Resource):
                 user_id=uid, action="ml_training_complete", limit=5
             )
             training_history = []
-            for entry in (audit_entries or []):
+            for entry in audit_entries or []:
                 meta = entry.get("metadata")
                 if isinstance(meta, str):
                     import json
+
                     try:
                         meta = json.loads(meta)
                     except (json.JSONDecodeError, TypeError):
                         meta = {}
-                training_history.append({
-                    "timestamp": entry.get("created_at"),
-                    "models_trained": meta.get("models_trained_count", 0) if meta else 0,
-                    "duration_seconds": meta.get("duration_seconds", 0) if meta else 0,
-                    "enrollment_phase": meta.get("enrollment_phase", "unknown") if meta else "unknown",
-                })
+                training_history.append(
+                    {
+                        "timestamp": entry.get("created_at"),
+                        "models_trained": meta.get("models_trained_count", 0)
+                        if meta
+                        else 0,
+                        "duration_seconds": meta.get("duration_seconds", 0)
+                        if meta
+                        else 0,
+                        "enrollment_phase": meta.get("enrollment_phase", "unknown")
+                        if meta
+                        else "unknown",
+                    }
+                )
 
             return {
                 "success": True,
@@ -706,4 +762,3 @@ class TrainingStatus(Resource):
             return make_error_response(
                 "TRAINING_STATUS_UNAVAILABLE", "Training status unavailable", status=500
             )
-

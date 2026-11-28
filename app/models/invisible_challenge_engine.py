@@ -11,10 +11,7 @@ sensorimotor control loop profile per user.
 from __future__ import annotations
 
 import logging
-import math
-from typing import Any, Dict, List, Optional
-
-import numpy as np
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +46,25 @@ class InvisibleChallengeEngine:
         flags: list[str] = []
         risk = 0.0
 
-        challenge_count = challenge_features.get("challenge_count", challenge_features.get("ch_challenge_count", 0))
-        response_count = challenge_features.get("response_count", challenge_features.get("ch_response_count", 0))
-        bot_score = challenge_features.get("bot_challenge_score", challenge_features.get("ch_bot_challenge_score", 0))
-        correction_time = challenge_features.get("correction_time_mean", challenge_features.get("ch_correction_time_mean", 0))
-        correction_acc = challenge_features.get("correction_accuracy_mean", challenge_features.get("ch_correction_accuracy_mean", 0))
-        subconscious = challenge_features.get("subconscious_ratio", challenge_features.get("ch_subconscious_ratio", 0))
+        challenge_count = challenge_features.get(
+            "challenge_count", challenge_features.get("ch_challenge_count", 0)
+        )
+        response_count = challenge_features.get(
+            "response_count", challenge_features.get("ch_response_count", 0)
+        )
+        bot_score = challenge_features.get(
+            "bot_challenge_score", challenge_features.get("ch_bot_challenge_score", 0)
+        )
+        correction_time = challenge_features.get(
+            "correction_time_mean", challenge_features.get("ch_correction_time_mean", 0)
+        )
+        correction_acc = challenge_features.get(
+            "correction_accuracy_mean",
+            challenge_features.get("ch_correction_accuracy_mean", 0),
+        )
+        subconscious = challenge_features.get(
+            "subconscious_ratio", challenge_features.get("ch_subconscious_ratio", 0)
+        )
 
         # Bot detection: no correction to challenges
         if challenge_count > 0 and response_count == 0:

@@ -101,13 +101,20 @@ export default function CalibrationPage() {
   // Auto-advance from typing to mouse when enough keystrokes
   useEffect(() => {
     if (stage === "typing" && keystrokeCount >= REQUIRED_KEYSTROKES) {
-      setTimeout(() => setStage("mouse"), 500);
-    } else if (stage === "typing" && typedText.length >= currentPhrase.length * 0.9) {
-      // Phrase completed — load next phrase and clear textarea
+      const id = setTimeout(() => setStage("mouse"), 500);
+      return () => clearTimeout(id);
+    }
+  }, [keystrokeCount, stage]);
+
+  // When a phrase is complete, clear the textarea and load the next one
+  const handlePhraseInput = (value: string) => {
+    if (keystrokeCount < REQUIRED_KEYSTROKES && value.length >= currentPhrase.length * 0.9) {
       setTypedText("");
       setPhraseIndex(prev => (prev + 1) % SAMPLE_PHRASES.length);
+    } else {
+      setTypedText(value);
     }
-  }, [keystrokeCount, stage, typedText, currentPhrase]);
+  };
 
   // Auto-advance from mouse to processing when enough events
   useEffect(() => {
@@ -168,8 +175,6 @@ export default function CalibrationPage() {
   return (
     <div className="w-full relative overflow-hidden flex items-center justify-center p-6">
       {/* Background orbs */}
-      <div className="absolute top-1/4 -left-64 w-[500px] h-[500px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-64 w-[500px] h-[500px] bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Animated rings */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] pointer-events-none opacity-15">
@@ -193,7 +198,6 @@ export default function CalibrationPage() {
       >
         <div className="glass-panel-glow rounded-2xl p-8 relative overflow-hidden">
           {/* Top edge glow */}
-          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-violet-500 to-transparent opacity-50" />
 
           <AnimatePresence mode="wait">
             {/* ─── INTRO STAGE ─── */}
@@ -219,7 +223,7 @@ export default function CalibrationPage() {
                     Behavioral Enrollment
                   </h1>
                   <p className="text-slate-400 text-sm leading-relaxed mt-2 max-w-sm mx-auto">
-                    We'll learn your unique typing rhythm and mouse patterns to create your
+                    We&apos;ll learn your unique typing rhythm and mouse patterns to create your
                     behavioral biometric profile. This takes about 30 seconds.
                   </p>
                 </div>
@@ -240,7 +244,7 @@ export default function CalibrationPage() {
                     setStage("typing");
                     setTimeout(() => textareaRef.current?.focus(), 100);
                   }}
-                  className="w-full relative overflow-hidden bg-violet-600 hover:bg-violet-500 text-white font-medium h-11 rounded-lg shadow-[0_0_15px_rgba(124,58,237,0.2)] hover:shadow-[0_0_25px_rgba(124,58,237,0.4)] transition-all duration-300 flex items-center justify-center gap-2 border border-violet-400/20 cursor-pointer"
+                  className="w-full relative overflow-hidden bg-violet-600 hover:bg-violet-500 text-black font-medium h-11 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 border border-violet-400/20 cursor-pointer"
                 >
                   Begin Enrollment
                   <ArrowRight size={16} />
@@ -271,7 +275,7 @@ export default function CalibrationPage() {
                   <div>
                     <h2 className="text-lg font-bold text-slate-100">Type the phrase below</h2>
                     <p className="text-xs text-slate-400">
-                      Type naturally - we're learning <em>how</em> you type, not what you type
+                      Type naturally - we&apos;re learning <em>how</em> you type, not what you type
                     </p>
                   </div>
                 </div>
@@ -285,7 +289,7 @@ export default function CalibrationPage() {
                 <textarea
                   ref={textareaRef}
                   value={typedText}
-                  onChange={(e) => setTypedText(e.target.value)}
+                  onChange={(e) => handlePhraseInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Start typing here..."
                   rows={3}
@@ -304,7 +308,7 @@ export default function CalibrationPage() {
                   </div>
                   <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full rounded-full bg-gradient-to-r from-violet-600 to-violet-400"
+                      className="h-full rounded-full bg-violet-600"
                       animate={{ width: `${keystrokeProgress}%` }}
                       transition={{ duration: 0.3 }}
                     />
@@ -338,7 +342,7 @@ export default function CalibrationPage() {
                   <div>
                     <h2 className="text-lg font-bold text-slate-100">Move your cursor</h2>
                     <p className="text-xs text-slate-400">
-                      Move naturally around the area below - we're capturing your pointer dynamics
+                      Move naturally around the area below - we&apos;re capturing your pointer dynamics
                     </p>
                   </div>
                 </div>
@@ -385,7 +389,7 @@ export default function CalibrationPage() {
                   </div>
                   <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden">
                     <motion.div
-                      className="h-full rounded-full bg-gradient-to-r from-cyan-600 to-cyan-400"
+                      className="h-full rounded-full bg-cyan-600"
                       animate={{ width: `${mouseProgress}%` }}
                       transition={{ duration: 0.3 }}
                     />
@@ -513,7 +517,7 @@ export default function CalibrationPage() {
 
                 <button
                   onClick={() => router.push("/dashboard")}
-                  className="w-full relative overflow-hidden bg-emerald-600 hover:bg-emerald-500 text-white font-medium h-11 rounded-lg shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-all duration-300 flex items-center justify-center gap-2 border border-emerald-400/20 cursor-pointer"
+                  className="w-full relative overflow-hidden bg-emerald-600 hover:bg-emerald-500 text-white font-medium h-11 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 border border-emerald-400/20 cursor-pointer"
                 >
                   Continue to Dashboard
                   <ArrowRight size={16} />

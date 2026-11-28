@@ -7,9 +7,8 @@ These tests run WITHOUT GPU/heavy deps — all models tested via their
 pure-Python / NumPy inference paths.
 """
 
-import pytest
 import numpy as np
-
+import pytest
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # COGNITIVE ENGINE
@@ -277,6 +276,10 @@ class TestDuressDetector:
 
 class TestLivenessDetector:
     """Tests for anti-replay entropy analysis."""
+
+    @pytest.fixture(autouse=True)
+    def _needs_torch(self):
+        pytest.importorskip("torch")
 
     def test_real_stream_low_replay_probability(self):
         from app.models.gan_adversarial import LivenessDetector

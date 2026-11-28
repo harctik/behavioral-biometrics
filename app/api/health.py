@@ -1,7 +1,8 @@
 """Health check endpoint for monitoring, load balancers, and uptime probes."""
+import datetime
 import logging
 import os
-import datetime
+
 from flask_restx import Namespace, Resource
 
 logger = logging.getLogger(__name__)
@@ -35,12 +36,13 @@ class HealthCheck(Resource):
         # 1. Database check
         try:
             from app.extensions import get_db
+
             db = get_db()
             with db.get_connection() as conn:
                 conn.execute("SELECT 1").fetchone()
             status["checks"]["database"] = {
                 "status": "up",
-                "type": "postgresql" if getattr(db, 'is_pg', False) else "sqlite",
+                "type": "postgresql" if getattr(db, "is_pg", False) else "sqlite",
             }
         except Exception as e:
             logger.error("Health check — database failed: %s", e)
@@ -50,6 +52,7 @@ class HealthCheck(Resource):
         # 2. Redis check
         try:
             from flask import current_app
+
             rc = current_app.extensions.get("redis_client")
             if rc:
                 rc.ping()
@@ -93,20 +96,29 @@ class HealthCheck(Resource):
             "status": "available" if ml_engines_loaded > 0 else "unavailable",
             "engines_loaded": ml_engines_loaded,
             "engines_total": ml_engines_total,
-            "fusion_mode": "bayesian" if ml_engines_loaded >= 12 else "weighted_average",
+            "fusion_mode": "bayesian"
+            if ml_engines_loaded >= 12
+            else "weighted_average",
         }
 
         # 4. Celery worker availability
         try:
             from app.tasks import celery_app
+
             insp = celery_app.control.inspect(timeout=0.5)
             ping = insp.ping()
             if ping:
                 status["checks"]["celery"] = {"status": "up", "workers": len(ping)}
             else:
-                status["checks"]["celery"] = {"status": "degraded", "note": "No workers responding"}
+                status["checks"]["celery"] = {
+                    "status": "degraded",
+                    "note": "No workers responding",
+                }
         except Exception:
-            status["checks"]["celery"] = {"status": "unavailable", "note": "Broker not reachable"}
+            status["checks"]["celery"] = {
+                "status": "unavailable",
+                "note": "Broker not reachable",
+            }
 
         http_code = 200 if status["status"] == "healthy" else 503
         return status, http_code
@@ -118,6 +130,7 @@ class ReadinessCheck(Resource):
         """Kubernetes-style readiness probe. Returns 200 only when DB is connected."""
         try:
             from app.extensions import get_db
+
             db = get_db()
             with db.get_connection() as conn:
                 conn.execute("SELECT 1").fetchone()
@@ -130,8 +143,9 @@ class ReadinessCheck(Resource):
 class SystemInfo(Resource):
     def get(self):
         """System metadata for monitoring dashboards and CI/CD pipelines."""
-        import sys
         import platform
+        import sys
+
         uptime_delta = datetime.datetime.now(datetime.timezone.utc) - _start_time
         return {
             "service": "behavioral-auth-api",
@@ -161,5 +175,3 @@ class SystemInfo(Resource):
                 "hash_chain_audit": True,
             },
         }, 200
-
-

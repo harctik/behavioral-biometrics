@@ -6,7 +6,6 @@ and email rendering for password reset, verification, and alerts.
 
 import os
 import sys
-import pytest
 
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if root not in sys.path:

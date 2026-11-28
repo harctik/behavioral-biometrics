@@ -5,18 +5,18 @@ This module provides comprehensive metrics collection, monitoring, and analytics
 for API performance, usage, and error tracking.
 """
 
-import time
-import threading
-import statistics
-from collections import defaultdict, deque
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Callable, Tuple
-from dataclasses import dataclass, field
-from enum import Enum
-import json
 import hashlib
+import json
+import statistics
+import threading
+import time
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from flask import request, g, current_app
+from flask import g, request
 
 
 class MetricType(Enum):
@@ -345,7 +345,8 @@ class MetricsMiddleware:
         def start_timer():
             g.start_time = time.time()
             g.request_id = hashlib.md5(
-                f"{time.time()}{request.remote_addr}{request.path}".encode()
+                f"{time.time()}{request.remote_addr}{request.path}".encode(),
+                usedforsecurity=False,
             ).hexdigest()[:16]
 
         @app.after_request

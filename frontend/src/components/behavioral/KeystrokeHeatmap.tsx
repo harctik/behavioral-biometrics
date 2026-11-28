@@ -1,5 +1,6 @@
 "use client";
 
+import { Keyboard } from "lucide-react";
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { getCollector } from "@/lib/behavioral-collector";
 
@@ -47,7 +48,7 @@ function holdTimeToColor(holdMs: number): string {
 
 function holdTimeToGlow(holdMs: number): string {
   const t = Math.min(1, Math.max(0, (holdMs - 50) / 200));
-  if (t < 0.3) return "rgba(59, 130, 246, 0.4)";
+  if (t < 0.3) return "rgba(244,244,242, 0.4)";
   if (t < 0.6) return "rgba(16, 185, 129, 0.4)";
   return "rgba(239, 68, 68, 0.4)";
 }
@@ -116,7 +117,7 @@ export function KeystrokeHeatmap() {
       }
 
       // WPM estimate
-      const flights = ks.map((k: any) => k.flight_time).filter((f: number) => f > 0 && f < 5000);
+      const flights = ks.map((k) => k.flight_time).filter((f: number) => f > 0 && f < 5000);
       const wpm = flights.length >= 3
         ? Math.round((totalKeys / 5) / (flights.reduce((a: number, b: number) => a + b, 0) / 60000))
         : 0;
@@ -184,7 +185,7 @@ export function KeystrokeHeatmap() {
         `}
         style={{
           background: hasData
-            ? `linear-gradient(135deg, ${bgColor}, ${bgColor}dd)`
+            ? bgColor
             : "rgba(255,255,255,0.03)",
           border: `1.5px solid rgba(255,255,255,${borderOpacity})`,
           boxShadow: isActive
@@ -217,7 +218,7 @@ export function KeystrokeHeatmap() {
         {isActive && (
           <span
             className="absolute inset-0 rounded-lg animate-ping opacity-30"
-            style={{ border: `2px solid ${bgColor || "#3b82f6"}` }}
+            style={{ border: `2px solid ${bgColor || "#e9e9e6"}` }}
           />
         )}
       </div>
@@ -225,12 +226,12 @@ export function KeystrokeHeatmap() {
   };
 
   return (
-    <div ref={containerRef} className="glass-panel rounded-2xl p-5 border border-accent-primary/15 bg-gradient-to-br from-accent-primary/5 to-purple-500/5">
+    <div ref={containerRef} className="glass-panel rounded-2xl p-5 border border-accent-primary/15">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-accent-primary/10 flex items-center justify-center border border-accent-primary/20">
-            <span className="text-sm">⌨</span>
+            <Keyboard className="w-4 h-4 text-fg" />
           </div>
           <div>
             <div className="text-sm font-semibold text-fg">Live Keystroke Heatmap</div>
@@ -267,7 +268,7 @@ export function KeystrokeHeatmap() {
                 <path
                   d={`M ${from.x + 16} ${from.y + 16} Q ${midX + 16} ${midY} ${to.x + 16} ${to.y + 16}`}
                   fill="none"
-                  stroke={`rgba(139, 92, 246, ${opacity})`}
+                  stroke={`rgba(189,189,184, ${opacity})`}
                   strokeWidth="1.5"
                   strokeDasharray="4 2"
                 />
@@ -275,7 +276,7 @@ export function KeystrokeHeatmap() {
                   x={midX + 16}
                   y={midY - 2}
                   textAnchor="middle"
-                  fill={`rgba(139, 92, 246, ${opacity + 0.2})`}
+                  fill={`rgba(189,189,184, ${opacity + 0.2})`}
                   fontSize="7"
                   fontFamily="monospace"
                 >

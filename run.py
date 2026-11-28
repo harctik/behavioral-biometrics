@@ -1,4 +1,5 @@
 import os
+
 from app.app_impl import create_app
 
 # Set default FLASK_ENV if not present

@@ -1,17 +1,18 @@
 """Compliance & privacy API blueprint."""
-from flask import request
-from flask_restx import Namespace, Resource
-from flask_jwt_extended import jwt_required
 import logging
 
-from app.extensions import get_db, limiter
+from flask import request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource
+
 from app.api.helpers import (
-    get_session_cached,
-    require_role,
-    require_aal,
     get_current_user_id,
+    get_session_cached,
+    require_aal,
+    require_role,
     validate_session_ownership,
 )
+from app.extensions import get_db, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,8 @@ compliance_ns = Namespace("compliance", description="Compliance and privacy")
 
 
 def serialize_dates(obj):
-    from datetime import datetime, date
+    from datetime import date, datetime
+
     if isinstance(obj, dict):
         return {k: serialize_dates(v) for k, v in obj.items()}
     elif isinstance(obj, list):

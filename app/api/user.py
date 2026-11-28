@@ -1,14 +1,21 @@
 import logging
 import re
-from flask import request
-from flask_restx import Namespace, Resource
-from flask_jwt_extended import jwt_required
-from pydantic import BaseModel, EmailStr, ValidationError, field_validator, StringConstraints
-from typing import Optional, Annotated
-import bcrypt
+from typing import Annotated, Optional
 
-from app.extensions import get_db, limiter
+import bcrypt
+from flask import request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource
+from pydantic import (
+    BaseModel,
+    EmailStr,
+    StringConstraints,
+    ValidationError,
+    field_validator,
+)
+
 from app.api.helpers import get_current_user_id
+from app.extensions import get_db, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +27,13 @@ _PROFILE_ALLOWED_COLUMNS = {"email"}
 
 class ProfileUpdateSchema(BaseModel):
     """Validates profile update payloads with proper email validation."""
+
     email: Optional[EmailStr] = None
 
 
 class PasswordChangeSchema(BaseModel):
     """Enforces the same password policy as registration and reset."""
+
     currentPassword: str
     newPassword: Annotated[str, StringConstraints(min_length=8)]
 
@@ -56,7 +65,7 @@ class UserProfile(Resource):
             data = ProfileUpdateSchema(**payload)
         except ValidationError as e:
             return {"error": str(e)}, 400
-        
+
         db = get_db()
         with db.get_connection() as conn:
             cursor = conn.cursor()
@@ -70,27 +79,27 @@ class UserProfile(Resource):
                 if "email" in _PROFILE_ALLOWED_COLUMNS:
                     updates.append("email = ?")
                     params.append(str(data.email))
-                
+
             if not updates:
                 return {"success": True, "message": "No changes requested"}, 200
-                
-            query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?"
+
+            query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?"  # nosec B608 - fixed SQL fragments, bound values
             params.append(uid)
-            
+
             cursor.execute(query, tuple(params))
-            
+
             if hasattr(conn, "commit"):
                 conn.commit()
-                
+
             # Log audit
             db.log_audit_evidence(
                 action="profile_updated",
                 status="ok",
                 user_id=uid,
                 metadata={"updated_fields": [u.split(" = ")[0] for u in updates]},
-                retention_tag="security"
+                retention_tag="security",
             )
-            
+
         return {"success": True, "message": "Profile updated successfully"}, 200
 
 
@@ -108,37 +117,44 @@ class UserPassword(Resource):
             data = PasswordChangeSchema(**payload)
         except ValidationError as e:
             return {"error": str(e)}, 400
-            
+
         db = get_db()
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            
+
             # Fetch current hash
             cursor.execute("SELECT password_hash FROM users WHERE user_id = ?", (uid,))
             row = cursor.fetchone()
             if not row:
                 return {"error": "User not found"}, 404
-                
-            if not bcrypt.checkpw(data.currentPassword.encode('utf-8'), str(row['password_hash']).encode('utf-8')):
+
+            if not bcrypt.checkpw(
+                data.currentPassword.encode("utf-8"),
+                str(row["password_hash"]).encode("utf-8"),
+            ):
                 return {"error": "Incorrect current password"}, 401
-                
+
             # Hash new password
-            new_hash = bcrypt.hashpw(data.newPassword.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            
+            new_hash = bcrypt.hashpw(
+                data.newPassword.encode("utf-8"), bcrypt.gensalt()
+            ).decode("utf-8")
+
             # Update password
-            cursor.execute("UPDATE users SET password_hash = ? WHERE user_id = ?", (new_hash, uid))
-            
+            cursor.execute(
+                "UPDATE users SET password_hash = ? WHERE user_id = ?", (new_hash, uid)
+            )
+
             if hasattr(conn, "commit"):
                 conn.commit()
-                
+
             # Log audit
             db.log_audit_evidence(
                 action="password_changed",
                 status="ok",
                 user_id=uid,
-                retention_tag="security"
+                retention_tag="security",
             )
-            
+
         return {"success": True, "message": "Password changed successfully"}, 200
 
 
@@ -177,7 +193,7 @@ class UserSessions(Resource):
                     "SELECT session_id, ip_address, user_agent, created_at, last_activity "
                     "FROM sessions WHERE user_id = ? AND is_active = TRUE "
                     "ORDER BY last_activity DESC LIMIT 10",
-                    (uid,)
+                    (uid,),
                 ).fetchall()
 
             sessions = []

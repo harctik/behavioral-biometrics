@@ -1,8 +1,9 @@
-import logging
-from datetime import datetime, timezone, timedelta
 import json
+import logging
+from datetime import datetime, timedelta, timezone
+
 from flask import current_app
-from app.extensions import get_db
+
 from app.api.helpers import resolve_query
 from app.models.cognitive_engine import run_cognitive_analysis
 
@@ -51,15 +52,13 @@ class TransactionService:
     @staticmethod
     def _check_daily_limit(db, user_id: int, amount: float) -> tuple:
         """Cumulative daily transfer cap — prevents account drain via many small transfers."""
-        limit = current_app.config.get("DAILY_TRANSFER_LIMIT", DAILY_TRANSFER_LIMIT_DEFAULT)
+        limit = current_app.config.get(
+            "DAILY_TRANSFER_LIMIT", DAILY_TRANSFER_LIMIT_DEFAULT
+        )
         now = datetime.now(timezone.utc)
         cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        try:
-            from app.database_pg import DatabaseManager as PostgresDatabaseManager
-            is_pg = isinstance(db, PostgresDatabaseManager)
-        except ImportError:
-            is_pg = False
+
+        is_pg = db.is_pg
 
         try:
             with db.get_connection() as conn:
@@ -91,7 +90,11 @@ class TransactionService:
                                 meta = json.loads(meta)
                             except (json.JSONDecodeError, TypeError):
                                 continue
-                        if meta and meta.get("decision") == "allow" and meta.get("amount") is not None:
+                        if (
+                            meta
+                            and meta.get("decision") == "allow"
+                            and meta.get("amount") is not None
+                        ):
                             today_total += float(meta["amount"])
 
             if today_total + amount > limit:
@@ -135,7 +138,11 @@ class TransactionService:
                         meta = json.loads(meta)
                     except (json.JSONDecodeError, TypeError):
                         continue
-                if meta and meta.get("decision") == "allow" and meta.get("amount") is not None:
+                if (
+                    meta
+                    and meta.get("decision") == "allow"
+                    and meta.get("amount") is not None
+                ):
                     amounts.append(float(meta["amount"]))
 
             if len(amounts) < 10:
@@ -149,10 +156,19 @@ class TransactionService:
             return floor
 
     @classmethod
-    def evaluate_transaction_risk(cls, db, user_id: int, session_id: str, amount: float, operation: str, beneficiary_id: str, metrics: dict):
+    def evaluate_transaction_risk(
+        cls,
+        db,
+        user_id: int,
+        session_id: str,
+        amount: float,
+        operation: str,
+        beneficiary_id: str,
+        metrics: dict,
+    ):
         """Core logic for risk assessment: Banking + Cognitive + Baseline."""
         decision, reasons = "allow", []
-        
+
         vel_ok, vel_reason = cls._check_velocity(db, user_id)
         if not vel_ok:
             decision = "blocked"
@@ -195,7 +211,9 @@ class TransactionService:
 
         if decision == "allow" and (rec == "block" or duress >= 0.7 or app_fp >= 0.6):
             decision = "blocked"
-            reasons.append("Behavioral Biometrics cognitive engine: high-confidence fraud or duress detected")
+            reasons.append(
+                "Behavioral Biometrics cognitive engine: high-confidence fraud or duress detected"
+            )
             if duress >= 0.7:
                 reasons.append(f"Duress probability: {duress:.0%}")
             if app_fp >= 0.6:
@@ -208,6 +226,7 @@ class TransactionService:
         txn_baseline_result = {}
         try:
             from app.models.transaction_baseline import get_txn_baseline
+
             txn_baseline = get_txn_baseline()
             txn_baseline_result = txn_baseline.score_transaction(
                 user_id=int(user_id),
@@ -229,7 +248,9 @@ class TransactionService:
                 reasons.append(f"Transaction baseline: blocked (risk={txn_risk:.2f})")
             elif decision == "allow" and txn_recommendation in ("review", "step_up"):
                 decision = "step_up_required"
-                reasons.append(f"Transaction baseline: step-up required (risk={txn_risk:.2f})")
+                reasons.append(
+                    f"Transaction baseline: step-up required (risk={txn_risk:.2f})"
+                )
         except Exception as exc:
             logger.warning("TransactionHistoryBaseline scoring failed: %s", exc)
 
@@ -238,7 +259,9 @@ class TransactionService:
 
         if amount >= personalised_threshold and decision == "allow":
             decision = "step_up_required"
-            reasons.append(f"Transaction exceeds personalised threshold (Rs {personalised_threshold:,.0f})")
+            reasons.append(
+                f"Transaction exceeds personalised threshold (Rs {personalised_threshold:,.0f})"
+            )
 
         if decision == "allow" and tod_flag:
             decision = "step_up_required"
@@ -257,5 +280,5 @@ class TransactionService:
             "duress": duress,
             "cog_flags": cog_flags,
             "cog": cog,
-            "txn_baseline_result": txn_baseline_result
+            "txn_baseline_result": txn_baseline_result,
         }

@@ -5,9 +5,6 @@ These routes require JWT + MFA + admin/analyst role, so we use the mfa_logged_in
 fixture and manually promote the user to admin via the database.
 """
 
-import pytest
-import json
-
 
 # ── Helper to promote user to admin ──────────────────────────────────────────
 

@@ -295,7 +295,7 @@ export default function SettingsPage() {
               <button
                 onClick={handleSaveProfile}
                 disabled={saving}
-                className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-white text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-black text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
                 {saving ? "Saving..." : "Save Changes"}
@@ -337,7 +337,7 @@ export default function SettingsPage() {
                 <button
                   onClick={handleChangePassword}
                   disabled={saving || !currentPassword || !newPassword}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-white text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-black text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
                 >
                   {saving ? "Updating..." : "Update Password"}
                 </button>
@@ -364,7 +364,7 @@ export default function SettingsPage() {
                   <button
                     onClick={handleSaveSecurity}
                     disabled={saving}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-white text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
+                    className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-black text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
                   >
                     Save Recovery Settings
                   </button>
@@ -427,7 +427,7 @@ export default function SettingsPage() {
                 <button
                   onClick={handleSaveNotifications}
                   disabled={saving}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-white text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-accent-primary text-black text-sm font-medium rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50"
                 >
                   <Save className="w-4 h-4" />
                   {saving ? "Saving..." : "Save Preferences"}

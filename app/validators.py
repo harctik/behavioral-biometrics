@@ -5,17 +5,18 @@ This module provides validation functions and decorators for request data valida
 ensuring all inputs are properly sanitized and validated before processing.
 """
 
-import re
 import ipaddress
+import re
 import uuid as uuid_lib
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union, Callable, Tuple
-from email_validator import validate_email as validate_email_lib, EmailNotValidError
-import phonenumbers
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from .error_handling import ValidationError
+import phonenumbers
+from email_validator import EmailNotValidError
+from email_validator import validate_email as validate_email_lib
 
+from .error_handling import ValidationError
 
 # ============================================================================
 # Core Validation Functions

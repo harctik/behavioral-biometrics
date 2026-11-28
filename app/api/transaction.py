@@ -1,29 +1,30 @@
 """Transaction security API blueprint."""
-from flask import request, current_app
-from flask_restx import Namespace, Resource, fields
-from flask_jwt_extended import jwt_required
 import json
 import logging
 from datetime import datetime
 
-from app.extensions import get_db, limiter
+from flask import current_app, request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource, fields
+
 from app.api.helpers import (
+    get_current_user_id,
     get_session_cached,
-    validate_session_context,
     require_aal,
     require_mfa,
-    get_current_user_id,
+    validate_session_context,
     validate_session_ownership,
-    resolve_query,
 )
+from app.extensions import get_db, limiter
+from app.services.transaction_service import TransactionService
 from app.utils import (
     consume_nonce,
     issue_nonce,
     sign_operation,
     verify_operation_signature,
 )
-from app.services.transaction_service import TransactionService
 
+logger = logging.getLogger(__name__)
 
 transaction_ns = Namespace(
     "transaction", description="Transaction security and behavioral scoring"
@@ -109,49 +110,154 @@ class TransactionHistory(Resource):
                         "risk_level": meta.get("risk_level", "low"),
                         "date": str(row["date"] or ""),
                         "type": "out",
-                        "category": "Transfer"
+                        "category": "Transfer",
                     }
                 )
 
             # Inject realistic seed transactions when the user has few real ones.
             # Spread across recent days with diverse categories and realistic Indian merchants.
             if len(transactions) < 10:
-                from datetime import timedelta
                 import random
+                from datetime import timedelta
+
                 now = datetime.now()
                 seed_txns = [
-                    {"id": "seed-in-1",  "amount": "85000",  "merchant": "Salary Credit — TechCorp Pvt Ltd", "operation": "salary",       "type": "in",  "category": "Income",        "days_ago": 1},
-                    {"id": "seed-out-1", "amount": "2450",   "merchant": "Swiggy Order #8832",              "operation": "food_delivery", "type": "out", "category": "Food & Dining", "days_ago": 1},
-                    {"id": "seed-out-2", "amount": "1199",   "merchant": "Netflix Subscription",            "operation": "subscription",  "type": "out", "category": "Entertainment", "days_ago": 2},
-                    {"id": "seed-out-3", "amount": "15600",  "merchant": "Amazon India — Electronics",      "operation": "purchase",      "type": "out", "category": "Shopping",      "days_ago": 3},
-                    {"id": "seed-in-2",  "amount": "5000",   "merchant": "Refund — Flipkart",               "operation": "refund",        "type": "in",  "category": "Shopping",      "days_ago": 4},
-                    {"id": "seed-out-4", "amount": "3200",   "merchant": "Apollo Pharmacy",                 "operation": "purchase",      "type": "out", "category": "Healthcare",    "days_ago": 5},
-                    {"id": "seed-out-5", "amount": "8500",   "merchant": "DMart Groceries",                 "operation": "purchase",      "type": "out", "category": "Groceries",     "days_ago": 7},
-                    {"id": "seed-out-6", "amount": "750",    "merchant": "Uber Ride — Airport",             "operation": "transport",     "type": "out", "category": "Transport",     "days_ago": 8},
-                    {"id": "seed-in-3",  "amount": "12000",  "merchant": "Interest Credit — HDFC FD",       "operation": "interest",      "type": "in",  "category": "Investment",    "days_ago": 10},
-                    {"id": "seed-out-7", "amount": "4200",   "merchant": "Jio Fiber + Mobile",              "operation": "utility",       "type": "out", "category": "Utilities",     "days_ago": 12},
-                    {"id": "seed-out-8", "amount": "22000",  "merchant": "Rent Transfer — Landlord",        "operation": "rent",          "type": "out", "category": "Housing",       "days_ago": 15},
-                    {"id": "seed-in-4",  "amount": "3500",   "merchant": "Cashback — CRED Rewards",         "operation": "cashback",      "type": "in",  "category": "Rewards",       "days_ago": 18},
+                    {
+                        "id": "seed-in-1",
+                        "amount": "85000",
+                        "merchant": "Salary Credit — TechCorp Pvt Ltd",
+                        "operation": "salary",
+                        "type": "in",
+                        "category": "Income",
+                        "days_ago": 1,
+                    },
+                    {
+                        "id": "seed-out-1",
+                        "amount": "2450",
+                        "merchant": "Swiggy Order #8832",
+                        "operation": "food_delivery",
+                        "type": "out",
+                        "category": "Food & Dining",
+                        "days_ago": 1,
+                    },
+                    {
+                        "id": "seed-out-2",
+                        "amount": "1199",
+                        "merchant": "Netflix Subscription",
+                        "operation": "subscription",
+                        "type": "out",
+                        "category": "Entertainment",
+                        "days_ago": 2,
+                    },
+                    {
+                        "id": "seed-out-3",
+                        "amount": "15600",
+                        "merchant": "Amazon India — Electronics",
+                        "operation": "purchase",
+                        "type": "out",
+                        "category": "Shopping",
+                        "days_ago": 3,
+                    },
+                    {
+                        "id": "seed-in-2",
+                        "amount": "5000",
+                        "merchant": "Refund — Flipkart",
+                        "operation": "refund",
+                        "type": "in",
+                        "category": "Shopping",
+                        "days_ago": 4,
+                    },
+                    {
+                        "id": "seed-out-4",
+                        "amount": "3200",
+                        "merchant": "Apollo Pharmacy",
+                        "operation": "purchase",
+                        "type": "out",
+                        "category": "Healthcare",
+                        "days_ago": 5,
+                    },
+                    {
+                        "id": "seed-out-5",
+                        "amount": "8500",
+                        "merchant": "DMart Groceries",
+                        "operation": "purchase",
+                        "type": "out",
+                        "category": "Groceries",
+                        "days_ago": 7,
+                    },
+                    {
+                        "id": "seed-out-6",
+                        "amount": "750",
+                        "merchant": "Uber Ride — Airport",
+                        "operation": "transport",
+                        "type": "out",
+                        "category": "Transport",
+                        "days_ago": 8,
+                    },
+                    {
+                        "id": "seed-in-3",
+                        "amount": "12000",
+                        "merchant": "Interest Credit — HDFC FD",
+                        "operation": "interest",
+                        "type": "in",
+                        "category": "Investment",
+                        "days_ago": 10,
+                    },
+                    {
+                        "id": "seed-out-7",
+                        "amount": "4200",
+                        "merchant": "Jio Fiber + Mobile",
+                        "operation": "utility",
+                        "type": "out",
+                        "category": "Utilities",
+                        "days_ago": 12,
+                    },
+                    {
+                        "id": "seed-out-8",
+                        "amount": "22000",
+                        "merchant": "Rent Transfer — Landlord",
+                        "operation": "rent",
+                        "type": "out",
+                        "category": "Housing",
+                        "days_ago": 15,
+                    },
+                    {
+                        "id": "seed-in-4",
+                        "amount": "3500",
+                        "merchant": "Cashback — CRED Rewards",
+                        "operation": "cashback",
+                        "type": "in",
+                        "category": "Rewards",
+                        "days_ago": 18,
+                    },
                 ]
                 for txn in seed_txns:
-                    txn_date = now - timedelta(days=txn["days_ago"], hours=random.randint(6, 22), minutes=random.randint(0, 59))
-                    transactions.append({
-                        "id": txn["id"],
-                        "amount": txn["amount"],
-                        "merchant": txn["merchant"],
-                        "operation": txn["operation"],
-                        "decision": "allow",
-                        "risk_level": "low",
-                        "date": txn_date.isoformat(),
-                        "type": txn["type"],
-                        "category": txn["category"],
-                    })
+                    txn_date = now - timedelta(
+                        days=txn["days_ago"],
+                        hours=random.randint(6, 22),
+                        minutes=random.randint(0, 59),
+                    )
+                    transactions.append(
+                        {
+                            "id": txn["id"],
+                            "amount": txn["amount"],
+                            "merchant": txn["merchant"],
+                            "operation": txn["operation"],
+                            "decision": "allow",
+                            "risk_level": "low",
+                            "date": txn_date.isoformat(),
+                            "type": txn["type"],
+                            "category": txn["category"],
+                        }
+                    )
                 # Sort by date descending
                 transactions.sort(key=lambda t: t.get("date", ""), reverse=True)
                 # Trim to requested limit
                 transactions = transactions[:limit]
 
-            seed_count = sum(1 for t in transactions if t.get("id", "").startswith("seed-"))
+            seed_count = sum(
+                1 for t in transactions if t.get("id", "").startswith("seed-")
+            )
             return {
                 "transactions": transactions,
                 "total": total + seed_count,
@@ -202,17 +308,19 @@ class TransactionAssess(Resource):
     def post(self):
         """Full transaction risk assessment with cognitive fraud engine."""
         payload = request.get_json() or {}
-        
+
         idempotency_key = request.headers.get("Idempotency-Key")
         from app.extensions import get_redis
+
         rc = get_redis()
-        
+
         if idempotency_key and rc:
             cache_key = f"idempotency:txn:{idempotency_key}"
             cached_resp = rc.get(cache_key)
             if cached_resp:
                 try:
                     import json as _json
+
                     resp_dict = _json.loads(cached_resp)
                     return resp_dict["body"], resp_dict["status"]
                 except Exception:
@@ -235,8 +343,9 @@ class TransactionAssess(Resource):
         session = get_session_cached(session_id)
         if not session:
             return {"error": "Invalid session"}, 404
-            
+
         from app.api.helpers import check_session_inactivity
+
         is_active, msg = check_session_inactivity(session)
         if not is_active:
             return {"error": "Login Timeout", "message": msg}, 440
@@ -287,8 +396,10 @@ class TransactionAssess(Resource):
             session_id=session_id,
             amount=amount,
             operation=operation,
-            beneficiary_id=payload.get("beneficiary_id", payload.get("to_account", "unknown")),
-            metrics=metrics
+            beneficiary_id=payload.get(
+                "beneficiary_id", payload.get("to_account", "unknown")
+            ),
+            metrics=metrics,
         )
 
         decision = decision_result["decision"]
@@ -405,14 +516,19 @@ class TransactionAssess(Resource):
                 "amount_percentile": txn_baseline_result.get("amount_percentile", 0.5),
             },
         }
-        
+
         if idempotency_key and rc:
             try:
                 import json as _json
-                rc.setex(f"idempotency:txn:{idempotency_key}", 300, _json.dumps({"body": response_body, "status": 200}))
+
+                rc.setex(
+                    f"idempotency:txn:{idempotency_key}",
+                    300,
+                    _json.dumps({"body": response_body, "status": 200}),
+                )
             except Exception:
                 pass
-                
+
         return response_body, 200
 
 
@@ -487,6 +603,7 @@ class TransactionBehavioralScore(Resource):
         )
         return result, 200
 
+
 # ── Corporate Banking (Maker-Checker) ───────────────────────────────────────
 
 corporate_init_model = transaction_ns.model(
@@ -501,10 +618,19 @@ corporate_approve_model = transaction_ns.model(
     "CorporateApproveInput",
     {
         "txn_id": fields.String(required=True),
-        "maker_session_features": fields.List(fields.Raw(), required=True, description="Behavioral features of the Maker when initiating"),
-        "checker_session_features": fields.List(fields.Raw(), required=True, description="Behavioral features of the Checker when approving"),
+        "maker_session_features": fields.List(
+            fields.Raw(),
+            required=True,
+            description="Behavioral features of the Maker when initiating",
+        ),
+        "checker_session_features": fields.List(
+            fields.Raw(),
+            required=True,
+            description="Behavioral features of the Checker when approving",
+        ),
     },
 )
+
 
 @transaction_ns.route("/corporate/initiate")
 class CorporateInitiate(Resource):
@@ -513,15 +639,19 @@ class CorporateInitiate(Resource):
     def post(self):
         """Maker initiates a corporate transaction."""
         from app.services.cbs_service import MockCBSService
+
         payload = request.get_json() or {}
         uid = get_current_user_id()
-        
+
         amount = float(payload.get("amount", 0))
         beneficiary = payload.get("beneficiary_id", "unknown")
-        
+
         # Initiate via CBS in corporate mode
-        result = MockCBSService.initiate_transfer(maker_id=int(uid), amount=amount, beneficiary=beneficiary, is_corporate=True)
+        result = MockCBSService.initiate_transfer(
+            maker_id=int(uid), amount=amount, beneficiary=beneficiary, is_corporate=True
+        )
         return result, 200
+
 
 @transaction_ns.route("/corporate/pending")
 class CorporatePending(Resource):
@@ -529,10 +659,12 @@ class CorporatePending(Resource):
     def get(self):
         """Checker views pending corporate approvals."""
         from app.services.cbs_service import MockCBSService
+
         uid = get_current_user_id()
-        
+
         pending = MockCBSService.get_pending_approvals(checker_id=int(uid))
         return {"pending_approvals": pending}, 200
+
 
 @transaction_ns.route("/corporate/approve")
 class CorporateApprove(Resource):
@@ -541,37 +673,42 @@ class CorporateApprove(Resource):
     def post(self):
         """Checker approves transaction, verifying identities via Siamese Network."""
         from app.services.cbs_service import MockCBSService
+
         payload = request.get_json() or {}
         uid = get_current_user_id()
-        
+
         txn_id = payload.get("txn_id")
         maker_features = payload.get("maker_session_features", [])
         checker_features = payload.get("checker_session_features", [])
-        
+
         if not txn_id:
             return {"error": "Missing txn_id"}, 400
-            
+
         # 1. Siamese Network Biometric Verification (RBI Dual Control Mandate)
         try:
-            from app.models.siamese_network import SiameseNetwork
             from app.behavioral_feature_engine import BehavioralFeatureEngine
-            
+            from app.models.siamese_network import SiameseNetwork
+
             # Load Siamese model from models directory
             siamese = SiameseNetwork(input_dim=BehavioralFeatureEngine.FEATURE_COUNT)
             # In a real system, we'd load the specific corporate model. We use user_id 'saved' or global
-            loaded = siamese.load("models/saved_siamese.pt") # Assuming a global siamese is saved, else we just use fallback
+            loaded = siamese.load(
+                "models/saved_siamese.pt"
+            )  # Assuming a global siamese is saved, else we just use fallback
             if loaded:
-                auth_result = siamese.verify_maker_checker(maker_features, checker_features)
+                auth_result = siamese.verify_maker_checker(
+                    maker_features, checker_features
+                )
                 if auth_result["compliance_violation"]:
                     return {
                         "status": "blocked",
                         "error": "Maker-Checker Compliance Violation",
-                        "message": "Siamese Network detected the Maker and Checker have identical behavioral typing profiles. Account sharing detected."
+                        "message": "Siamese Network detected the Maker and Checker have identical behavioral typing profiles. Account sharing detected.",
                     }, 403
         except Exception as e:
             logger.warning(f"Siamese verification failed or bypassed: {e}")
-            pass # Failsafe open for demo if model not fully loaded
-            
+            pass  # Failsafe open for demo if model not fully loaded
+
         # 2. Process Approval in CBS
         result = MockCBSService.approve_transfer(checker_id=int(uid), txn_id=txn_id)
         if result["status"] == "success":

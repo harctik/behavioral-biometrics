@@ -34,17 +34,17 @@ Supports ONNX export for edge deployment and INT8 quantization.
 
 from __future__ import annotations
 
-import math
 import logging
-from typing import Dict, List, Optional, Tuple, Any
+import math
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader
 from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, TensorDataset
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,7 @@ logger = logging.getLogger(__name__)
 # Uses sine/cosine functions (Vaswani et al. 2017) instead of learnable
 # positions because behavioral sequences have variable lengths and this
 # generalizes better than trained embeddings for OOD sequence lengths.
+
 
 class SinusoidalPositionalEncoding(nn.Module):
     """Sinusoidal positional encoding for keystroke sequence ordering.
@@ -88,6 +89,7 @@ class SinusoidalPositionalEncoding(nn.Module):
 
 
 # ── Behavioral Transformer Encoder ───────────────────────────────────────────
+
 
 class BehavioralTransformerEncoder(nn.Module):
     """4-head Transformer Encoder for behavioral biometric sequences.
@@ -180,7 +182,9 @@ class BehavioralTransformerEncoder(nn.Module):
         self.feature_names: Optional[List[str]] = None
         self.training_metrics: Dict[str, Any] = {}
 
-    def _pool(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def _pool(
+        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """Multi-scale pooling: mean + max + attention-weighted.
 
         Combines three pooling strategies for richer representation:
@@ -314,7 +318,9 @@ class BehavioralTransformerEncoder(nn.Module):
                 sequences.append(data_matrix[i : i + self.sequence_length])
         else:
             # Pad short sequences with zeros
-            padded = np.zeros((self.sequence_length, data_matrix.shape[1]), dtype=np.float32)
+            padded = np.zeros(
+                (self.sequence_length, data_matrix.shape[1]), dtype=np.float32
+            )
             padded[: len(data_matrix)] = data_matrix
             sequences.append(padded)
 
@@ -355,7 +361,10 @@ class BehavioralTransformerEncoder(nn.Module):
         logger.info(
             "Starting BehavioralTransformerEncoder training "
             "(d_model=%d, heads=%d, layers=2, ff=%d, label_smoothing=%.2f)...",
-            self.d_model, self.nhead, self.d_model * 2, label_smoothing,
+            self.d_model,
+            self.nhead,
+            self.d_model * 2,
+            label_smoothing,
         )
 
         # Prepare data
@@ -379,10 +388,13 @@ class BehavioralTransformerEncoder(nn.Module):
 
         # Warmup + cosine annealing
         warmup_epochs = min(10, epochs // 5)
+
         def lr_lambda(epoch):
             if epoch < warmup_epochs:
                 return float(epoch + 1) / float(warmup_epochs)
-            progress = float(epoch - warmup_epochs) / float(max(1, epochs - warmup_epochs))
+            progress = float(epoch - warmup_epochs) / float(
+                max(1, epochs - warmup_epochs)
+            )
             return 0.5 * (1.0 + math.cos(math.pi * progress))
 
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
@@ -402,7 +414,9 @@ class BehavioralTransformerEncoder(nn.Module):
                 optimizer.zero_grad()
 
                 # Apply label smoothing
-                smoothed_labels = batch_labels * (1.0 - label_smoothing) + 0.5 * label_smoothing
+                smoothed_labels = (
+                    batch_labels * (1.0 - label_smoothing) + 0.5 * label_smoothing
+                )
 
                 outputs = self(sequences)  # (batch, 1)
                 loss = criterion(outputs, smoothed_labels)
@@ -427,14 +441,19 @@ class BehavioralTransformerEncoder(nn.Module):
             if patience_counter >= patience:
                 logger.info(
                     "Early stopping at epoch %d (patience=%d, best_loss=%.4f)",
-                    epoch, patience, best_loss,
+                    epoch,
+                    patience,
+                    best_loss,
                 )
                 break
 
             if epoch % 20 == 0:
                 logger.info(
                     "Epoch %d/%d — loss: %.4f, lr: %.6f",
-                    epoch, epochs, avg_loss, scheduler.get_last_lr()[0],
+                    epoch,
+                    epochs,
+                    avg_loss,
+                    scheduler.get_last_lr()[0],
                 )
 
         self.is_trained = True
@@ -530,7 +549,8 @@ class BehavioralTransformerEncoder(nn.Module):
         self.is_trained = True
         logger.info(
             "Contrastive training complete — embedding dim=%d, norm=%.4f",
-            len(mean_embedding), np.linalg.norm(mean_embedding),
+            len(mean_embedding),
+            np.linalg.norm(mean_embedding),
         )
         return mean_embedding
 
@@ -596,12 +616,15 @@ class BehavioralTransformerEncoder(nn.Module):
     def load(self, filepath: str) -> bool:
         """Load model state and metadata."""
         try:
-            checkpoint = torch.load(
-                f"{filepath}_transformer.pt", weights_only=False
-            )
+            # Unpickles the sklearn scaler, so loading can run code:
+            # only load checkpoints this application wrote.
+            path = f"{filepath}_transformer.pt"
+            checkpoint = torch.load(path, weights_only=False)  # nosec B614
             self.load_state_dict(checkpoint["state_dict"])
             self.scaler = checkpoint["scaler"]
-            self.sequence_length = checkpoint.get("sequence_length", self.DEFAULT_SEQ_LEN)
+            self.sequence_length = checkpoint.get(
+                "sequence_length", self.DEFAULT_SEQ_LEN
+            )
             self.feature_dim = checkpoint.get("feature_dim", self.DEFAULT_FEATURE_DIM)
             self.d_model = checkpoint.get("d_model", 64)
             self.nhead = checkpoint.get("nhead", 4)
@@ -609,7 +632,9 @@ class BehavioralTransformerEncoder(nn.Module):
             self.feature_names = checkpoint.get("feature_names")
             self.is_trained = checkpoint.get("is_trained", True)
             self.training_metrics = checkpoint.get("training_metrics", {})
-            logger.info("Loaded BehavioralTransformerEncoder from %s_transformer.pt", filepath)
+            logger.info(
+                "Loaded BehavioralTransformerEncoder from %s_transformer.pt", filepath
+            )
             return True
         except Exception:
             logger.warning(
@@ -666,7 +691,12 @@ class BehavioralTransformerEncoder(nn.Module):
             "input": {
                 "sequence_length": self.sequence_length,
                 "feature_dim": self.feature_dim,
-                "features_per_event": ["hold_time", "flight_time", "key_position", "timestamp_delta"],
+                "features_per_event": [
+                    "hold_time",
+                    "flight_time",
+                    "key_position",
+                    "timestamp_delta",
+                ],
             },
             "outputs": {
                 "risk_head": "scalar [0, 1]",

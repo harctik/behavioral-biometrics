@@ -51,7 +51,7 @@ export function TypingDNA({
 
     if (holds.length === 0) {
       // Draw idle wave placeholder
-      ctx.strokeStyle = "rgba(59, 130, 246, 0.15)";
+      ctx.strokeStyle = "rgba(244,244,242, 0.15)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (let x = 0; x < w; x++) {

@@ -17,7 +17,6 @@ mandates real-time transaction monitoring with behavioral analysis.
 from __future__ import annotations
 
 import logging
-import math
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -280,7 +279,7 @@ class TransactionHistoryBaseline:
         )
         if is_known_mule:
             risk += 0.6
-            flags.append(f"txn:aml_network_risk(known_mule_cluster)")
+            flags.append("txn:aml_network_risk(known_mule_cluster)")
 
         # Receive-and-forward mule pattern detection
         # High velocity of incoming funds immediately followed by outgoing transfers

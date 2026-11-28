@@ -1,16 +1,14 @@
-import os
 import logging
+import os
+
 from celery import Celery
 
 logger = logging.getLogger(__name__)
 
+
 def make_celery(app_name=__name__):
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    celery = Celery(
-        app_name,
-        backend=redis_url,
-        broker=redis_url
-    )
+    celery = Celery(app_name, backend=redis_url, broker=redis_url)
     celery.conf.update(
         task_serializer="json",
         accept_content=["json"],
@@ -20,7 +18,9 @@ def make_celery(app_name=__name__):
     )
     return celery
 
+
 celery_app = make_celery()
+
 
 @celery_app.task(name="process_telemetry_batch")
 def process_telemetry_batch(session_id, payload_data):
@@ -28,6 +28,7 @@ def process_telemetry_batch(session_id, payload_data):
     Background task to process behavioral telemetry asynchronously.
     """
     pass
+
 
 @celery_app.task(name="send_email_async")
 def send_email_async(to_email, template_name, context):
@@ -37,23 +38,31 @@ def send_email_async(to_email, template_name, context):
     logger.info(f"[Celery] Sending {template_name} email to {to_email}")
     try:
         from app.mail import MailService
+
         mail_service = MailService()
         if template_name == "verification":
-            mail_service.send_email_verification(to_email, context.get("username"), context.get("verify_token"))
+            mail_service.send_email_verification(
+                to_email, context.get("username"), context.get("verify_token")
+            )
         elif template_name == "password_reset":
-            mail_service.send_password_reset(to_email, context.get("username"), context.get("reset_token"))
+            mail_service.send_password_reset(
+                to_email, context.get("username"), context.get("reset_token")
+            )
     except Exception as e:
         logger.error(f"[Celery] Failed to send email to {to_email}: {e}")
 
+
 @celery_app.task(name="log_audit_evidence_async")
-def log_audit_evidence_async(action, status, user_id, session_id, resource, metadata, rationale, retention_tag):
+def log_audit_evidence_async(
+    action, status, user_id, session_id, resource, metadata, rationale, retention_tag
+):
     """
     Background task to log audit evidence asynchronously to prevent database write locks on the critical path.
     """
     try:
-        from app.database import DatabaseManager
         from app.config import Settings
-        
+        from app.database import DatabaseManager
+
         settings = Settings()
         db = DatabaseManager(settings.SQLALCHEMY_DATABASE_URI)
         db.log_audit_evidence(
@@ -64,7 +73,7 @@ def log_audit_evidence_async(action, status, user_id, session_id, resource, meta
             resource=resource,
             metadata=metadata,
             rationale=rationale,
-            retention_tag=retention_tag
+            retention_tag=retention_tag,
         )
     except Exception as e:
         logger.error(f"[Celery] Failed to log audit evidence: {e}")
@@ -75,8 +84,8 @@ def log_audit_evidence_async(action, status, user_id, session_id, resource, meta
     bind=True,
     max_retries=2,
     default_retry_delay=30,
-    soft_time_limit=600,   # 10-minute soft limit
-    time_limit=660,        # 11-minute hard limit
+    soft_time_limit=600,  # 10-minute soft limit
+    time_limit=660,  # 11-minute hard limit
 )
 def train_user_models_async(self, user_id, force_phase=None):
     """
@@ -97,10 +106,14 @@ def train_user_models_async(self, user_id, force_phase=None):
     Returns:
         TrainingReport dict with per-model metrics.
     """
-    logger.info("[Celery] Starting ML training for user %d (phase=%s)", user_id, force_phase or "auto")
+    logger.info(
+        "[Celery] Starting ML training for user %d (phase=%s)",
+        user_id,
+        force_phase or "auto",
+    )
     try:
-        from app.database import DatabaseManager
         from app.config import Settings
+        from app.database import DatabaseManager
         from app.training_orchestrator import TrainingOrchestrator
 
         settings = Settings()
@@ -110,7 +123,9 @@ def train_user_models_async(self, user_id, force_phase=None):
 
         logger.info(
             "[Celery] Training complete for user %d: %d models trained, %d failed, %.1fs",
-            user_id, len(report.models_trained), len(report.models_failed),
+            user_id,
+            len(report.models_trained),
+            len(report.models_failed),
             report.duration_seconds,
         )
         return report.to_dict()
@@ -135,8 +150,8 @@ def retrain_all_users_async():
     """
     logger.info("[Celery] Starting batch retraining for all active users...")
     try:
-        from app.database import DatabaseManager
         from app.config import Settings
+        from app.database import DatabaseManager
 
         settings = Settings()
         db = DatabaseManager(settings.SQLALCHEMY_DATABASE_URI)
@@ -160,4 +175,3 @@ def retrain_all_users_async():
     except Exception as e:
         logger.error("[Celery] Batch retraining failed: %s", e)
         return {"error": str(e)}
-

@@ -1,5 +1,7 @@
 "use client";
 
+import type { ApiTransaction } from "@/lib/api-types";
+import { useNow } from "@/hooks/useBrowser";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
@@ -9,6 +11,14 @@ import {
 import { NotificationBell } from "@/components/NotificationBell";
 import { getCollector } from "@/lib/behavioral-collector";
 import { getCsrfToken, getSessionId } from "@/lib/auth-utils";
+
+// Leaves text such as "Just now" unchanged.
+function formatDate(value: string) {
+  const parsed = new Date(value);
+  return /^\d{4}-/.test(value) && !isNaN(parsed.getTime())
+    ? parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+    : value;
+}
 
 interface Beneficiary {
   id: string;
@@ -24,6 +34,7 @@ interface Transfer {
   to: string;
   amount: number;
   date: string;
+  incoming?: boolean;
   status: "completed" | "pending" | "failed";
 }
 
@@ -46,8 +57,9 @@ export default function TransfersPage() {
   const [newBank, setNewBank] = useState("");
   const [beneficiaryToDelete, setBeneficiaryToDelete] = useState<string | null>(null);
 
+  const now = useNow();
   const selectedBenInfo = beneficiaries.find(b => b.id === selectedBeneficiary);
-  const isCooling = selectedBenInfo && (!selectedBenInfo.created_at || (Date.now() - new Date(selectedBenInfo.created_at).getTime()) < 24 * 60 * 60 * 1000);
+  const isCooling = selectedBenInfo && (!selectedBenInfo.created_at || (now - new Date(selectedBenInfo.created_at).getTime()) < 24 * 60 * 60 * 1000);
 
 
   useEffect(() => {
@@ -66,12 +78,13 @@ export default function TransfersPage() {
         }
         if (histRes.ok) {
           const hData = await histRes.json();
-          const mappedHistory = (hData.transactions || []).map((t: any) => ({
-            id: t.id,
+          const mappedHistory = (hData.transactions || []).map((t: ApiTransaction) => ({
+            id: String(t.id),
             to: t.merchant || "Unknown",
-            amount: t.amount,
+            amount: Number(t.amount || 0),
             date: t.date,
-            status: t.status || (t.decision === "allow" ? "completed" : "failed")
+            incoming: t.type === "in",
+            status: (t.status as Transfer["status"]) || (t.decision === "allow" ? "completed" : "failed")
           }));
           setHistory(mappedHistory);
         }
@@ -179,12 +192,13 @@ export default function TransfersPage() {
       });
       if (histRes.ok) {
         const hData = await histRes.json();
-        const mappedHistory = (hData.transactions || []).map((t: any) => ({
-          id: t.id,
+        const mappedHistory = (hData.transactions || []).map((t: ApiTransaction) => ({
+          id: String(t.id),
           to: t.merchant || "Unknown",
-          amount: parseFloat(t.amount || "0"),
+          amount: parseFloat(String(t.amount || "0")),
           date: t.date,
-          status: t.status || (t.decision === "allow" ? "completed" : "failed")
+          incoming: t.type === "in",
+          status: (t.status as Transfer["status"]) || (t.decision === "allow" ? "completed" : "failed")
         }));
         setHistory(mappedHistory);
       }
@@ -196,9 +210,9 @@ export default function TransfersPage() {
         setNote(""); 
         setSelectedBeneficiary(""); 
       }, 8000); // 8s to read the assessment
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      toast.error(err.message || "Transaction failed");
+      toast.error((err instanceof Error && err.message) || "Transaction failed");
     } finally {
       setSending(false);
     }
@@ -345,7 +359,7 @@ export default function TransfersPage() {
                     <button
                       onClick={handleSend}
                       disabled={sending || !selectedBeneficiary || !amount}
-                      className="w-full bg-accent-primary text-white font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      className="w-full bg-accent-primary text-black font-medium text-sm py-3 rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {sending ? (
                         <><Clock className="w-4 h-4 animate-spin" /> Verifying & Sending...</>
@@ -355,7 +369,7 @@ export default function TransfersPage() {
                     </button>
 
                     <div className="flex items-center gap-2 text-[10px] text-muted font-mono">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.5)]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       Behavioral telemetry active — typing rhythm monitored
                     </div>
                   </>
@@ -374,11 +388,11 @@ export default function TransfersPage() {
                         </div>
                         <div>
                           <div className="text-sm text-fg font-medium">{tx.to}</div>
-                          <div className="text-xs text-muted">{tx.date}</div>
+                          <div className="text-xs text-muted">{formatDate(tx.date)}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-sm font-mono text-fg">-₹{tx.amount.toLocaleString()}</span>
+                        <span className={`text-sm font-mono whitespace-nowrap ${tx.incoming ? "text-accent-success" : "text-fg"}`}>{tx.incoming ? "+" : "-"}₹{tx.amount.toLocaleString("en-IN")}</span>
                         <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
                           tx.status === "completed" ? "text-accent-success bg-accent-success/10 border-accent-success/20" :
                           tx.status === "pending" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" :
@@ -428,7 +442,7 @@ export default function TransfersPage() {
                     <button
                       onClick={handleAddBeneficiary}
                       disabled={!newName || !newAccount}
-                      className="w-full bg-accent-primary text-white text-xs font-medium py-2.5 rounded-lg disabled:opacity-40"
+                      className="w-full bg-accent-primary text-black text-xs font-medium py-2.5 rounded-lg disabled:opacity-40"
                     >
                       Add Beneficiary
                     </button>
@@ -454,10 +468,10 @@ export default function TransfersPage() {
                           {b.name.charAt(0)}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm text-fg font-medium truncate flex items-center gap-1.5">
+                          <div className="text-sm text-fg font-medium flex flex-wrap items-center gap-1.5">
                             {b.name}
                             {b.verified ? <Check className="w-3 h-3 text-accent-success" /> : <span className="text-[8px] text-muted border border-border rounded px-1 ml-1 bg-surface-2 font-bold tracking-widest">UNVERIFIED</span>}
-                            {(!b.created_at || (Date.now() - new Date(b.created_at).getTime()) < 24 * 60 * 60 * 1000) && (
+                            {(!b.created_at || (now - new Date(b.created_at).getTime()) < 24 * 60 * 60 * 1000) && (
                               <span className="px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[9px] font-bold rounded-sm ml-1">COOLING</span>
                             )}
                           </div>
@@ -477,7 +491,7 @@ export default function TransfersPage() {
                       <UserPlus className="w-8 h-8 text-muted mb-2" />
                       <div className="text-sm font-medium text-fg">No beneficiaries yet</div>
                       <div className="text-xs text-muted max-w-[200px] mb-3">Add a beneficiary to start making quick and secure transfers.</div>
-                      <button onClick={() => setShowAddForm(true)} className="bg-accent-primary text-white text-xs px-4 py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors">Add Beneficiary</button>
+                      <button onClick={() => setShowAddForm(true)} className="bg-accent-primary text-black text-xs px-4 py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors">Add Beneficiary</button>
                     </div>
                   ) : filteredBeneficiaries.length === 0 ? (
                     <div className="text-center text-xs text-muted py-4">No matching beneficiaries found</div>

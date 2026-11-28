@@ -36,8 +36,8 @@ We take security seriously. If you discover a vulnerability in AetherAuth, pleas
 
 1. **Password Authentication** — bcrypt hashing with per-user salt
 2. **Multi-Factor Authentication** — TOTP-based (RFC 6238) with encrypted secrets
-3. **Behavioral Biometrics** — 13-engine ML ensemble for continuous authentication
-4. **Session Management** — JWT with configurable expiry, refresh tokens, and forced logout
+3. **Behavioral Biometrics** — heuristic and ML risk signals. They do not block sign-in; see "Known limits" in the README
+4. **Session Management** — JWT with configurable expiry and logout (token revocation needs Redis)
 
 ### Encryption
 
@@ -46,12 +46,12 @@ We take security seriously. If you discover a vulnerability in AetherAuth, pleas
 | Passwords | bcrypt (cost 12) | Per-user salt |
 | MFA secrets | Fernet (AES-128-CBC + HMAC-SHA256) | `BACKUP_FERNET` env var |
 | JWT tokens | HS256 | `JWT_SECRET_KEY` env var |
-| Session cookies | Signed + HttpOnly + Secure + SameSite | `SECRET_KEY` env var |
+| Cookies | The JWT access cookie is HttpOnly with CSRF protection; outside debug mode it is Secure with SameSite=None | `JWT_SECRET_KEY` env var |
 
 ### Rate Limiting
 
 - Global: 60 requests/minute per IP
-- Login: 5 attempts/minute (progressive lockout after 5 failures)
+- Login: account lockout after 5 failed attempts
 - Registration: 3 attempts/hour
 - Password reset: 3 attempts/hour
 
@@ -66,20 +66,15 @@ All API inputs are validated via `app/validators.py` with:
 
 ### Compliance
 
-| Standard | Status |
-|----------|--------|
-| RBI Master Directions 2021 | ✅ Compliant |
-| PCI DSS 4.0 | ✅ Compliant |
-| DPDP Act 2023 | ✅ Compliant |
-| GDPR Article 25 | ✅ Privacy by design |
+This project has not been audited or certified against RBI Master Directions, PCI DSS, the DPDP Act, GDPR or any other standard. The statuses and scores returned by the compliance report endpoints are fixed values in `app/compliance/__init__.py`, not the result of any check.
 
 ### Content Security Policy
 
-The frontend enforces strict CSP headers via `next.config.mjs`:
-- `script-src 'self'` — no inline scripts
-- `style-src 'self' 'unsafe-inline'` — required for CSS-in-JS
-- `img-src 'self' data:` — no external image loading
-- `connect-src 'self' <API_URL>` — restrict API calls
+The frontend sets a CSP header in `next.config.mjs`:
+- `script-src 'self' 'unsafe-inline' 'unsafe-eval'` — inline scripts and eval are currently allowed
+- `style-src 'self' 'unsafe-inline'`
+- `img-src 'self' data: blob:`
+- `connect-src 'self' <API_URL>` (development builds also allow `ws:`)
 
 ### Audit Trail
 
