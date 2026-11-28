@@ -1,6 +1,6 @@
 # Banking Control Mapping
 
-This project aligns technical controls with core banking compliance frameworks.
+This is a list of design intentions mapped to common frameworks. It is not an assessment or a claim of compliance, and not every item is enforced in the current code (see "Known limits" in the [README](../../README.md)).
 
 ## PCI DSS
 - Strong authentication and session control for privileged operations.

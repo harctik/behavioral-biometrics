@@ -1,5 +1,7 @@
 # System Architecture: Behavior-Based Authentication
 
+> This page describes the intended design, and parts of it are not wired up. In the current code, route handlers fuse scores with a weighted sum of 12 signals (`score_with_ensemble`); no route calls the Bayesian fusion. Behavioral results do not block sign-in. Several of the listed engines are heuristics, optional, or not called by that fusion. The "Known limits" section of the [README](../README.md) takes precedence over this page.
+
 ## 1. High-Level Architecture
 The system employs a continuous, behavior-based authentication model integrated with traditional access controls. It evaluates user interactions (keystrokes, mouse movements, device intelligence) in real-time.
 
@@ -93,9 +95,4 @@ We use a **13-engine ensemble** with **Bayesian belief-update fusion** (log-odds
 The application is deployed as stateless container instances managed via Docker Compose/Kubernetes. State is strictly pushed to Postgres and Redis, ensuring horizontal scalability. All secrets are managed via strictly validated environment variables. Docker resource limits prevent container resource exhaustion.
 
 ## 5. Compliance
-| Standard | Implementation |
-|----------|---------------|
-| RBI Master Directions 2021 | Continuous auth, audit trail, MFA |
-| PCI DSS 4.0 | Encryption at rest + in transit, access logging |
-| DPDP Act 2023 | Consent records, data minimization, right to erasure |
-| GDPR Article 25 | Privacy by design, purpose limitation |
+No compliance with RBI Master Directions, PCI DSS, the DPDP Act or GDPR has been assessed. Consent is not enforced, erasure is partial, and the application does not configure TLS itself.

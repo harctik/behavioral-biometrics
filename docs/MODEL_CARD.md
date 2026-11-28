@@ -1,5 +1,7 @@
 # ML Model Card — BehaviorGuard Ensemble
 
+> This card describes the intended design and has not been validated against the current code. Route handlers use `score_with_ensemble` (a weighted sum of 12 signals); `score_with_bayesian_fusion` is not called by any route. The main feature engine defines 193 features, not 200 or more. Several engine architectures below do not match what runs, the PyTorch models need `requirements-ml.txt`, and the inference-time figure has not been measured. See "Known limits" in the [README](../README.md).
+
 ## Overview
 
 BehaviorGuard uses a **13-engine ensemble** for continuous behavioral authentication.

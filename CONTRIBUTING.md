@@ -311,7 +311,7 @@ def test_user_authentication_success():
 
 ### Coverage Requirements
 
-- Minimum **80% code coverage** (enforced by `pyproject.toml`)
+- Minimum **50% code coverage** (enforced by `pyproject.toml`, which also excludes a number of modules from measurement)
 - Focus on critical paths:
   - Authentication flow
   - Database operations

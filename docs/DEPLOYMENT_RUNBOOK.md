@@ -43,7 +43,7 @@ RATELIMIT_STORAGE_URI=redis://your-redis-host:6379/0
 ### 3. Database
 
 SQLite is the default but is **NOT recommended for multi-instance deployments**.
-For production, consider PostgreSQL and update `DATABASE_PATH` or `SQLALCHEMY_DATABASE_URI`.
+For production, consider PostgreSQL and set `SQLALCHEMY_DATABASE_URI`.
 
 ```bash
 # Apply all Alembic migrations
